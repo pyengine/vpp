@@ -39,6 +39,8 @@
 #define DBG_SOCK(args...)
 #endif
 
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
+
 static const char *vhost_message_str[] __attribute__((unused)) = {
     [VHOST_USER_NONE] = "VHOST_USER_NONE",
     [VHOST_USER_GET_FEATURES] = "VHOST_USER_GET_FEATURES",
@@ -1901,3 +1903,44 @@ VLIB_CLI_COMMAND (show_vhost_user_command, static) = {
     .short_help = "show vhost-user interface",
     .function = show_dpdk_vhost_user_command_fn,
 };
+#else
+
+
+int dpdk_vhost_user_create_if(vnet_main_t * vnm, vlib_main_t * vm,
+                              const char * sock_filename,
+                              u8 is_server,
+                              u32 * sw_if_index,
+                              u64 feature_mask,
+                              u8 renumber, u32 custom_dev_instance,
+                              u8 *hwaddr)
+{
+  return 0;
+}
+int dpdk_vhost_user_modify_if(vnet_main_t * vnm, vlib_main_t * vm,
+                         const char * sock_filename,
+                         u8 is_server,
+                         u32 sw_if_index,
+                         u64 feature_mask,
+                         u8 renumber, u32 custom_dev_instance)
+{
+  return 0;
+}
+int dpdk_vhost_user_delete_if(vnet_main_t * vnm, vlib_main_t * vm,
+                         u32 sw_if_index)
+{
+  return 0;
+}
+
+uword dpdk_vhost_user_process_if (vlib_main_t *vm, dpdk_device_t *xd, void *ctx)
+{
+  return 0;
+}
+void dpdk_vhost_user_process_init (void **ctx)
+{
+}
+
+int dpdk_vhost_user_dump_ifs(vnet_main_t * vnm, vlib_main_t * vm, vhost_user_intf_details_t **out_vuids)
+{
+  return 0;
+} 
+#endif

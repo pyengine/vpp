@@ -153,12 +153,14 @@ typedef struct {
   u8 sock_is_server;
   u8 active;
 
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   u64 feature_mask;
   u32 num_vrings;
   dpdk_vu_vring vrings[VHOST_MAX_QUEUE_PAIRS * 2];
   u64 region_addr[VHOST_MEMORY_MAX_NREGIONS];
   u32 region_fd[VHOST_MEMORY_MAX_NREGIONS];
   u64 region_offset[VHOST_MEMORY_MAX_NREGIONS];
+#endif
 } dpdk_vu_intf_t;
 
 typedef void (*dpdk_flowcontrol_callback_t) (vlib_main_t *vm,
@@ -223,11 +225,13 @@ typedef struct {
   struct rte_kni *kni;
   u8 kni_port_id;
 
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   /* vhost-user related */
   u32 vu_if_id;
   struct virtio_net  vu_vhost_dev;
   u32 vu_is_running;
   dpdk_vu_intf_t *vu_intf;
+#endif
 
   /* af_packet */
   u8 af_packet_port_id;
@@ -238,8 +242,13 @@ typedef struct {
   struct rte_eth_stats stats;
   struct rte_eth_stats last_stats;
   struct rte_eth_stats last_cleared_stats;
+#if RTE_VERSION >= RTE_VERSION_NUM(16, 7, 0, 0)
+  struct rte_eth_xstat * xstats;
+  struct rte_eth_xstat * last_cleared_xstats;
+#else
   struct rte_eth_xstats * xstats;
   struct rte_eth_xstats * last_cleared_xstats;
+#endif
   f64 time_last_stats_update;
   dpdk_port_type_t port_type;
 

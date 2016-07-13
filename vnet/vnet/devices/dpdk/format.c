@@ -174,9 +174,11 @@ u8 * format_dpdk_device_name (u8 * s, va_list * args)
        return format(s, "kni%d", dm->devices[i].kni_port_id);
   } else
 #endif
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   if (dm->devices[i].dev_type == VNET_DPDK_DEV_VHOST_USER) {
        return format(s, "VirtualEthernet0/0/%d", dm->devices[i].vu_if_id);
   }
+#endif
   switch (dm->devices[i].port_type)
     {
     case VNET_DPDK_PORT_TYPE_ETH_1G:
@@ -477,7 +479,7 @@ u8 * format_dpdk_device (u8 * s, va_list * args)
                 format_white_space, indent + 2, xd->cpu_socket);
 
   /* $$$ MIB counters  */
-
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   {
 #define _(N, V)							\
     if ((xd->stats.V - xd->last_cleared_stats.V) != 0) {       \
@@ -491,11 +493,15 @@ u8 * format_dpdk_device (u8 * s, va_list * args)
 #undef _
   }
 
+#endif
   u8 * xs = 0;
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   u32 i = 0;
+#endif
 
   ASSERT(vec_len(xd->xstats) == vec_len(xd->last_cleared_xstats));
 
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
   vec_foreach_index(i, xd->xstats)
     {
       u64 delta = 0;
@@ -514,7 +520,9 @@ u8 * format_dpdk_device (u8 * s, va_list * args)
           vec_free(name);
         }
     }
+#endif
 
+#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
     if (verbose && xd->dev_type == VNET_DPDK_DEV_VHOST_USER) {
         int i;
         for (i = 0; i < xd->rx_q_used * VIRTIO_QNUM; i++) {
@@ -542,6 +550,7 @@ u8 * format_dpdk_device (u8 * s, va_list * args)
             }
         }
     }
+#endif
 
   if (xs)
     {

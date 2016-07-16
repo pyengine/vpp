@@ -40,6 +40,8 @@ ila_ila2sir (vlib_main_t *vm,
         vlib_node_runtime_t *node,
         vlib_frame_t *frame)
 {
+  ip4_main_t * im = &ip4_main;
+  ip_lookup_main_t * lm = &im->lookup_main;
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
   vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_ila2sir_node.index);
   __attribute__((unused)) ila_main_t *ilm = &ila_main;
@@ -54,7 +56,9 @@ ila_ila2sir (vlib_main_t *vm,
     /* Single loop */
     while (n_left_from > 0 && n_left_to_next > 0) {
       u32 pi0;
-      vlib_buffer_t *p0;
+      vlib_buffer_t * p0;
+      ip_adjacency_t * adj0;
+      __attribute__((unused)) ila_entry_t * ie0;
       u8 error0 = ILA_ERROR_NONE;
       __attribute__((unused)) ip6_header_t *ip60;
       u32 next0 = ILA_ILA2SIR_NEXT_DROP;
@@ -67,6 +71,8 @@ ila_ila2sir (vlib_main_t *vm,
 
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
+      adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
+      ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
 

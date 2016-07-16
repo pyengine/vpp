@@ -189,6 +189,10 @@ typedef struct {
     struct {
         ip46_address_t next_hop;
     } indirect;
+    /* IP6_LOOKUP_NEXT_ILA only */
+    struct {
+	u32 entry_index;
+    } ila;
   };
 
   STRUCT_MARK(signature_end);

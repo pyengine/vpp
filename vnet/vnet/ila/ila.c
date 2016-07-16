@@ -46,24 +46,56 @@ format_half_ip6_address(u8 *s, va_list *va)
 }
 
 static u8 *
+format_csum_mode(u8 *s, va_list *va)
+{
+  ila_csum_mode_t csum_mode = va_arg(*va, ila_csum_mode_t);
+  const char *txt;
+
+  switch(csum_mode) {
+    case ILA_CSUM_MODE_NO_ACTION:
+      txt = "no-action";
+      break;
+    case ILA_CSUM_MODE_NEUTRAL_MAP:
+      txt = "neutral-map";
+      break;
+    case ILA_CSUM_MODE_ADJUST_TRANSPORT:
+      txt = "transport-adjust";
+      break;
+    default:
+      txt = "(unknown)";
+      break;
+  }
+  return format(s, "%s", txt);
+}
+
+static u8 *
 format_ila_entry(u8 *s, va_list *va)
 {
   vnet_main_t *vnm = va_arg(*va, vnet_main_t *);
   ila_entry_t *e = va_arg(*va, ila_entry_t *);
 
   if(!e) {
-    return format(s, "%=20s%=20s%=20s", "Identifier", "Locator", "SIR prefix");
+    return format(s, "%=20s%=20s%=20s%=16s%=18s", "Identifier", "Locator", "SIR prefix", "Adjacency Index", "Checksum Mode");
   } else if(vnm) {
-    return format(s, "%U %U %U",
-      format_half_ip6_address, e->identifier,
-      format_half_ip6_address, e->locator,
-      format_half_ip6_address, e->sir_prefix);
-
+    if(e->ila_adj_index == ~0) {
+      return format(s, "%U %U %U %15s    %U",
+        format_half_ip6_address, e->identifier,
+        format_half_ip6_address, e->locator,
+        format_half_ip6_address, e->sir_prefix,
+        "n/a",
+        format_csum_mode, e->csum_mode);
+    } else {
+      return format(s, "%U %U %U %15d    %U",
+        format_half_ip6_address, e->identifier,
+        format_half_ip6_address, e->locator,
+        format_half_ip6_address, e->sir_prefix,
+        e->ila_adj_index,
+        format_csum_mode, e->csum_mode);
+    }
   }
 
   return NULL;
 }
-
 
 u8 *
 format_ila_ila2sir_trace (u8 *s, va_list *args)

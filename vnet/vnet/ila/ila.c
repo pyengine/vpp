@@ -59,12 +59,6 @@ unformat_half_ip6_address (unformat_input_t * input, va_list * args)
                                  (((u64)a[2]) << 16) |
                                  (((u64)a[3])));
 
-    /*
-      ((u64) clib_host_to_net_u16(a[3]) << 48) |
-    ((u64) clib_host_to_net_u16(a[2]) << 32) |
-    ((u64) clib_host_to_net_u16(a[1]) << 16) |
-    ((u64) clib_host_to_net_u16(a[0]));*/
-
   return 1;
 }
 
@@ -79,7 +73,7 @@ ila_ila2sir (vlib_main_t *vm,
   ip_lookup_main_t * lm = &im->lookup_main;
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
   vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_ila2sir_node.index);
-  __attribute__((unused)) ila_main_t *ilm = &ila_main;
+  ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -283,15 +277,13 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
         {
           //This is a local entry - let's create a local adjacency
           ip_adjacency_t adj;
-          uword *p;
           ip6_add_del_route_args_t route_args;
 
           //Adjacency
           memset(&adj, 0, sizeof(adj));
           adj.explicit_fib_index = ~0;
           adj.lookup_next_index = IP6_LOOKUP_NEXT_ILA;
-          p = (uword *)&adj.rewrite_data[0];
-          *p = (uword) (e - ilm->entries);
+	  adj.ila.entry_index = e - ilm->entries;
 
           //Route
           memset(&route_args, 0, sizeof(route_args));

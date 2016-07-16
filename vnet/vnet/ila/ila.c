@@ -32,6 +32,39 @@ typedef struct {
   ip6_address_t initial_dst;
 } ila_ila2sir_trace_t;
 
+static u8 *
+format_half_ip6_address(u8 *s, va_list *va)
+{
+  u64 v = clib_net_to_host_u64(va_arg(*va, u64));
+
+  return format(s, "%04x:%04x:%04x:%04x",
+    v >> 48,
+    (v >> 32) & 0xffff,
+    (v >> 16) & 0xffff,
+    v & 0xffff);
+
+}
+
+static u8 *
+format_ila_entry(u8 *s, va_list *va)
+{
+  vnet_main_t *vnm = va_arg(*va, vnet_main_t *);
+  ila_entry_t *e = va_arg(*va, ila_entry_t *);
+
+  if(!e) {
+    return format(s, "%=20s%=20s%=20s", "Identifier", "Locator", "SIR prefix");
+  } else if(vnm) {
+    return format(s, "%U %U %U",
+      format_half_ip6_address, e->identifier,
+      format_half_ip6_address, e->locator,
+      format_half_ip6_address, e->sir_prefix);
+
+  }
+
+  return NULL;
+}
+
+
 u8 *
 format_ila_ila2sir_trace (u8 *s, va_list *args)
 {
@@ -449,6 +482,29 @@ VLIB_CLI_COMMAND(ila_interface_command, static) = {
   .path = "ila interface",
   .short_help = "ila interface <interface-name> [disable]",
   .function = ila_interface_command_fn,
+};
+
+static clib_error_t *
+ila_show_entries_command_fn (vlib_main_t *vm,
+                             unformat_input_t *input,
+                             vlib_cli_command_t *cmd)
+{
+  vnet_main_t * vnm = vnet_get_main();
+  ila_main_t *ilm = &ila_main;
+  ila_entry_t *e;
+
+  vlib_cli_output(vm, "  %U\n", format_ila_entry, vnm, NULL);
+  pool_foreach(e, ilm->entries, ({
+    vlib_cli_output(vm, "  %U\n", format_ila_entry, vnm, e);
+  }));
+
+  return NULL;
+}
+
+VLIB_CLI_COMMAND(ila_show_entries_command, static) = {
+  .path = "ila show",
+  .short_help = "show ila entries",
+  .function = ila_show_entries_command_fn,
 };
 
 

@@ -23,6 +23,8 @@ typedef struct {
   u64 lookup_table_nbuckets;
   u64 lookup_table_size;
   BVT(clib_bihash) id_to_entry_table;
+
+  u32 ila_sir2ila_feature_index;
 } ila_main_t;
 
 int ila_add_entry(u64 identifier, u64 locator, u64 sir_prefix, u32 *entry_index);

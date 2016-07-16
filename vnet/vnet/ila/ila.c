@@ -22,26 +22,26 @@ typedef enum {
  };
 
 typedef enum {
-  ILA_IN_NEXT_IP6_REWRITE,
-  ILA_IN_NEXT_DROP,
-  ILA_IN_N_NEXT,
-} ila_in_next_t;
+  ILA_ILA2SIR_NEXT_IP6_REWRITE,
+  ILA_ILA2SIR_NEXT_DROP,
+  ILA_ILA2SIR_N_NEXT,
+} ila_ila2sir_next_t;
 
 u8 *
-format_ila_in_trace (u8 *s, va_list *args)
+format_ila_ila2sir_trace (u8 *s, va_list *args)
 {
-  return format(s, "ila-in");
+  return format(s, "ila-ila2sir");
 }
 
-static vlib_node_registration_t ila_in_node;
+static vlib_node_registration_t ila_ila2sir_node;
 
 static uword
-ila_in (vlib_main_t *vm,
+ila_ila2sir (vlib_main_t *vm,
         vlib_node_runtime_t *node,
         vlib_frame_t *frame)
 {
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
-  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_in_node.index);
+  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_ila2sir_node.index);
   __attribute__((unused)) ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
@@ -57,7 +57,7 @@ ila_in (vlib_main_t *vm,
       vlib_buffer_t *p0;
       u8 error0 = ILA_ERROR_NONE;
       __attribute__((unused)) ip6_header_t *ip60;
-      u32 next0 = ILA_IN_NEXT_DROP;
+      u32 next0 = ILA_ILA2SIR_NEXT_DROP;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -81,44 +81,44 @@ ila_in (vlib_main_t *vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (ila_in_node, static) = {
-  .function = ila_in,
-  .name = "ila-in",
+VLIB_REGISTER_NODE (ila_ila2sir_node, static) = {
+  .function = ila_ila2sir,
+  .name = "ila-ila2sir",
   .vector_size = sizeof (u32),
 
-  .format_trace = format_ila_in_trace,
+  .format_trace = format_ila_ila2sir_trace,
 
   .n_errors = ILA_N_ERROR,
   .error_strings = ila_error_strings,
 
-  .n_next_nodes = ILA_IN_N_NEXT,
+  .n_next_nodes = ILA_ILA2SIR_N_NEXT,
   .next_nodes = {
-      [ILA_IN_NEXT_IP6_REWRITE] = "ip6-rewrite",
-      [ILA_IN_NEXT_DROP] = "error-drop"
+      [ILA_ILA2SIR_NEXT_IP6_REWRITE] = "ip6-rewrite",
+      [ILA_ILA2SIR_NEXT_DROP] = "error-drop"
     },
 };
 
 typedef enum {
-  ILA_OUT_NEXT_IP6_LOOKUP,
-  ILA_OUT_NEXT_DROP,
-  ILA_OUT_N_NEXT,
-} ila_out_next_t;
+  ILA_SIR2ILA_NEXT_IP6_LOOKUP,
+  ILA_SIR2ILA_NEXT_DROP,
+  ILA_SIR2ILA_N_NEXT,
+} ila_sir2ila_next_t;
 
 u8 *
-format_ila_out_trace (u8 *s, va_list *args)
+format_ila_sir2ila_trace (u8 *s, va_list *args)
 {
-  return format(s, "ila-out");
+  return format(s, "ila-sir2ila");
 }
 
-static vlib_node_registration_t ila_out_node;
+static vlib_node_registration_t ila_sir2ila_node;
 
 static uword
-ila_out (vlib_main_t *vm,
+ila_sir2ila (vlib_main_t *vm,
         vlib_node_runtime_t *node,
         vlib_frame_t *frame)
 {
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
-  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_out_node.index);
+  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_sir2ila_node.index);
   __attribute__((unused)) ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
@@ -134,7 +134,7 @@ ila_out (vlib_main_t *vm,
       vlib_buffer_t *p0;
       u8 error0 = ILA_ERROR_NONE;
       __attribute__((unused)) ip6_header_t *ip60;
-      u32 next0 = ILA_OUT_NEXT_DROP;
+      u32 next0 = ILA_SIR2ILA_NEXT_DROP;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -158,21 +158,27 @@ ila_out (vlib_main_t *vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (ila_out_node, static) = {
-  .function = ila_out,
-  .name = "ila-out",
+VLIB_REGISTER_NODE (ila_sir2ila_node, static) = {
+  .function = ila_sir2ila,
+  .name = "ila-sir2ila",
   .vector_size = sizeof (u32),
 
-  .format_trace = format_ila_out_trace,
+  .format_trace = format_ila_sir2ila_trace,
 
   .n_errors = ILA_N_ERROR,
   .error_strings = ila_error_strings,
 
-  .n_next_nodes = ILA_OUT_N_NEXT,
+  .n_next_nodes = ILA_SIR2ILA_N_NEXT,
   .next_nodes = {
-      [ILA_OUT_NEXT_IP6_LOOKUP] = "ip6-lookup",
-      [ILA_OUT_NEXT_DROP] = "error-drop"
+      [ILA_SIR2ILA_NEXT_IP6_LOOKUP] = "ip6-lookup",
+      [ILA_SIR2ILA_NEXT_DROP] = "error-drop"
     },
+};
+
+VNET_IP6_UNICAST_FEATURE_INIT (ila_sir2ila, static) = {
+  .node_name = "ila-sir2ila",
+  .runs_before = {"ip6-lookup", 0},
+  .feature_index = &ila_main.ila_sir2ila_feature_index,
 };
 
 int ila_add_entry(u64 identifier, u64 locator,
@@ -183,6 +189,26 @@ int ila_add_entry(u64 identifier, u64 locator,
 
 int ila_interface(u32 sw_if_index, u8 disable)
 {
+  vlib_main_t * vm = vlib_get_main();
+  ila_main_t *ilm = &ila_main;
+  ip6_main_t * im = &ip6_main;
+  ip_lookup_main_t * lm = &im->lookup_main;
+  ip_config_main_t * cm = &lm->rx_config_mains[VNET_UNICAST];
+  vnet_config_main_t * vcm = &cm->config_main;
+  u32 ci, feature_index;
+
+  vec_validate_init_empty (cm->config_index_by_sw_if_index, sw_if_index, ~0);
+  ci = cm->config_index_by_sw_if_index[sw_if_index];
+  feature_index = ilm->ila_sir2ila_feature_index;
+
+  ci = ((disable)?vnet_config_del_feature:vnet_config_add_feature)
+          (vm, vcm,
+              ci,
+              feature_index,
+              /* config data */ 0,
+              /* # bytes of config data */ 0);
+
+  cm->config_index_by_sw_if_index[sw_if_index] = ci;
   return 0;
 }
 

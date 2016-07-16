@@ -268,6 +268,45 @@ ila_entry_command_fn (vlib_main_t *vm,
                           unformat_input_t *input,
                           vlib_cli_command_t *cmd)
 {
+  unformat_input_t _line_input, * line_input = &_line_input;
+  ila_add_del_entry_args_t args = {0};
+  ip6_address_t identifier, locator, sir;
+
+  args.local_adj_index = ~0;
+
+  if (! unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  if (unformat (line_input, "%U %U %U",
+		unformat_ip6_address, &identifier,
+		unformat_ip6_address, &locator,
+		unformat_ip6_address, &sir))
+    ;
+  else if (unformat (line_input, "del"))
+    args.del = 1;
+  else if (unformat (line_input, "adj-index %u", &args.local_adj_index))
+    ;
+  else
+    return clib_error_return (0, "parse error: '%U'",
+                              format_unformat_error, line_input);
+
+  unformat_free (line_input);
+
+  if (identifier.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0] != 0)
+    return clib_error_return (0, "Identifier upper 64 bits should be 0");
+
+  if (locator.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1] != 0)
+    return clib_error_return (0, "Locator lower 64 bits should be 0");
+
+  if (sir.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1] != 0)
+    return clib_error_return (0, "SIR lower 64 bits should be 0");
+
+  args.identifier = identifier.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1];
+  args.locator = locator.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0];
+  args.sir_prefix = sir.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0];
+
+  ila_add_del_entry(&args);
+
   return NULL;
 }
 

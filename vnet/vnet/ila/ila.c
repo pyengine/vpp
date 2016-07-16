@@ -74,7 +74,7 @@ ila_ila2sir (vlib_main_t *vm,
       adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
       ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
 
-      ip60->src_address.as_u64[0] = ie0->sir_prefix;
+      ip60->dst_address.as_u64[0] = ie0->sir_prefix;
       vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
@@ -112,10 +112,20 @@ typedef enum {
   ILA_SIR2ILA_N_NEXT,
 } ila_sir2ila_next_t;
 
+typedef struct {
+  u32 ila_index;
+  ip6_address_t initial_dst;
+} ila_sir2ila_trace_t;
+
 u8 *
 format_ila_sir2ila_trace (u8 *s, va_list *args)
 {
-  return format(s, "ila-sir2ila");
+  CLIB_UNUSED(vlib_main_t *vm) = va_arg (*args, vlib_main_t *);
+  CLIB_UNUSED(vlib_node_t *node) = va_arg (*args, vlib_node_t *);
+  ila_sir2ila_trace_t *t = va_arg (*args, ila_sir2ila_trace_t *);
+
+  return format(s, "SIR -> ILA entry index: %d initial_dst: %U", t->ila_index,
+                format_ip6_address, &t->initial_dst);
 }
 
 static vlib_node_registration_t ila_sir2ila_node;
@@ -125,9 +135,12 @@ ila_sir2ila (vlib_main_t *vm,
         vlib_node_runtime_t *node,
         vlib_frame_t *frame)
 {
+  ip6_main_t * im = &ip6_main;
+  ip_lookup_main_t * lm = &im->lookup_main;
+  ip_config_main_t * cm = &lm->rx_config_mains[VNET_UNICAST];
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
   vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_sir2ila_node.index);
-  __attribute__((unused)) ila_main_t *ilm = &ila_main;
+  ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -141,8 +154,10 @@ ila_sir2ila (vlib_main_t *vm,
       u32 pi0;
       vlib_buffer_t *p0;
       u8 error0 = ILA_ERROR_NONE;
-      __attribute__((unused)) ip6_header_t *ip60;
+      ip6_header_t *ip60;
       u32 next0 = ILA_SIR2ILA_NEXT_DROP;
+      BVT(clib_bihash_kv) kv, value;
+      ila_entry_t *e = NULL;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -152,10 +167,26 @@ ila_sir2ila (vlib_main_t *vm,
 
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
+      kv.key[0] = ip60->dst_address.as_u64[1];
+      kv.key[1] = 0;
+      kv.key[2] = 0;
+
+      if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value)) == 0)
+        {
+          e = &ilm->entries[value.value];
+        }
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
-
+          ila_sir2ila_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
+          tr->ila_index = e?(e - ilm->entries):~0;
+          tr->initial_dst = ip60->dst_address;
       }
+
+      ip60->dst_address.as_u64[0] = e?e->locator:ip60->dst_address.as_u64[0];
+
+      vnet_get_config_data (&cm->config_main,
+                            &p0->current_config_index,
+                            &next0, 0);
 
       p0->error = error_node->errors[error0];
       vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next, n_left_to_next, pi0, next0);
@@ -204,6 +235,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       e->ila_adj_index = args->local_adj_index;
       e->sir_prefix = args->sir_prefix;
 
+      clib_warning("Created entry with ID %lu with value %d", args->identifier, e - ilm->entries);
       kv.key[0] = args->identifier;
       kv.key[1] = 0;
       kv.key[2] = 0;
@@ -228,7 +260,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           memset(&route_args, 0, sizeof(route_args));
           route_args.table_index_or_table_id = 0;
           route_args.flags = IP6_ROUTE_FLAG_ADD;
-          route_args.dst_address.as_u64[0] = args->sir_prefix;
+          route_args.dst_address.as_u64[0] = args->locator;
           route_args.dst_address.as_u64[1] = args->identifier;
           route_args.dst_address_length = 128;
           route_args.adj_index = ~0;
@@ -258,7 +290,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           memset(&route_args, 0, sizeof(route_args));
           route_args.table_index_or_table_id = 0;
           route_args.flags = IP6_ROUTE_FLAG_DEL;
-          route_args.dst_address.as_u64[0] = args->sir_prefix;
+          route_args.dst_address.as_u64[0] = args->locator;
           route_args.dst_address.as_u64[1] = args->identifier;
           route_args.dst_address_length = 128;
           route_args.adj_index = ~0;

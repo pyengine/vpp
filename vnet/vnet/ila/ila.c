@@ -27,10 +27,19 @@ typedef enum {
   ILA_ILA2SIR_N_NEXT,
 } ila_ila2sir_next_t;
 
+typedef struct {
+  u32 ila_index;
+  ip6_address_t initial_dst;
+} ila_ila2sir_trace_t;
+
 u8 *
 format_ila_ila2sir_trace (u8 *s, va_list *args)
 {
-  return format(s, "ila-ila2sir");
+  CLIB_UNUSED(vlib_main_t *vm) = va_arg (*args, vlib_main_t *);
+  CLIB_UNUSED(vlib_node_t *node) = va_arg (*args, vlib_node_t *);
+  ila_ila2sir_trace_t *t = va_arg (*args, ila_ila2sir_trace_t *);
+  return format(s, "ILA -> SIR entry index: %d initial_dst: %U", t->ila_index,
+                format_ip6_address, &t->initial_dst);
 }
 
 static uword
@@ -45,10 +54,16 @@ unformat_half_ip6_address (unformat_input_t * input, va_list * args)
   if (a[0] > 0xFFFF || a[1] > 0xFFFF || a[2] > 0xFFFF|| a[3] > 0xFFFF)
     return 0;
 
-  *result = ((u64) clib_host_to_net_u16(a[3]) << 48) |
+  *result = clib_host_to_net_u64((((u64)a[0]) << 48) |
+                                 (((u64)a[1]) << 32) |
+                                 (((u64)a[2]) << 16) |
+                                 (((u64)a[3])));
+
+    /*
+      ((u64) clib_host_to_net_u16(a[3]) << 48) |
     ((u64) clib_host_to_net_u16(a[2]) << 32) |
     ((u64) clib_host_to_net_u16(a[1]) << 16) |
-    ((u64) clib_host_to_net_u16(a[0]));
+    ((u64) clib_host_to_net_u16(a[0]));*/
 
   return 1;
 }
@@ -94,12 +109,14 @@ ila_ila2sir (vlib_main_t *vm,
       adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
       ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
 
+      if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
+          ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
+          tr->ila_index = ie0?(ie0 - ilm->entries):~0;
+          tr->initial_dst = ip60->dst_address;
+      }
+
       ip60->dst_address.as_u64[0] = ie0->sir_prefix;
       vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
-
-      if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
-
-      }
 
       p0->error = error_node->errors[error0];
       vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next, n_left_to_next, pi0, next0);

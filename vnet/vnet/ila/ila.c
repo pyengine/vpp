@@ -355,8 +355,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       csum = ip_csum_add_even(csum, clib_host_to_net_u16(0x1000));
       csum = ip_csum_sub_even(csum, e->sir_prefix >> 32);
       csum = ip_csum_sub_even(csum, (u32)e->sir_prefix);
-      csum = ip_csum_fold(csum);
-      e->csum_modifier = (u16)csum;
+      e->csum_modifier = ~ip_csum_fold(csum);
 
       if (e->ila_adj_index != ~0)
         {
@@ -566,6 +565,44 @@ VLIB_CLI_COMMAND(ila_show_entries_command, static) = {
   .path = "ila show",
   .short_help = "show ila entries",
   .function = ila_show_entries_command_fn,
+};
+
+
+static clib_error_t *
+test_ila_addresses_fn (vlib_main_t *vm,
+                             unformat_input_t *input,
+                             vlib_cli_command_t *cmd)
+{
+  vnet_main_t * vnm = vnet_get_main();
+  ila_main_t *ilm = &ila_main;
+  u32 entry_index = 0;
+  ila_entry_t *e = NULL;
+
+  if (!unformat(input, "%d", &entry_index) || pool_is_free_index(ilm->entries, entry_index))
+      return clib_error_return (0, "Invalid entry index");
+
+  e = &ilm->entries[entry_index];
+  ip6_address_t sir_address, ila_address;
+  sir_address.as_u64[0] = e->sir_prefix;
+  sir_address.as_u64[1] = e->identifier;
+  ila_address.as_u64[0] = e->locator;
+  ila_address.as_u64[1] = e->identifier;
+
+  if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
+    ila_adjust_csum_sir2ila(e, &ila_address);
+
+  vlib_cli_output(vm, "        %U\n", format_ila_entry, vnm, NULL);
+  vlib_cli_output(vm, "entry:  %U\n", format_ila_entry, vnm, e);
+  vlib_cli_output(vm, "sir address: %U\n", format_ip6_address, &sir_address);
+  vlib_cli_output(vm, "ila address: %U\n", format_ip6_address, &ila_address);
+
+  return NULL;
+}
+
+VLIB_CLI_COMMAND(test_ila_addresses, static) = {
+  .path = "test ila addresses",
+  .short_help = "test ila addresses <ila_entry_index>",
+  .function = test_ila_addresses_fn,
 };
 
 

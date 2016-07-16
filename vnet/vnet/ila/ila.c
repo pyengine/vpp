@@ -292,18 +292,18 @@ ila_entry_command_fn (vlib_main_t *vm,
 
   unformat_free (line_input);
 
-  if (identifier.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0] != 0)
+  if (identifier.as_u64[0] != 0)
     return clib_error_return (0, "Identifier upper 64 bits should be 0");
 
-  if (locator.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1] != 0)
+  if (locator.as_u64[1] != 0)
     return clib_error_return (0, "Locator lower 64 bits should be 0");
 
-  if (sir.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1] != 0)
+  if (sir.as_u64[1] != 0)
     return clib_error_return (0, "SIR lower 64 bits should be 0");
 
-  args.identifier = identifier.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 1];
-  args.locator = locator.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0];
-  args.sir_prefix = sir.as_u64[CLIB_ARCH_IS_BIG_ENDIAN != 0];
+  args.identifier = identifier.as_u64[1];
+  args.locator = locator.as_u64[0];
+  args.sir_prefix = sir.as_u64[0];
 
   ila_add_del_entry(&args);
 

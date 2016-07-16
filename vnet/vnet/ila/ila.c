@@ -58,10 +58,10 @@ ila_ila2sir (vlib_main_t *vm,
       u32 pi0;
       vlib_buffer_t * p0;
       ip_adjacency_t * adj0;
-      __attribute__((unused)) ila_entry_t * ie0;
+      ila_entry_t * ie0;
       u8 error0 = ILA_ERROR_NONE;
-      __attribute__((unused)) ip6_header_t *ip60;
-      u32 next0 = ILA_ILA2SIR_NEXT_DROP;
+      ip6_header_t *ip60;
+      u32 next0 = ILA_ILA2SIR_NEXT_IP6_REWRITE;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -73,6 +73,9 @@ ila_ila2sir (vlib_main_t *vm,
       ip60 = vlib_buffer_get_current(p0);
       adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
       ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
+
+      ip60->src_address.as_u64[0] = ie0->sir_prefix;
+      vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
 

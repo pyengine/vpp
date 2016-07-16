@@ -345,7 +345,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       kv.value = e - ilm->entries;
       BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 1 /* is_add */);
 
-      ip_csum_t csum = 0;
+      ip_csum_t csum = 0xffff;
       csum = ip_csum_add_even(csum, e->locator >> 32);
       csum = ip_csum_add_even(csum, (u32) e->locator);
       csum = ip_csum_add_even(csum, clib_host_to_net_u16(0x1000));

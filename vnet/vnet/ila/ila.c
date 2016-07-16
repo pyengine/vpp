@@ -182,10 +182,12 @@ VNET_IP6_UNICAST_FEATURE_INIT (ila_sir2ila, static) = {
 int ila_add_del_entry(ila_add_del_entry_args_t *args)
 {
   ila_main_t *ilm = &ila_main;
+  ip6_main_t *im6 = &ip6_main;
   BVT(clib_bihash_kv) kv, value;
 
   if (!args->del)
     {
+
       ila_entry_t *e;
       pool_get(ilm->entries, e);
       e->identifier = args->identifier;
@@ -197,9 +199,34 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       kv.key[1] = 0;
       kv.key[2] = 0;
       kv.value = e - ilm->entries;
-      BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 0 /* is_add */);
+      BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 1 /* is_add */);
 
-      //TODO: Add the adjacency
+      if (e->ila_adj_index != ~0)
+        {
+          //This is a local entry - let's create a local adjacency
+          ip_adjacency_t adj;
+          uword *p;
+          ip6_add_del_route_args_t route_args;
+
+          //Adjacency
+          memset(&adj, 0, sizeof(adj));
+          adj.explicit_fib_index = ~0;
+          adj.lookup_next_index = IP6_LOOKUP_NEXT_ILA;
+          p = (uword *)&adj.rewrite_data[0];
+          *p = (uword) (e - ilm->entries);
+
+          //Route
+          memset(&route_args, 0, sizeof(route_args));
+          route_args.table_index_or_table_id = 0;
+          route_args.flags = IP6_ROUTE_FLAG_ADD;
+          route_args.dst_address.as_u64[0] = args->sir_prefix;
+          route_args.dst_address.as_u64[1] = args->identifier;
+          route_args.dst_address_length = 128;
+          route_args.adj_index = ~0;
+          route_args.add_adj = &adj;
+          route_args.n_add_adj = 1;
+          ip6_add_del_route(im6, &route_args);
+        }
     }
   else
     {
@@ -214,8 +241,24 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
         }
 
       e = &ilm->entries[value.value];
-      //TODO: Del the adjacency
 
+      if (e->ila_adj_index != ~0)
+        {
+          //Delete that route - Associated adjacency will be deleted too
+          ip6_add_del_route_args_t route_args;
+          memset(&route_args, 0, sizeof(route_args));
+          route_args.table_index_or_table_id = 0;
+          route_args.flags = IP6_ROUTE_FLAG_DEL;
+          route_args.dst_address.as_u64[0] = args->sir_prefix;
+          route_args.dst_address.as_u64[1] = args->identifier;
+          route_args.dst_address_length = 128;
+          route_args.adj_index = ~0;
+          route_args.add_adj = NULL;
+          route_args.n_add_adj = 0;
+          ip6_add_del_route(im6, &route_args);
+        }
+
+      BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 0 /* is_add */);
       pool_put(ilm->entries, e);
     }
   return 0;
@@ -277,18 +320,21 @@ ila_entry_command_fn (vlib_main_t *vm,
   if (! unformat_user (input, unformat_line_input, line_input))
     return 0;
 
-  if (unformat (line_input, "%U %U %U",
-		unformat_ip6_address, &identifier,
-		unformat_ip6_address, &locator,
-		unformat_ip6_address, &sir))
-    ;
-  else if (unformat (line_input, "del"))
-    args.del = 1;
-  else if (unformat (line_input, "adj-index %u", &args.local_adj_index))
-    ;
-  else
-    return clib_error_return (0, "parse error: '%U'",
-                              format_unformat_error, line_input);
+  while (unformat_check_input(line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "%U %U %U",
+                    unformat_ip6_address, &identifier,
+                    unformat_ip6_address, &locator,
+                    unformat_ip6_address, &sir))
+        ;
+      else if (unformat (line_input, "del"))
+        args.del = 1;
+      else if (unformat (line_input, "adj-index %u", &args.local_adj_index))
+        ;
+      else
+        return clib_error_return (0, "parse error: '%U'",
+                                  format_unformat_error, line_input);
+  }
 
   unformat_free (line_input);
 
@@ -305,7 +351,9 @@ ila_entry_command_fn (vlib_main_t *vm,
   args.locator = locator.as_u64[0];
   args.sir_prefix = sir.as_u64[0];
 
-  ila_add_del_entry(&args);
+  int ret;
+  if ((ret = ila_add_del_entry(&args)))
+    return clib_error_return (0, "ila_add_del_entry returned error %d", ret);
 
   return NULL;
 }

@@ -13,7 +13,6 @@ typedef struct {
   u64 identifier;
   u64 locator;
   u64 sir_prefix;
-  u32 adj_index;
   u32 ila_adj_index;
 } ila_entry_t;
 

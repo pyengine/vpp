@@ -33,6 +33,26 @@ format_ila_ila2sir_trace (u8 *s, va_list *args)
   return format(s, "ila-ila2sir");
 }
 
+static uword
+unformat_half_ip6_address (unformat_input_t * input, va_list * args)
+{
+  u64 * result = va_arg (*args, u64 *);
+  u32 a[4];
+
+  if (! unformat (input, "%x:%x:%x:%x", &a[0], &a[1], &a[2], &a[3]))
+    return 0;
+
+  if (a[0] > 0xFFFF || a[1] > 0xFFFF || a[2] > 0xFFFF|| a[3] > 0xFFFF)
+    return 0;
+
+  *result = ((u64) clib_host_to_net_u16(a[3]) << 48) |
+    ((u64) clib_host_to_net_u16(a[2]) << 32) |
+    ((u64) clib_host_to_net_u16(a[1]) << 16) |
+    ((u64) clib_host_to_net_u16(a[0]));
+
+  return 1;
+}
+
 static vlib_node_registration_t ila_ila2sir_node;
 
 static uword
@@ -354,7 +374,7 @@ ila_entry_command_fn (vlib_main_t *vm,
 {
   unformat_input_t _line_input, * line_input = &_line_input;
   ila_add_del_entry_args_t args = {0};
-  ip6_address_t identifier, locator, sir;
+  int ret;
 
   args.local_adj_index = ~0;
 
@@ -364,9 +384,9 @@ ila_entry_command_fn (vlib_main_t *vm,
   while (unformat_check_input(line_input) != UNFORMAT_END_OF_INPUT)
     {
       if (unformat (line_input, "%U %U %U",
-                    unformat_ip6_address, &identifier,
-                    unformat_ip6_address, &locator,
-                    unformat_ip6_address, &sir))
+                    unformat_half_ip6_address, &args.identifier,
+                    unformat_half_ip6_address, &args.locator,
+                    unformat_half_ip6_address, &args.sir_prefix))
         ;
       else if (unformat (line_input, "del"))
         args.del = 1;
@@ -379,20 +399,6 @@ ila_entry_command_fn (vlib_main_t *vm,
 
   unformat_free (line_input);
 
-  if (identifier.as_u64[0] != 0)
-    return clib_error_return (0, "Identifier upper 64 bits should be 0");
-
-  if (locator.as_u64[1] != 0)
-    return clib_error_return (0, "Locator lower 64 bits should be 0");
-
-  if (sir.as_u64[1] != 0)
-    return clib_error_return (0, "SIR lower 64 bits should be 0");
-
-  args.identifier = identifier.as_u64[1];
-  args.locator = locator.as_u64[0];
-  args.sir_prefix = sir.as_u64[0];
-
-  int ret;
   if ((ret = ila_add_del_entry(&args)))
     return clib_error_return (0, "ila_add_del_entry returned error %d", ret);
 

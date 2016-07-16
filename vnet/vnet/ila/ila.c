@@ -76,6 +76,28 @@ format_ila_ila2sir_trace (u8 *s, va_list *args)
 }
 
 static uword
+unformat_ila_csum_mode (unformat_input_t * input, va_list * args)
+{
+  ila_csum_mode_t * result = va_arg (*args, ila_csum_mode_t *);
+  if (unformat(input, "none") || unformat(input, "no-action"))
+    {
+      *result = ILA_CSUM_MODE_NO_ACTION;
+      return 1;
+    }
+  if (unformat(input, "neutral-map"))
+    {
+      *result = ILA_CSUM_MODE_NEUTRAL_MAP;
+      return 1;
+    }
+  if (unformat(input, "adjust-transport"))
+    {
+      *result = ILA_CSUM_MODE_ADJUST_TRANSPORT;
+      return 1;
+    }
+  return 0;
+}
+
+static uword
 unformat_half_ip6_address (unformat_input_t * input, va_list * args)
 {
   u64 * result = va_arg (*args, u64 *);
@@ -93,6 +115,22 @@ unformat_half_ip6_address (unformat_input_t * input, va_list * args)
                                  (((u64)a[3])));
 
   return 1;
+}
+
+static_always_inline void ila_adjust_csum_ila2sir(ila_entry_t *e, ip6_address_t *addr)
+{
+      ip_csum_t csum = addr->as_u16[7];
+      csum = ip_csum_sub_even(csum, e->csum_modifier);
+      addr->as_u16[7] = ip_csum_fold(csum);
+      addr->as_u8[8] &= 0xef;
+}
+
+static_always_inline void ila_adjust_csum_sir2ila(ila_entry_t *e, ip6_address_t *addr)
+{
+      ip_csum_t csum = addr->as_u16[7];
+      csum = ip_csum_add_even(csum, e->csum_modifier);
+      addr->as_u16[7] = ip_csum_fold(csum);
+      addr->as_u8[8] |= 0x10;
 }
 
 static vlib_node_registration_t ila_ila2sir_node;
@@ -144,6 +182,9 @@ ila_ila2sir (vlib_main_t *vm,
 
       ip60->dst_address.as_u64[0] = ie0->sir_prefix;
       vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
+
+      if (ie0->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
+        ila_adjust_csum_ila2sir(ie0, &ip60->dst_address);
 
       p0->error = error_node->errors[error0];
       vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next, n_left_to_next, pi0, next0);
@@ -248,6 +289,9 @@ ila_sir2ila (vlib_main_t *vm,
 
       ip60->dst_address.as_u64[0] = e?e->locator:ip60->dst_address.as_u64[0];
 
+      if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
+        ila_adjust_csum_sir2ila(e, &ip60->dst_address);
+
       vnet_get_config_data (&cm->config_main,
                             &p0->current_config_index,
                             &next0, 0);
@@ -289,22 +333,30 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
   ip6_main_t *im6 = &ip6_main;
   BVT(clib_bihash_kv) kv, value;
 
-  if (!args->del)
+  if (!args->is_del)
     {
-
       ila_entry_t *e;
       pool_get(ilm->entries, e);
       e->identifier = args->identifier;
       e->locator = args->locator;
       e->ila_adj_index = args->local_adj_index;
       e->sir_prefix = args->sir_prefix;
+      e->csum_mode = args->csum_mode;
 
-      clib_warning("Created entry with ID %lu with value %d", args->identifier, e - ilm->entries);
       kv.key[0] = args->identifier;
       kv.key[1] = 0;
       kv.key[2] = 0;
       kv.value = e - ilm->entries;
       BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 1 /* is_add */);
+
+      ip_csum_t csum = 0;
+      csum = ip_csum_add_even(csum, e->locator >> 32);
+      csum = ip_csum_add_even(csum, (u32) e->locator);
+      csum = ip_csum_add_even(csum, clib_host_to_net_u16(0x1000));
+      csum = ip_csum_sub_even(csum, e->sir_prefix >> 32);
+      csum = ip_csum_sub_even(csum, (u32)e->sir_prefix);
+      csum = ip_csum_fold(csum);
+      e->csum_modifier = (u16)csum;
 
       if (e->ila_adj_index != ~0)
         {
@@ -328,6 +380,11 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           route_args.adj_index = ~0;
           route_args.add_adj = &adj;
           route_args.n_add_adj = 1;
+
+          //Change destination if csum neutral is enabled
+          if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
+            ila_adjust_csum_sir2ila(e, &route_args.dst_address);
+
           ip6_add_del_route(im6, &route_args);
         }
     }
@@ -418,6 +475,7 @@ ila_entry_command_fn (vlib_main_t *vm,
   ila_add_del_entry_args_t args = {0};
   int ret;
 
+  args.csum_mode = ILA_CSUM_MODE_NO_ACTION;
   args.local_adj_index = ~0;
 
   if (! unformat_user (input, unformat_line_input, line_input))
@@ -431,8 +489,10 @@ ila_entry_command_fn (vlib_main_t *vm,
                     unformat_half_ip6_address, &args.sir_prefix))
         ;
       else if (unformat (line_input, "del"))
-        args.del = 1;
+        args.is_del = 1;
       else if (unformat (line_input, "adj-index %u", &args.local_adj_index))
+        ;
+      else if (unformat (line_input, "csum-mode %U", unformat_ila_csum_mode, &args.csum_mode))
         ;
       else
         return clib_error_return (0, "parse error: '%U'",
@@ -449,7 +509,8 @@ ila_entry_command_fn (vlib_main_t *vm,
 
 VLIB_CLI_COMMAND(ila_entry_command, static) = {
   .path = "ila entry",
-  .short_help = "ila entry <identifier> <locator> <sir-prefix> [adj-index <adj-index>] [del] ",
+  .short_help = "ila entry <identifier> <locator> <sir-prefix> [adj-index <adj-index>] "
+      "[csum-mode (no-action|neutral-map|transport-adjust)] [del] ",
   .function = ila_entry_command_fn,
 };
 

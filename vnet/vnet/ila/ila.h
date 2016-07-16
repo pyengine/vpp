@@ -9,11 +9,19 @@
 #include <vppinfra/bihash_24_8.h>
 #include <vppinfra/bihash_template.h>
 
+typedef enum {
+  ILA_CSUM_MODE_NO_ACTION,
+  ILA_CSUM_MODE_NEUTRAL_MAP,
+  ILA_CSUM_MODE_ADJUST_TRANSPORT
+} ila_csum_mode_t;
+
 typedef struct {
   u64 identifier;
   u64 locator;
   u64 sir_prefix;
   u32 ila_adj_index;
+  ila_csum_mode_t csum_mode;
+  u16 csum_modifier;
 } ila_entry_t;
 
 typedef struct {
@@ -32,7 +40,8 @@ typedef struct {
   u64 locator;
   u64 sir_prefix;
   u32 local_adj_index;
-  u8 del;
+  ila_csum_mode_t csum_mode;
+  u8 is_del;
 } ila_add_del_entry_args_t;
 
 int ila_add_del_entry(ila_add_del_entry_args_t *args);

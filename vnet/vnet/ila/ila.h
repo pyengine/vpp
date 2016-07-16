@@ -6,8 +6,22 @@
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 
-#include <vppinfra/bihash_8_8.h>
+#include <vppinfra/bihash_24_8.h>
 #include <vppinfra/bihash_template.h>
+
+#define ila_foreach_type                  \
+  _(IID, 0, "iid")       \
+  _(LUID, 1, "luid") \
+  _(VNID4, 2, "vnid-ip4")              \
+  _(VNID6, 3, "vnid-ip6")              \
+  _(VNIDM, 4, "vnid-multicast")
+
+typedef enum {
+#define _(i,n,s) ILA_TYPE_##i = n,
+  ila_foreach_type
+#undef _
+  ILA_N_TYPES
+} ila_type_t;
 
 typedef enum {
   ILA_CSUM_MODE_NO_ACTION,
@@ -16,9 +30,9 @@ typedef enum {
 } ila_csum_mode_t;
 
 typedef struct {
-  u64 identifier;
+  ila_type_t type;
+  ip6_address_t sir_address;
   u64 locator;
-  u64 sir_prefix;
   u32 ila_adj_index;
   ila_csum_mode_t csum_mode;
   u16 csum_modifier;
@@ -29,16 +43,16 @@ typedef struct {
 
   u64 lookup_table_nbuckets;
   u64 lookup_table_size;
-  clib_bihash_8_8_t id_to_entry_table;
+  clib_bihash_24_8_t id_to_entry_table;
 
   u32 ila_sir2ila_feature_index;
 } ila_main_t;
 
 
 typedef struct {
-  u64 identifier;
+  ila_type_t type;
+  ip6_address_t sir_address;
   u64 locator;
-  u64 sir_prefix;
   u32 local_adj_index;
   ila_csum_mode_t csum_mode;
   u8 is_del;

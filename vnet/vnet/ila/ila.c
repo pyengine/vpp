@@ -68,6 +68,20 @@ format_csum_mode(u8 *s, va_list *va)
   return format(s, "%s", txt);
 }
 
+
+u8 *
+format_ila_type (u8 *s, va_list *args)
+{
+  ila_type_t t = va_arg(*args, ila_type_t);
+#define _(i,n,st) \
+  if (t == ILA_TYPE_##i) \
+    return format(s, st);
+ila_foreach_type
+#undef _
+
+  return format(s, "invalid type");
+}
+
 static u8 *
 format_ila_entry(u8 *s, va_list *va)
 {
@@ -75,20 +89,20 @@ format_ila_entry(u8 *s, va_list *va)
   ila_entry_t *e = va_arg(*va, ila_entry_t *);
 
   if(!e) {
-    return format(s, "%=20s%=20s%=20s%=16s%=18s", "Identifier", "Locator", "SIR prefix", "Adjacency Index", "Checksum Mode");
+    return format(s, "%=10s%=20s%=20s%=16s%=18s", "Type", "SIR Address", "Locator", "Adjacency Index", "Checksum Mode");
   } else if(vnm) {
     if(e->ila_adj_index == ~0) {
       return format(s, "%U %U %U %15s    %U",
-        format_half_ip6_address, e->identifier,
+        format_ila_type, e->type,
+        format_ip6_address, &e->sir_address,
         format_half_ip6_address, e->locator,
-        format_half_ip6_address, e->sir_prefix,
         "n/a",
         format_csum_mode, e->csum_mode);
     } else {
       return format(s, "%U %U %U %15d    %U",
-        format_half_ip6_address, e->identifier,
+        format_ila_type, e->type,
+        format_ip6_address, &e->sir_address,
         format_half_ip6_address, e->locator,
-        format_half_ip6_address, e->sir_prefix,
         e->ila_adj_index,
         format_csum_mode, e->csum_mode);
     }
@@ -105,6 +119,22 @@ format_ila_ila2sir_trace (u8 *s, va_list *args)
   ila_ila2sir_trace_t *t = va_arg (*args, ila_ila2sir_trace_t *);
   return format(s, "ILA -> SIR entry index: %d initial_dst: %U", t->ila_index,
                 format_ip6_address, &t->initial_dst);
+}
+
+static uword
+unformat_ila_type (unformat_input_t * input, va_list * args)
+{
+  ila_type_t * result = va_arg (*args, ila_type_t *);
+#define _(i,n,s) \
+  if (unformat(input, s)) \
+      { \
+        *result = ILA_TYPE_##i; \
+        return 1;\
+      }
+
+ila_foreach_type
+#undef _
+  return 0;
 }
 
 static uword
@@ -165,6 +195,15 @@ static_always_inline void ila_adjust_csum_sir2ila(ila_entry_t *e, ip6_address_t 
       addr->as_u8[8] |= 0x10;
 }
 
+static_always_inline void ila_address(ila_entry_t *e, ip6_address_t *addr)
+{
+  addr->as_u64[0] = e->locator;
+  addr->as_u64[1] = e->sir_address.as_u64[1];
+
+  if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
+     ila_adjust_csum_sir2ila(e, addr);
+}
+
 static vlib_node_registration_t ila_ila2sir_node;
 
 static uword
@@ -212,7 +251,7 @@ ila_ila2sir (vlib_main_t *vm,
           tr->initial_dst = ip60->dst_address;
       }
 
-      ip60->dst_address.as_u64[0] = ie0->sir_prefix;
+      ip60->dst_address.as_u64[0] = ie0->sir_address.as_u64[0];
       vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
 
       if (ie0->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
@@ -304,7 +343,9 @@ ila_sir2ila (vlib_main_t *vm,
 
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
-      kv.key = ip60->dst_address.as_u64[1];
+      kv.key[0] = ip60->dst_address.as_u64[0];
+      kv.key[1] = ip60->dst_address.as_u64[1];
+      kv.key[2] = 0;
 
       if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value)) == 0)
         {
@@ -367,13 +408,15 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
     {
       ila_entry_t *e;
       pool_get(ilm->entries, e);
-      e->identifier = args->identifier;
+      e->type = args->type;
+      e->sir_address = args->sir_address;
       e->locator = args->locator;
       e->ila_adj_index = args->local_adj_index;
-      e->sir_prefix = args->sir_prefix;
       e->csum_mode = args->csum_mode;
 
-      kv.key = args->identifier;
+      kv.key[0] = e->sir_address.as_u64[0];
+      kv.key[1] = e->sir_address.as_u64[1];
+      kv.key[2] = 0;
       kv.value = e - ilm->entries;
       BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 1 /* is_add */);
 
@@ -381,8 +424,8 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       csum = ip_csum_add_even(csum, e->locator >> 32);
       csum = ip_csum_add_even(csum, (u32) e->locator);
       csum = ip_csum_add_even(csum, clib_host_to_net_u16(0x1000));
-      csum = ip_csum_sub_even(csum, e->sir_prefix >> 32);
-      csum = ip_csum_sub_even(csum, (u32)e->sir_prefix);
+      csum = ip_csum_sub_even(csum, e->sir_address.as_u32[0]);
+      csum = ip_csum_sub_even(csum, e->sir_address.as_u32[1]);
       e->csum_modifier = ~ip_csum_fold(csum);
 
       if (e->ila_adj_index != ~0)
@@ -401,16 +444,11 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           memset(&route_args, 0, sizeof(route_args));
           route_args.table_index_or_table_id = 0;
           route_args.flags = IP6_ROUTE_FLAG_ADD;
-          route_args.dst_address.as_u64[0] = args->locator;
-          route_args.dst_address.as_u64[1] = args->identifier;
           route_args.dst_address_length = 128;
           route_args.adj_index = ~0;
           route_args.add_adj = &adj;
           route_args.n_add_adj = 1;
-
-          //Change destination if csum neutral is enabled
-          if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
-            ila_adjust_csum_sir2ila(e, &route_args.dst_address);
+          ila_address(e, &route_args.dst_address);
 
           ip6_add_del_route(im6, &route_args);
         }
@@ -418,7 +456,9 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
   else
     {
       ila_entry_t *e;
-      kv.key = args->identifier;
+      kv.key[0] = args->sir_address.as_u64[0];
+      kv.key[1] = args->sir_address.as_u64[1];
+      kv.key[2] = 0;
 
       if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value) < 0))
         {
@@ -434,12 +474,12 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           memset(&route_args, 0, sizeof(route_args));
           route_args.table_index_or_table_id = 0;
           route_args.flags = IP6_ROUTE_FLAG_DEL;
-          route_args.dst_address.as_u64[0] = args->locator;
-          route_args.dst_address.as_u64[1] = args->identifier;
           route_args.dst_address_length = 128;
           route_args.adj_index = ~0;
           route_args.add_adj = NULL;
           route_args.n_add_adj = 0;
+          ila_address(e, &route_args.dst_address);
+
           ip6_add_del_route(im6, &route_args);
         }
 
@@ -500,6 +540,7 @@ ila_entry_command_fn (vlib_main_t *vm,
   ila_add_del_entry_args_t args = {0};
   int ret;
 
+  args.type = ILA_TYPE_IID;
   args.csum_mode = ILA_CSUM_MODE_NO_ACTION;
   args.local_adj_index = ~0;
 
@@ -508,21 +549,22 @@ ila_entry_command_fn (vlib_main_t *vm,
 
   while (unformat_check_input(line_input) != UNFORMAT_END_OF_INPUT)
     {
-      if (unformat (line_input, "%U %U %U",
-                    unformat_half_ip6_address, &args.identifier,
-                    unformat_half_ip6_address, &args.locator,
-                    unformat_half_ip6_address, &args.sir_prefix))
+      if (unformat(line_input, "type %U", unformat_ila_type, &args.type))
         ;
-      else if (unformat (line_input, "del"))
-        args.is_del = 1;
+      else if (unformat(line_input, "sir-address %U", unformat_ip6_address, &args.sir_address))
+        ;
+      else if (unformat(line_input, "locator %U", unformat_half_ip6_address, &args.locator))
+        ;
       else if (unformat (line_input, "adj-index %u", &args.local_adj_index))
         ;
       else if (unformat (line_input, "csum-mode %U", unformat_ila_csum_mode, &args.csum_mode))
         ;
+      else if (unformat (line_input, "del"))
+        args.is_del = 1;
       else
         return clib_error_return (0, "parse error: '%U'",
-                                  format_unformat_error, line_input);
-  }
+                                        format_unformat_error, line_input);
+    }
 
   unformat_free (line_input);
 
@@ -534,7 +576,7 @@ ila_entry_command_fn (vlib_main_t *vm,
 
 VLIB_CLI_COMMAND(ila_entry_command, static) = {
   .path = "ila entry",
-  .short_help = "ila entry <identifier> <locator> <sir-prefix> [adj-index <adj-index>] "
+  .short_help = "ila entry [type <type>] [sir-address <address>] [locator <locator>] [adj-index <adj-index>] "
       "[csum-mode (no-action|neutral-map|transport-adjust)] [del] ",
   .function = ila_entry_command_fn,
 };
@@ -588,7 +630,7 @@ ila_show_entries_command_fn (vlib_main_t *vm,
 }
 
 VLIB_CLI_COMMAND(ila_show_entries_command, static) = {
-  .path = "ila show",
+  .path = "show ila entries",
   .short_help = "show ila entries",
   .function = ila_show_entries_command_fn,
 };
@@ -608,18 +650,16 @@ test_ila_addresses_fn (vlib_main_t *vm,
       return clib_error_return (0, "Invalid entry index");
 
   e = &ilm->entries[entry_index];
-  ip6_address_t sir_address, ila_address;
-  sir_address.as_u64[0] = e->sir_prefix;
-  sir_address.as_u64[1] = e->identifier;
+  ip6_address_t ila_address;
   ila_address.as_u64[0] = e->locator;
-  ila_address.as_u64[1] = e->identifier;
+  ila_address.as_u64[1] = e->sir_address.as_u64[1];
 
   if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
     ila_adjust_csum_sir2ila(e, &ila_address);
 
   vlib_cli_output(vm, "        %U\n", format_ila_entry, vnm, NULL);
   vlib_cli_output(vm, "entry:  %U\n", format_ila_entry, vnm, e);
-  vlib_cli_output(vm, "sir address: %U\n", format_ip6_address, &sir_address);
+  vlib_cli_output(vm, "sir address: %U\n", format_ip6_address, &e->sir_address);
   vlib_cli_output(vm, "ila address: %U\n", format_ip6_address, &ila_address);
 
   return NULL;

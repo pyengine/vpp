@@ -32,6 +32,11 @@ typedef struct {
   ip6_address_t initial_dst;
 } ila_ila2sir_trace_t;
 
+static ila_entry_t ila_default_entry = {
+    .csum_mode = ILA_CSUM_MODE_NO_ACTION,
+    .type = ILA_TYPE_IID,
+};
+
 static u8 *
 format_half_ip6_address(u8 *s, va_list *va)
 {
@@ -351,14 +356,19 @@ ila_sir2ila (vlib_main_t *vm,
         {
           e = &ilm->entries[value.value];
         }
+      else
+        {
+          e = &ila_default_entry;
+        }
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
           ila_sir2ila_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
-          tr->ila_index = e?(e - ilm->entries):~0;
+          tr->ila_index = (e != &ila_default_entry)?(e - ilm->entries):~0;
           tr->initial_dst = ip60->dst_address;
       }
 
-      ip60->dst_address.as_u64[0] = e?e->locator:ip60->dst_address.as_u64[0];
+      //TODO: Implement all types
+      ip60->dst_address.as_u64[0] = (e->type == ILA_TYPE_LUID)?e->locator:ip60->dst_address.as_u64[0];
 
       if (e->csum_mode == ILA_CSUM_MODE_NEUTRAL_MAP)
         ila_adjust_csum_sir2ila(e, &ip60->dst_address);

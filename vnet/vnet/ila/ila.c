@@ -447,7 +447,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           //Adjacency
           memset(&adj, 0, sizeof(adj));
           adj.explicit_fib_index = ~0;
-          adj.lookup_next_index = IP6_LOOKUP_NEXT_ILA;
+          adj.lookup_next_index = ilm->ip6_lookup_next_index;
 	  adj.ila.entry_index = e - ilm->entries;
 
           //Route
@@ -536,6 +536,9 @@ clib_error_t *ila_init (vlib_main_t *vm) {
                           ilm->lookup_table_nbuckets,
                           ilm->lookup_table_size);
 
+  vlib_node_t * ip6_lookup_node = vlib_get_node_by_name(vm, (u8 *)"ip6-lookup");
+
+  ilm->ip6_lookup_next_index = vlib_node_add_next(vm, ip6_lookup_node->index, ila_ila2sir_node.index);
   return NULL;
 }
 

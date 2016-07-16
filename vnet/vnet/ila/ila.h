@@ -46,6 +46,8 @@ typedef struct {
   clib_bihash_24_8_t id_to_entry_table;
 
   u32 ila_sir2ila_feature_index;
+
+  u32 ip6_lookup_next_index;
 } ila_main_t;
 
 

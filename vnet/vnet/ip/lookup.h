@@ -93,7 +93,6 @@ typedef enum {
   IP6_LOOKUP_NEXT_HOP_BY_HOP = IP_LOOKUP_N_NEXT,
   IP6_LOOKUP_NEXT_ADD_HOP_BY_HOP,
   IP6_LOOKUP_NEXT_POP_HOP_BY_HOP,
-  IP6_LOOKUP_NEXT_ILA,
   IP6_LOOKUP_N_NEXT,
 } ip6_lookup_next_t;
 
@@ -126,7 +125,6 @@ typedef enum {
     [IP6_LOOKUP_NEXT_HOP_BY_HOP] = "ip6-hop-by-hop",		\
     [IP6_LOOKUP_NEXT_ADD_HOP_BY_HOP] = "ip6-add-hop-by-hop",	\
     [IP6_LOOKUP_NEXT_POP_HOP_BY_HOP] = "ip6-pop-hop-by-hop",	\
-    [IP6_LOOKUP_NEXT_ILA] = "ila-ila2sir"                        \
 }
 
 /* Flow hash configuration */

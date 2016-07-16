@@ -27,7 +27,16 @@ typedef struct {
   u32 ila_sir2ila_feature_index;
 } ila_main_t;
 
-int ila_add_entry(u64 identifier, u64 locator, u64 sir_prefix, u32 *entry_index);
+
+typedef struct {
+  u64 identifier;
+  u64 locator;
+  u64 sir_prefix;
+  u32 local_adj_index;
+  u8 del;
+} ila_add_del_entry_args_t;
+
+int ila_add_del_entry(ila_add_del_entry_args_t *args);
 int ila_interface(u32 sw_if_index, u8 disable);
 
 #endif //ILA_H

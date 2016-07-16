@@ -99,7 +99,6 @@ VLIB_REGISTER_NODE (ila_ila2sir_node, static) = {
 };
 
 typedef enum {
-  ILA_SIR2ILA_NEXT_IP6_LOOKUP,
   ILA_SIR2ILA_NEXT_DROP,
   ILA_SIR2ILA_N_NEXT,
 } ila_sir2ila_next_t;
@@ -170,7 +169,6 @@ VLIB_REGISTER_NODE (ila_sir2ila_node, static) = {
 
   .n_next_nodes = ILA_SIR2ILA_N_NEXT,
   .next_nodes = {
-      [ILA_SIR2ILA_NEXT_IP6_LOOKUP] = "ip6-lookup",
       [ILA_SIR2ILA_NEXT_DROP] = "error-drop"
     },
 };
@@ -181,9 +179,45 @@ VNET_IP6_UNICAST_FEATURE_INIT (ila_sir2ila, static) = {
   .feature_index = &ila_main.ila_sir2ila_feature_index,
 };
 
-int ila_add_entry(u64 identifier, u64 locator,
-                  u64 sir_prefix, u32 *entry_index)
+int ila_add_del_entry(ila_add_del_entry_args_t *args)
 {
+  ila_main_t *ilm = &ila_main;
+  BVT(clib_bihash_kv) kv, value;
+
+  if (!args->del)
+    {
+      ila_entry_t *e;
+      pool_get(ilm->entries, e);
+      e->identifier = args->identifier;
+      e->locator = args->locator;
+      e->ila_adj_index = args->local_adj_index;
+      e->sir_prefix = args->sir_prefix;
+
+      kv.key[0] = args->identifier;
+      kv.key[1] = 0;
+      kv.key[2] = 0;
+      kv.value = e - ilm->entries;
+      BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 0 /* is_add */);
+
+      //TODO: Add the adjacency
+    }
+  else
+    {
+      ila_entry_t *e;
+      kv.key[0] = args->identifier;
+      kv.key[1] = 0;
+      kv.key[2] = 0;
+
+      if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value) < 0))
+        {
+          return -1;
+        }
+
+      e = &ilm->entries[value.value];
+      //TODO: Del the adjacency
+
+      pool_put(ilm->entries, e);
+    }
   return 0;
 }
 
@@ -248,6 +282,23 @@ ila_interface_command_fn (vlib_main_t *vm,
                           unformat_input_t *input,
                           vlib_cli_command_t *cmd)
 {
+  vnet_main_t * vnm = vnet_get_main();
+  u32 sw_if_index = ~0;
+  u8 disable = 0;
+
+  if (!unformat (input, "%U", unformat_vnet_sw_interface,
+                 vnm, &sw_if_index)) {
+      return clib_error_return (0, "Invalid interface name");
+  }
+
+  if (unformat(input, "disable")) {
+      disable = 1;
+  }
+
+  int ret;
+  if ((ret = ila_interface(sw_if_index, disable)))
+    return clib_error_return (0, "ila_interface returned error %d", ret);
+
   return NULL;
 }
 

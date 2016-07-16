@@ -6,7 +6,7 @@
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 
-#include <vppinfra/bihash_24_8.h>
+#include <vppinfra/bihash_8_8.h>
 #include <vppinfra/bihash_template.h>
 
 typedef enum {
@@ -29,7 +29,7 @@ typedef struct {
 
   u64 lookup_table_nbuckets;
   u64 lookup_table_size;
-  BVT(clib_bihash) id_to_entry_table;
+  clib_bihash_8_8_t id_to_entry_table;
 
   u32 ila_sir2ila_feature_index;
 } ila_main_t;

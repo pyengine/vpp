@@ -272,9 +272,7 @@ ila_sir2ila (vlib_main_t *vm,
 
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
-      kv.key[0] = ip60->dst_address.as_u64[1];
-      kv.key[1] = 0;
-      kv.key[2] = 0;
+      kv.key = ip60->dst_address.as_u64[1];
 
       if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value)) == 0)
         {
@@ -343,9 +341,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
       e->sir_prefix = args->sir_prefix;
       e->csum_mode = args->csum_mode;
 
-      kv.key[0] = args->identifier;
-      kv.key[1] = 0;
-      kv.key[2] = 0;
+      kv.key = args->identifier;
       kv.value = e - ilm->entries;
       BV(clib_bihash_add_del) (&ilm->id_to_entry_table, &kv, 1 /* is_add */);
 
@@ -390,9 +386,7 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
   else
     {
       ila_entry_t *e;
-      kv.key[0] = args->identifier;
-      kv.key[1] = 0;
-      kv.key[2] = 0;
+      kv.key = args->identifier;
 
       if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value) < 0))
         {

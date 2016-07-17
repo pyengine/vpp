@@ -191,7 +191,6 @@ ila_ila2sir (vlib_main_t *vm,
   ip4_main_t * im = &ip4_main;
   ip_lookup_main_t * lm = &im->lookup_main;
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
-  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_ila2sir_node.index);
   ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
@@ -201,15 +200,61 @@ ila_ila2sir (vlib_main_t *vm,
   while (n_left_from > 0) {
     vlib_get_next_frame(vm, node, next_index, to_next, n_left_to_next);
 
+    while (n_left_from >= 4 && n_left_to_next >=2) {
+        u32 pi0, pi1;
+        vlib_buffer_t *p0, *p1;
+        ip_adjacency_t *adj0, *adj1;
+        ila_entry_t *ie0, *ie1;
+        ip6_header_t *ip60, *ip61;
+
+        pi0 = to_next[0] = from[0];
+        pi1 = to_next[1] = from[1];
+        from += 2;
+        n_left_from -= 2;
+        to_next += 2;
+        n_left_to_next -= 2;
+
+        p0 = vlib_get_buffer(vm, pi0);
+        p1 = vlib_get_buffer(vm, pi1);
+        ip60 = vlib_buffer_get_current(p0);
+        ip61 = vlib_buffer_get_current(p1);
+        adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
+        adj1 = ip_get_adjacency (lm, vnet_buffer(p1)->ip.adj_index[VLIB_TX]);
+        ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
+        ie1 = pool_elt_at_index (ilm->entries, adj1->ila.entry_index);
+
+        if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
+            ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
+            tr->ila_index = ie0?(ie0 - ilm->entries):~0;
+            tr->initial_dst = ip60->dst_address;
+        }
+
+        if (PREDICT_FALSE(p1->flags & VLIB_BUFFER_IS_TRACED)) {
+            ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p1, sizeof(*tr));
+            tr->ila_index = ie1?(ie1 - ilm->entries):~0;
+            tr->initial_dst = ip61->dst_address;
+        }
+
+        ip60->dst_address.as_u64[0] = ie0->sir_address.as_u64[0];
+        ip60->dst_address.as_u64[1] = ie0->sir_address.as_u64[1];
+        ip61->dst_address.as_u64[0] = ie1->sir_address.as_u64[0];
+        ip61->dst_address.as_u64[1] = ie1->sir_address.as_u64[1];
+
+        vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
+        vnet_buffer(p1)->ip.adj_index[VLIB_TX] = ie1->ila_adj_index;
+
+        vlib_validate_buffer_enqueue_x2(vm, node, next_index, to_next,
+                                           n_left_to_next, pi0, pi1,
+                                           ILA_ILA2SIR_NEXT_IP6_REWRITE, ILA_ILA2SIR_NEXT_IP6_REWRITE);
+    }
+
     /* Single loop */
     while (n_left_from > 0 && n_left_to_next > 0) {
       u32 pi0;
       vlib_buffer_t * p0;
       ip_adjacency_t * adj0;
       ila_entry_t * ie0;
-      u8 error0 = ILA_ERROR_NONE;
       ip6_header_t *ip60;
-      u32 next0 = ILA_ILA2SIR_NEXT_IP6_REWRITE;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -232,8 +277,8 @@ ila_ila2sir (vlib_main_t *vm,
       ip60->dst_address.as_u64[1] = ie0->sir_address.as_u64[1];
       vnet_buffer(p0)->ip.adj_index[VLIB_TX] = ie0->ila_adj_index;
 
-      p0->error = error_node->errors[error0];
-      vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next, n_left_to_next, pi0, next0);
+      vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,
+                                      n_left_to_next, pi0, ILA_ILA2SIR_NEXT_IP6_REWRITE);
     }
     vlib_put_next_frame(vm, node, next_index, n_left_to_next);
   }
@@ -290,7 +335,6 @@ ila_sir2ila (vlib_main_t *vm,
   ip_lookup_main_t * lm = &im->lookup_main;
   ip_config_main_t * cm = &lm->rx_config_mains[VNET_UNICAST];
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
-  vlib_node_runtime_t *error_node = vlib_node_get_runtime(vm, ila_sir2ila_node.index);
   ila_main_t *ilm = &ila_main;
 
   from = vlib_frame_vector_args(frame);
@@ -300,15 +344,78 @@ ila_sir2ila (vlib_main_t *vm,
   while (n_left_from > 0) {
     vlib_get_next_frame(vm, node, next_index, to_next, n_left_to_next);
 
+    while (n_left_from >= 4 && n_left_to_next >=2) {
+        u32 pi0, pi1;
+        vlib_buffer_t *p0, *p1;
+        ip6_header_t *ip60, *ip61;
+        u32 next0 = ILA_SIR2ILA_NEXT_DROP;
+        u32 next1 = ILA_SIR2ILA_NEXT_DROP;
+        BVT(clib_bihash_kv) kv0, value0;
+        BVT(clib_bihash_kv) kv1, value1;
+        ila_entry_t *ie0 = &ila_default_entry;
+        ila_entry_t *ie1 = &ila_default_entry;
+
+        pi0 = to_next[0] = from[0];
+        pi1 = to_next[1] = from[1];
+        from += 2;
+        n_left_from -= 2;
+        to_next += 2;
+        n_left_to_next -= 2;
+
+        p0 = vlib_get_buffer(vm, pi0);
+        p1 = vlib_get_buffer(vm, pi1);
+        ip60 = vlib_buffer_get_current(p0);
+        ip61 = vlib_buffer_get_current(p1);
+        kv0.key[0] = ip60->dst_address.as_u64[0];
+        kv0.key[1] = ip60->dst_address.as_u64[1];
+        kv0.key[2] = 0;
+        kv1.key[0] = ip61->dst_address.as_u64[0];
+        kv1.key[1] = ip61->dst_address.as_u64[1];
+        kv1.key[2] = 0;
+
+        if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv0, &value0)) == 0)
+          ie0 = &ilm->entries[value0.value];
+
+        if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv1, &value1)) == 0)
+          ie1 = &ilm->entries[value1.value];
+
+        if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
+            ila_sir2ila_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
+            tr->ila_index = (ie0 != &ila_default_entry)?(ie0 - ilm->entries):~0;
+            tr->initial_dst = ip60->dst_address;
+        }
+
+        if (PREDICT_FALSE(p1->flags & VLIB_BUFFER_IS_TRACED)) {
+            ila_sir2ila_trace_t *tr = vlib_add_trace(vm, node, p1, sizeof(*tr));
+            tr->ila_index = (ie1 != &ila_default_entry)?(ie1 - ilm->entries):~0;
+            tr->initial_dst = ip61->dst_address;
+        }
+
+        ip60->dst_address.as_u64[0] = ie0->ila_address.as_u64[0];
+        ip60->dst_address.as_u64[1] = ie0->ila_address.as_u64[1];
+        ip61->dst_address.as_u64[0] = ie1->ila_address.as_u64[0];
+        ip61->dst_address.as_u64[1] = ie1->ila_address.as_u64[1];
+
+        vnet_get_config_data (&cm->config_main,
+                              &p0->current_config_index,
+                              &next0, 0);
+
+        vnet_get_config_data (&cm->config_main,
+                              &p1->current_config_index,
+                              &next1, 0);
+
+        vlib_validate_buffer_enqueue_x2(vm, node, next_index, to_next,
+                                        n_left_to_next, pi0, pi1, next0, next1);
+    }
+
     /* Single loop */
     while (n_left_from > 0 && n_left_to_next > 0) {
       u32 pi0;
       vlib_buffer_t *p0;
-      u8 error0 = ILA_ERROR_NONE;
       ip6_header_t *ip60;
       u32 next0 = ILA_SIR2ILA_NEXT_DROP;
-      BVT(clib_bihash_kv) kv, value;
-      ila_entry_t *e = NULL;
+      BVT(clib_bihash_kv) kv0, value0;
+      ila_entry_t *ie0 = &ila_default_entry;
 
       pi0 = to_next[0] = from[0];
       from += 1;
@@ -318,34 +425,27 @@ ila_sir2ila (vlib_main_t *vm,
 
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
-      kv.key[0] = ip60->dst_address.as_u64[0];
-      kv.key[1] = ip60->dst_address.as_u64[1];
-      kv.key[2] = 0;
+      kv0.key[0] = ip60->dst_address.as_u64[0];
+      kv0.key[1] = ip60->dst_address.as_u64[1];
+      kv0.key[2] = 0;
 
-      if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv, &value)) == 0)
-        {
-          e = &ilm->entries[value.value];
-        }
-      else
-        {
-          e = &ila_default_entry;
-        }
+      if ((BV(clib_bihash_search)(&ilm->id_to_entry_table, &kv0, &value0)) == 0)
+          ie0 = &ilm->entries[value0.value];
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
           ila_sir2ila_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
-          tr->ila_index = (e != &ila_default_entry)?(e - ilm->entries):~0;
+          tr->ila_index = (ie0 != &ila_default_entry)?(ie0 - ilm->entries):~0;
           tr->initial_dst = ip60->dst_address;
       }
 
       //This operation should do everything for any type (except vnid4 obviously)
-      ip60->dst_address.as_u64[0] = e->ila_address.as_u64[0];
-      ip60->dst_address.as_u64[1] = e->ila_address.as_u64[1];
+      ip60->dst_address.as_u64[0] = ie0->ila_address.as_u64[0];
+      ip60->dst_address.as_u64[1] = ie0->ila_address.as_u64[1];
 
       vnet_get_config_data (&cm->config_main,
                             &p0->current_config_index,
                             &next0, 0);
 
-      p0->error = error_node->errors[error0];
       vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next, n_left_to_next, pi0, next0);
     }
     vlib_put_next_frame(vm, node, next_index, n_left_to_next);

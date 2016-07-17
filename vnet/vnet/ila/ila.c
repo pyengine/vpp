@@ -548,6 +548,9 @@ ila_entry_command_fn (vlib_main_t *vm,
 {
   unformat_input_t _line_input, * line_input = &_line_input;
   ila_add_del_entry_args_t args = {0};
+  ip6_address_t next_hop;
+  u8 next_hop_set = 0;
+  ip6_main_t *im6 = &ip6_main;
   int ret;
 
   args.type = ILA_TYPE_IID;
@@ -571,6 +574,8 @@ ila_entry_command_fn (vlib_main_t *vm,
         ;
       else if (unformat (line_input, "vnid %x", &args.vnid))
         ;
+      else if (unformat (line_input, "next-hop %U", unformat_ip6_address, &next_hop))
+        next_hop_set = 1;
       else if (unformat (line_input, "del"))
         args.is_del = 1;
       else
@@ -580,6 +585,22 @@ ila_entry_command_fn (vlib_main_t *vm,
 
   unformat_free (line_input);
 
+  if (next_hop_set) {
+      if (args.local_adj_index != ~0)
+        return clib_error_return (0, "Specified both next hop and adjacency index");
+
+      u32 ai = ip6_get_route(im6, 0, 0, &next_hop, 128);
+      if (ai == 0)
+          return clib_error_return (0, "No route to next-hop %U", format_ip6_address, &next_hop);
+
+      ip_lookup_main_t *lm6 = &ip6_main.lookup_main;
+      ip_adjacency_t *adj6 = ip_get_adjacency(lm6, ai);
+      if (adj6->lookup_next_index != IP_LOOKUP_NEXT_REWRITE) {
+          return clib_error_return (0, "Next-Hop route has to be a rewrite route");
+      }
+      args.local_adj_index = ai;
+  }
+
   if ((ret = ila_add_del_entry(&args)))
     return clib_error_return (0, "ila_add_del_entry returned error %d", ret);
 
@@ -588,8 +609,9 @@ ila_entry_command_fn (vlib_main_t *vm,
 
 VLIB_CLI_COMMAND(ila_entry_command, static) = {
   .path = "ila entry",
-  .short_help = "ila entry [type <type>] [sir-address <address>] [locator <locator>] [vnid <vnid>] [adj-index <adj-index>] "
-      "[csum-mode (no-action|neutral-map|transport-adjust)] [del]",
+  .short_help = "ila entry [type <type>] [sir-address <address>] [locator <locator>] [vnid <hex-vnid>]"
+      " [adj-index <adj-index>] [next-hop <next-hop>]"
+      " [csum-mode (no-action|neutral-map|transport-adjust)] [del]",
   .function = ila_entry_command_fn,
 };
 

@@ -54,25 +54,21 @@ static u8 *
 format_csum_mode(u8 *s, va_list *va)
 {
   ila_csum_mode_t csum_mode = va_arg(*va, ila_csum_mode_t);
-  const char *txt;
+  char *txt;
 
   switch(csum_mode) {
-    case ILA_CSUM_MODE_NO_ACTION:
-      txt = "no-action";
-      break;
-    case ILA_CSUM_MODE_NEUTRAL_MAP:
-      txt = "neutral-map";
-      break;
-    case ILA_CSUM_MODE_ADJUST_TRANSPORT:
-      txt = "transport-adjust";
-      break;
+#define _(i,n,st) \
+  case ILA_CSUM_MODE_##i: \
+    txt = st; \
+    break;
+ila_csum_foreach_type
+#undef _
     default:
       txt = "(unknown)";
       break;
   }
-  return format(s, "%s", txt);
+  return format(s, txt);
 }
-
 
 u8 *
 format_ila_type (u8 *s, va_list *args)
@@ -94,17 +90,18 @@ format_ila_entry(u8 *s, va_list *va)
   ila_entry_t *e = va_arg(*va, ila_entry_t *);
 
   if(!e) {
-    return format(s, "%=10s%=20s%=20s%=16s%=18s", "Type", "SIR Address", "ILA Address", "Adjacency Index", "Checksum Mode");
+    return format(s, "%-15s%=40s%=40s%+16s%+18s", "Type", "SIR Address", "ILA Address", "Adjacency Index", "Checksum Mode");
+  
   } else if(vnm) {
     if(e->ila_adj_index == ~0) {
-      return format(s, "%U %U %U %15s    %U",
+      return format(s, "%-15U%=40U%=40U%16s%18U",
         format_ila_type, e->type,
         format_ip6_address, &e->sir_address,
         format_ip6_address, &e->ila_address,
         "n/a",
         format_csum_mode, e->csum_mode);
     } else {
-      return format(s, "%U %U %U %15d    %U",
+      return format(s, "%-15U%=40U%=40U%16d%18U",
         format_ila_type, e->type,
         format_ip6_address, &e->sir_address,
         format_ip6_address, &e->ila_address,
@@ -114,7 +111,7 @@ format_ila_entry(u8 *s, va_list *va)
   }
 
   return NULL;
-}
+} 
 
 u8 *
 format_ila_ila2sir_trace (u8 *s, va_list *args)

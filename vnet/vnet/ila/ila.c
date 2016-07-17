@@ -385,6 +385,31 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
   ip6_main_t *im6 = &ip6_main;
   BVT(clib_bihash_kv) kv, value;
 
+  //Sanity check
+  if (args->type == ILA_TYPE_IID ||
+      args->type == ILA_TYPE_LUID) {
+      if ((args->sir_address.as_u8[8] >> 5) != args->type) {
+          clib_warning("Incorrect SIR address (ILA type mismatch %d %d)", args->sir_address.as_u8[8] >> 1, args->type);
+          return -1;
+      }
+      if (args->sir_address.as_u8[8] & 0x10) {
+          clib_warning("Checksum bit should not be set in SIR address");
+          return -1;
+      }
+  } else if (args->type == ILA_TYPE_VNIDM) {
+      if (args->sir_address.as_u8[0] != 0xff ||
+          (args->sir_address.as_u8[1] & 0xf0) != 0xf0) {
+          clib_warning("SIR multicast address must start with fff");
+          return -1;
+      }
+      if (args->sir_address.as_u16[1] || args->sir_address.as_u16[2] ||
+          args->sir_address.as_u16[3] || args->sir_address.as_u16[4] ||
+          args->sir_address.as_u16[5] || (args->sir_address.as_u8[12] & 0xf0)) {
+          clib_warning("SIR multicast address must start with fff");
+          return -1;
+      }
+  }
+
   if (!args->is_del)
     {
       ila_entry_t *e;
@@ -409,8 +434,14 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           e->ila_address.as_u32[2] |= args->vnid;
           e->ila_address.as_u32[3] = args->sir_address.as_u32[3];
           break;
-        case ILA_TYPE_VNID4:
         case ILA_TYPE_VNIDM:
+          e->ila_address.as_u64[0] = args->locator;
+          e->ila_address.as_u8[8] = (ILA_TYPE_VNIDM << 1);
+          e->ila_address.as_u32[2] |= args->vnid;
+          e->ila_address.as_u32[3] = args->sir_address.as_u32[3];
+          e->ila_address.as_u8[12] |= args->sir_address.as_u8[2] << 4;
+          break;
+        case ILA_TYPE_VNID4:
           clib_warning("ILA type '%U' is not supported", format_ila_type, e->type);
           return -1;
       }

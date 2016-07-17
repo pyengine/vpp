@@ -189,7 +189,7 @@ ila_ila2sir (vlib_main_t *vm,
         vlib_node_runtime_t *node,
         vlib_frame_t *frame)
 {
-  ip4_main_t * im = &ip4_main;
+  ip6_main_t * im = &ip6_main;
   ip_lookup_main_t * lm = &im->lookup_main;
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
   ila_main_t *ilm = &ila_main;

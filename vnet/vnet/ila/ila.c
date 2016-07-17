@@ -207,6 +207,7 @@ ila_ila2sir (vlib_main_t *vm,
         ip_adjacency_t *adj0, *adj1;
         ila_entry_t *ie0, *ie1;
         ip6_header_t *ip60, *ip61;
+        ila_adj_data_t * ad0, * ad1;
 
         {
           vlib_buffer_t * p2, * p3;
@@ -233,8 +234,10 @@ ila_ila2sir (vlib_main_t *vm,
         ip61 = vlib_buffer_get_current(p1);
         adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
         adj1 = ip_get_adjacency (lm, vnet_buffer(p1)->ip.adj_index[VLIB_TX]);
-        ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
-        ie1 = pool_elt_at_index (ilm->entries, adj1->ila.entry_index);
+        ad0 = (ila_adj_data_t *) &adj0->opaque;
+        ad1 = (ila_adj_data_t *) &adj1->opaque;
+        ie0 = pool_elt_at_index (ilm->entries, ad0->entry_index);
+        ie1 = pool_elt_at_index (ilm->entries, ad1->entry_index);
 
         if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
             ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
@@ -268,6 +271,7 @@ ila_ila2sir (vlib_main_t *vm,
       u32 pi0;
       vlib_buffer_t * p0;
       ip_adjacency_t * adj0;
+      ila_adj_data_t *ad0;
       ila_entry_t * ie0;
       ip6_header_t *ip60;
 
@@ -280,7 +284,8 @@ ila_ila2sir (vlib_main_t *vm,
       p0 = vlib_get_buffer(vm, pi0);
       ip60 = vlib_buffer_get_current(p0);
       adj0 = ip_get_adjacency (lm, vnet_buffer(p0)->ip.adj_index[VLIB_TX]);
-      ie0 = pool_elt_at_index (ilm->entries, adj0->ila.entry_index);
+      ad0 = (ila_adj_data_t *) &adj0->opaque;
+      ie0 = pool_elt_at_index (ilm->entries, ad0->entry_index);
 
       if (PREDICT_FALSE(p0->flags & VLIB_BUFFER_IS_TRACED)) {
           ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
@@ -596,12 +601,14 @@ int ila_add_del_entry(ila_add_del_entry_args_t *args)
           //This is a local entry - let's create a local adjacency
           ip_adjacency_t adj;
           ip6_add_del_route_args_t route_args;
+          ila_adj_data_t *ad;
 
           //Adjacency
           memset(&adj, 0, sizeof(adj));
           adj.explicit_fib_index = ~0;
           adj.lookup_next_index = ilm->ip6_lookup_next_index;
-	  adj.ila.entry_index = e - ilm->entries;
+          ad = (ila_adj_data_t *) &adj.opaque;
+          ad->entry_index = e - ilm->entries;
 
           //Route
           memset(&route_args, 0, sizeof(route_args));
@@ -680,6 +687,8 @@ int ila_interface(u32 sw_if_index, u8 disable)
 clib_error_t *ila_init (vlib_main_t *vm) {
   ila_main_t *ilm = &ila_main;
   ilm->entries = NULL;
+
+  ASSERT (sizeof (ila_adj_data_t) < IP_ADJACENCY_OPAQUE_SZ);
 
   ilm->lookup_table_nbuckets = ILA_TABLE_DEFAULT_HASH_NUM_BUCKETS;
   ilm->lookup_table_nbuckets = 1<< max_log2 (ilm->lookup_table_nbuckets);

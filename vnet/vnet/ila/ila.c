@@ -30,6 +30,7 @@ typedef enum {
 typedef struct {
   u32 ila_index;
   ip6_address_t initial_dst;
+  u32 adj_index;
 } ila_ila2sir_trace_t;
 
 static ila_entry_t ila_default_entry = {
@@ -119,7 +120,7 @@ format_ila_ila2sir_trace (u8 *s, va_list *args)
   CLIB_UNUSED(vlib_main_t *vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED(vlib_node_t *node) = va_arg (*args, vlib_node_t *);
   ila_ila2sir_trace_t *t = va_arg (*args, ila_ila2sir_trace_t *);
-  return format(s, "ILA -> SIR entry index: %d initial_dst: %U", t->ila_index,
+  return format(s, "ILA -> SIR adj index: %d entry index: %d initial_dst: %U", t->adj_index, t->ila_index,
                 format_ip6_address, &t->initial_dst);
 }
 
@@ -239,12 +240,14 @@ ila_ila2sir (vlib_main_t *vm,
             ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
             tr->ila_index = ie0?(ie0 - ilm->entries):~0;
             tr->initial_dst = ip60->dst_address;
+            tr->adj_index = vnet_buffer(p0)->ip.adj_index[VLIB_TX];
         }
 
         if (PREDICT_FALSE(p1->flags & VLIB_BUFFER_IS_TRACED)) {
             ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p1, sizeof(*tr));
             tr->ila_index = ie1?(ie1 - ilm->entries):~0;
             tr->initial_dst = ip61->dst_address;
+            tr->adj_index = vnet_buffer(p1)->ip.adj_index[VLIB_TX];
         }
 
         ip60->dst_address.as_u64[0] = ie0->sir_address.as_u64[0];
@@ -283,6 +286,7 @@ ila_ila2sir (vlib_main_t *vm,
           ila_ila2sir_trace_t *tr = vlib_add_trace(vm, node, p0, sizeof(*tr));
           tr->ila_index = ie0?(ie0 - ilm->entries):~0;
           tr->initial_dst = ip60->dst_address;
+          tr->adj_index = vnet_buffer(p0)->ip.adj_index[VLIB_TX];
       }
 
       ip60->dst_address.as_u64[0] = ie0->sir_address.as_u64[0];

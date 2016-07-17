@@ -22,10 +22,16 @@ typedef enum {
 #undef _
 } ila_type_t;
 
+#define ila_csum_foreach_type \
+_(NO_ACTION, 0, "no-action") \
+_(NEUTRAL_MAP, 1, "neutral-map") \
+_(ADJUST_TRANSPORT, 2, "adjust-transport")
+
 typedef enum {
-  ILA_CSUM_MODE_NO_ACTION,
-  ILA_CSUM_MODE_NEUTRAL_MAP,
-  ILA_CSUM_MODE_ADJUST_TRANSPORT
+#define _(i,n,s) ILA_CSUM_MODE_##i = n,
+  ila_csum_foreach_type
+#undef _
+  ILA_CSUM_N_TYPES
 } ila_csum_mode_t;
 
 typedef struct {

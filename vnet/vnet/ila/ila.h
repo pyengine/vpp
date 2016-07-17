@@ -20,7 +20,6 @@ typedef enum {
 #define _(i,n,s) ILA_TYPE_##i = n,
   ila_foreach_type
 #undef _
-  ILA_N_TYPES
 } ila_type_t;
 
 typedef enum {
@@ -32,10 +31,9 @@ typedef enum {
 typedef struct {
   ila_type_t type;
   ip6_address_t sir_address;
-  u64 locator;
+  ip6_address_t ila_address;
   u32 ila_adj_index;
   ila_csum_mode_t csum_mode;
-  u16 csum_modifier;
 } ila_entry_t;
 
 typedef struct {
@@ -55,6 +53,7 @@ typedef struct {
   ila_type_t type;
   ip6_address_t sir_address;
   u64 locator;
+  u32 vnid;
   u32 local_adj_index;
   ila_csum_mode_t csum_mode;
   u8 is_del;

@@ -207,6 +207,18 @@ ila_ila2sir (vlib_main_t *vm,
         ila_entry_t *ie0, *ie1;
         ip6_header_t *ip60, *ip61;
 
+        {
+          vlib_buffer_t * p2, * p3;
+
+          p2 = vlib_get_buffer (vm, from[2]);
+          p3 = vlib_get_buffer (vm, from[3]);
+
+          vlib_prefetch_buffer_header (p2, LOAD);
+          vlib_prefetch_buffer_header (p3, LOAD);
+          CLIB_PREFETCH (p2->data, sizeof (ip6_header_t), LOAD);
+          CLIB_PREFETCH (p3->data, sizeof (ip6_header_t), LOAD);
+        }
+
         pi0 = to_next[0] = from[0];
         pi1 = to_next[1] = from[1];
         from += 2;
@@ -354,6 +366,18 @@ ila_sir2ila (vlib_main_t *vm,
         BVT(clib_bihash_kv) kv1, value1;
         ila_entry_t *ie0 = &ila_default_entry;
         ila_entry_t *ie1 = &ila_default_entry;
+
+        {
+          vlib_buffer_t * p2, * p3;
+
+          p2 = vlib_get_buffer (vm, from[2]);
+          p3 = vlib_get_buffer (vm, from[3]);
+
+          vlib_prefetch_buffer_header (p2, LOAD);
+          vlib_prefetch_buffer_header (p3, LOAD);
+          CLIB_PREFETCH (p2->data, sizeof (ip6_header_t), LOAD);
+          CLIB_PREFETCH (p3->data, sizeof (ip6_header_t), LOAD);
+        }
 
         pi0 = to_next[0] = from[0];
         pi1 = to_next[1] = from[1];

@@ -34,6 +34,24 @@ vlib_get_thread_main ()
   return &vlib_thread_main;
 }
 
+always_inline vlib_main_t *
+vlib_get_worker_vlib_main (u32 worker_id)
+{
+  vlib_main_t *vm;
+  vlib_thread_main_t *tm = vlib_get_thread_main ();
+  ASSERT (worker_id < tm->n_vlib_mains - 1);
+  vm = vlib_mains[worker_id + 1];
+  ASSERT (vm);
+  return vm;
+}
+
+always_inline int
+vlib_runs_worker_threads()
+{
+  vlib_thread_main_t *tm = vlib_get_thread_main();
+  return (tm->n_vlib_mains > 1);
+}
+
 #endif /* included_vlib_global_funcs_h_ */
 
 /*

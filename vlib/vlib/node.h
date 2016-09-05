@@ -393,6 +393,12 @@ vlib_next_frame_init (vlib_next_frame_t * nf)
   nf->node_runtime_index = ~0;
 }
 
+typedef struct
+{
+  u16 dev_instance;
+  u16 queue_id;
+} vlib_node_device_and_queue_t;
+
 /* A frame pending dispatch by main loop. */
 typedef struct
 {
@@ -463,6 +469,9 @@ typedef struct vlib_node_runtime_t
 
   /* CPU this node runs on */
   u16 cpu_index;
+
+  /* Input queeus processed by this node runtime */
+  vlib_node_device_and_queue_t *devices_and_queues;
 
   /* Function dependent node-runtime. */
   uword runtime_data[(128

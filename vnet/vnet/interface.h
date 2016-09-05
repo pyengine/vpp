@@ -151,6 +151,8 @@ typedef struct _vnet_device_class
   /* Do not splice vnet_interface_output_node into TX path */
   u8 no_flatten_output_chains;
 
+  /* index of input node handling this device class */
+  u32 input_node_index;
 } vnet_device_class_t;
 
 #define VNET_DEVICE_CLASS(x,...)                                        \
@@ -357,6 +359,8 @@ typedef struct vnet_hw_interface_t
   uword *bond_info;
 #define VNET_HW_INTERFACE_BOND_INFO_NONE ((uword *) 0)
 #define VNET_HW_INTERFACE_BOND_INFO_SLAVE ((uword *) ~0)
+
+  u32 *worker_thread_by_queue_id;
 
 } vnet_hw_interface_t;
 

@@ -67,15 +67,26 @@ af_packet_eth_flag_change (vnet_main_t * vnm, vnet_hw_interface_t * hi,
 static clib_error_t *
 af_packet_fd_read_ready (unix_file_t * uf)
 {
-  vlib_main_t *vm = vlib_get_main ();
-  af_packet_main_t *apm = &af_packet_main;
-  u32 idx = uf->private_data;
+  vlib_main_t *vm;
 
-  apm->pending_input_bitmap =
-    clib_bitmap_set (apm->pending_input_bitmap, idx, 1);
+  if (vlib_runs_worker_threads())
+    {
+      af_packet_main_t *apm = &af_packet_main;
+      af_packet_if_t *apif;
+      u32 worker_id;
+      vnet_main_t *vnm = vnet_get_main ();
+      apif = pool_elt_at_index (apm->interfaces, uf->private_data);
+      worker_id = vnet_get_hw_if_input_worker_id (vnm,
+						  apif->hw_if_index, 0);
+      vm = vlib_get_worker_vlib_main (worker_id);
+    }
+  else
+    {
+      vm = vlib_get_main();
+    }
 
   /* Schedule the rx node */
-  vlib_node_set_interrupt_pending (vm, af_packet_input_node.index);
+  vlib_node_set_interrupt_pending(vm, af_packet_input_node.index);
 
   return 0;
 }
@@ -265,6 +276,13 @@ af_packet_create_if (vlib_main_t * vm, u8 * host_if_name, u8 * hw_addr_set,
   sw = vnet_get_hw_sw_interface (vnm, apif->hw_if_index);
   apif->sw_if_index = sw->sw_if_index;
 
+  /* TODO this is hack, idea is to add input node parameter
+   * to ethernet_register_interface() instead
+   */
+  vnet_device_class_t *dev_class;
+  dev_class = vnet_get_device_class (vnm, af_packet_device_class.index);
+  dev_class->input_node_index = af_packet_input_node.index;
+
   vnet_hw_interface_set_flags (vnm, apif->hw_if_index,
 			       VNET_HW_INTERFACE_FLAG_LINK_UP);
 
@@ -339,10 +357,14 @@ static clib_error_t *
 af_packet_init (vlib_main_t * vm)
 {
   af_packet_main_t *apm = &af_packet_main;
+  vlib_thread_main_t *tm = vlib_get_thread_main ();
 
   memset (apm, 0, sizeof (af_packet_main_t));
 
   mhash_init_vec_string (&apm->if_index_by_host_if_name, sizeof (uword));
+
+  vec_validate_aligned (apm->rx_buffers, tm->n_vlib_mains - 1,
+			CLIB_CACHE_LINE_BYTES);
 
   return 0;
 }

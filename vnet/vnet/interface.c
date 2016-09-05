@@ -666,6 +666,7 @@ vnet_register_interface (vnet_main_t * vnm,
 
   hw_index = hw - im->hw_interfaces;
   hw->hw_if_index = hw_index;
+  dev_class->input_node_index = ~0;
 
   if (dev_class->format_device_name)
     hw->name = format (0, "%U", dev_class->format_device_name, dev_instance);

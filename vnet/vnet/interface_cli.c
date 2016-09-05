@@ -951,6 +951,105 @@ VLIB_CLI_COMMAND (set_interface_mtu_cmd, static) = {
 };
 /* *INDENT-ON* */
 
+
+static int
+vnet_hw_inteface_set_input_worker (vnet_main_t * vnm, u32 hw_if_index,
+				   u16 worker_id, u16 queue_id)
+{
+  vnet_hw_interface_t *hw;
+  vnet_device_class_t *dev_class;
+  u32 node_index;
+  vlib_thread_main_t *tm = vlib_get_thread_main ();
+  vlib_node_device_and_queue_t *dq;
+  vlib_node_runtime_t *rt;
+  int i;
+
+  hw = vnet_get_hw_interface (vnm, hw_if_index);
+  dev_class = vnet_get_device_class (vnm, hw->dev_class_index);
+  node_index = dev_class->input_node_index;
+
+  clib_warning ("hw_if_index %u dev_instance %u worker %u queue %u",
+		hw_if_index, hw->dev_instance, worker_id, queue_id);
+
+  rt = vlib_node_get_runtime (vlib_mains[worker_id + 1], node_index);
+  vec_add2(rt->devices_and_queues, dq, 1);
+  dq->dev_instance = hw->dev_instance;
+  dq->queue_id = 0;
+
+  /* TODO incomplete */
+
+  vec_validate_aligned (hw->worker_thread_by_queue_id, queue_id,
+			CLIB_CACHE_LINE_BYTES);
+  hw->worker_thread_by_queue_id[queue_id] = worker_id;
+
+  if (vec_len (rt->devices_and_queues) == 1)
+    vlib_node_set_state (vlib_mains[worker_id + 1], node_index,
+			 VLIB_NODE_STATE_INTERRUPT);
+
+  vlib_node_set_state (vlib_mains[0], node_index, VLIB_NODE_STATE_DISABLED);
+
+
+  for (i = 0; i < tm->n_vlib_mains; i++)
+    {
+      rt = vlib_node_get_runtime (vlib_mains[i], node_index);
+      clib_warning ("vm %p cpu_index %u", vlib_mains[i], rt->cpu_index);
+      vec_foreach (dq, rt->devices_and_queues)
+	{
+	  clib_warning ("dev_instance %u queue %u", dq->dev_instance, dq->queue_id);
+	}
+    }
+
+  return 0;
+}
+
+static clib_error_t *
+set_interface_input_worker_fn (vlib_main_t * vm, unformat_input_t * input,
+		               vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  u32 hw_if_index = (u32) ~ 0;
+  u32 queue = (u32) 0;
+  u32 cpu = (u32) ~ 0;
+  vnet_main_t *vnm = vnet_get_main();
+
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat
+	  (line_input, "%U", unformat_vnet_hw_interface, vnm,
+	   &hw_if_index))
+	;
+      else if (unformat (line_input, "queue %d", &queue))
+	;
+      else if (unformat (line_input, "worker %d", &cpu))
+	;
+      else
+	return clib_error_return (0, "parse error: '%U'",
+				  format_unformat_error, line_input);
+    }
+
+  unformat_free (line_input);
+
+  if (hw_if_index == (u32) ~ 0)
+    return clib_error_return (0, "please specify valid interface name");
+
+  vnet_hw_inteface_set_input_worker (vnm, hw_if_index, cpu, queue);
+
+  /* TODO Error handling */
+
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (set_interface_input_worker, static) = {
+  .path = "set interface input-worker",
+  .short_help = "set interface input-worker <intfc>",
+  .function = set_interface_input_worker_fn,
+};
+/* *INDENT-ON* */
+
 /*
  * fd.io coding-style-patch-verification: ON
  *

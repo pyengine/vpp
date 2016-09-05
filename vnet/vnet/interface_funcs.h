@@ -85,6 +85,13 @@ vnet_get_hw_interface_class (vnet_main_t * vnm, u32 hw_class_index)
 			   hw_class_index);
 }
 
+always_inline u32
+vnet_get_hw_if_input_worker_id (vnet_main_t * vnm, u32 hw_if_index, u16 queue_id)
+{
+  vnet_hw_interface_t *hw = vnet_get_hw_interface (vnm, hw_if_index);
+  return hw->worker_thread_by_queue_id[0];
+}
+
 always_inline vnet_device_class_t *
 vnet_get_device_class (vnet_main_t * vnm, u32 dev_class_index)
 {

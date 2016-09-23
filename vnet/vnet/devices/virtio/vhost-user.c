@@ -1292,6 +1292,7 @@ vhost_user_if_input (vlib_main_t * vm,
 		     u16 qid, vlib_node_runtime_t * node)
 {
   vhost_user_vring_t *txvq = &vui->vrings[VHOST_VRING_IDX_TX (qid)];
+  vhost_user_vring_t *rxvq = &vui->vrings[VHOST_VRING_IDX_RX (qid)];
   uword n_rx_packets = 0, n_rx_bytes = 0;
   uword n_left;
   u32 n_left_to_next, *to_next;
@@ -1306,6 +1307,9 @@ vhost_user_if_input (vlib_main_t * vm,
   /* do we have pending interrupts ? */
   if ((txvq->n_since_last_int) && (txvq->int_deadline < now))
     vhost_user_send_call (vm, txvq);
+
+  if ((rxvq->n_since_last_int) && (rxvq->int_deadline < now))
+    vhost_user_send_call (vm, rxvq);
 
   n_left = (u16) (txvq->avail->idx - txvq->last_avail_idx);
 

@@ -206,7 +206,6 @@ typedef struct
   vring_avail_t *avail;
   vring_used_t *used;
   f64 int_deadline;
-  u8 started;
   u8 enabled;
   u8 log_used;
   //Put non-runtime in a different cache line
@@ -256,9 +255,8 @@ typedef struct
   void *log_base_addr;
   u64 log_size;
 
-  /* Whether to use spinlock or per_cpu_tx_qid assignment */
-  u8 use_tx_spinlock;
-  u16 *per_cpu_tx_qid;
+  /* Bitmaps */
+  uword *vrings_started;
 
   /* Vector of workers for this interface */
   u32 *workers;

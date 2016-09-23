@@ -224,6 +224,24 @@ map_user_mem (vhost_user_intf_t * vui, uword addr)
   return 0;
 }
 
+static inline void
+vring_start(vhost_user_intf_t *vui, u32 qid)
+{
+  vui->vrings_started = clib_bitmap_set (vui->vrings_started, qid, 1);
+}
+
+static inline void
+vring_stop(vhost_user_intf_t *vui, u32 qid)
+{
+  vui->vrings_started = clib_bitmap_set (vui->vrings_started, qid, 0);
+}
+
+static inline int
+vring_is_started(vhost_user_intf_t *vui, u32 qid)
+{
+  return clib_bitmap_get(vui->vrings_started, qid);
+}
+
 static long
 get_huge_page_size (int fd)
 {
@@ -269,41 +287,6 @@ unmap_all_mem_regions (vhost_user_intf_t * vui)
 }
 
 static void
-vhost_user_tx_thread_placement (vhost_user_intf_t * vui)
-{
-  //Let's try to assign one queue to each thread
-  u32 qid = 0;
-  u32 cpu_index = 0;
-  vui->use_tx_spinlock = 0;
-  while (1)
-    {
-      for (qid = 0; qid < VHOST_VRING_MAX_N / 2; qid++)
-	{
-	  vhost_user_vring_t *rxvq = &vui->vrings[VHOST_VRING_IDX_RX (qid)];
-	  if (!rxvq->started || !rxvq->enabled)
-	    continue;
-
-	  vui->per_cpu_tx_qid[cpu_index] = qid;
-	  cpu_index++;
-	  if (cpu_index == vlib_get_thread_main ()->n_vlib_mains)
-	    return;
-	}
-      //We need to loop, meaning the spinlock has to be used
-      vui->use_tx_spinlock = 1;
-      if (cpu_index == 0)
-	{
-	  //Could not find a single valid one
-	  for (cpu_index = 0;
-	       cpu_index < vlib_get_thread_main ()->n_vlib_mains; cpu_index++)
-	    {
-	      vui->per_cpu_tx_qid[cpu_index] = 0;
-	    }
-	  return;
-	}
-    }
-}
-
-static void
 vhost_user_rx_thread_placement ()
 {
   vhost_user_main_t *vum = &vhost_user_main;
@@ -334,8 +317,7 @@ vhost_user_rx_thread_placement ()
     u32 qid;
     for (qid = 0; qid < VHOST_VRING_MAX_N / 2; qid++)
       {
-	vhost_user_vring_t *txvq = &vui->vrings[VHOST_VRING_IDX_TX (qid)];
-	if (!txvq->started)
+	if (!vring_is_started(vui, VHOST_VRING_IDX_TX (qid)))
 	  continue;
 
 	i %= vec_len (vui_workers);
@@ -400,7 +382,7 @@ vhost_user_intf_ready (vhost_user_intf_t * vui)
   int i, found[2] = { };	//RX + TX
 
   for (i = 0; i < VHOST_VRING_MAX_N; i++)
-    if (vui->vrings[i].started && vui->vrings[i].enabled)
+    if (vring_is_started(vui, i) && vui->vrings[i].enabled)
       found[i & 1] = 1;
 
   return found[0] && found[1];
@@ -421,7 +403,6 @@ vhost_user_update_iface_state (vhost_user_intf_t * vui)
       vui->is_up = is_up;
     }
   vhost_user_rx_thread_placement ();
-  vhost_user_tx_thread_placement (vui);
 }
 
 static clib_error_t *
@@ -446,39 +427,10 @@ vhost_user_kickfd_read_ready (unix_file_t * uf)
   DBG_SOCK ("if %d KICK queue %d", uf->private_data >> 8, qid);
 
   vlib_worker_thread_barrier_sync (vlib_get_main ());
-  vui->vrings[qid].started = 1;
+  vring_start(vui, qid);
   vhost_user_update_iface_state (vui);
   vlib_worker_thread_barrier_release (vlib_get_main ());
   return 0;
-}
-
-/**
- * @brief Try once to lock the vring
- * @return 0 on success, non-zero on failure.
- */
-static inline int
-vhost_user_vring_try_lock (vhost_user_intf_t * vui, u32 qid)
-{
-  return __sync_lock_test_and_set (vui->vring_locks[qid], 1);
-}
-
-/**
- * @brief Spin until the vring is successfully locked
- */
-static inline void
-vhost_user_vring_lock (vhost_user_intf_t * vui, u32 qid)
-{
-  while (vhost_user_vring_try_lock (vui, qid))
-    ;
-}
-
-/**
- * @brief Unlock the vring lock
- */
-static inline void
-vhost_user_vring_unlock (vhost_user_intf_t * vui, u32 qid)
-{
-  *vui->vring_locks[qid] = 0;
 }
 
 static inline void
@@ -893,7 +845,7 @@ vhost_user_socket_read (unix_file_t * uf)
       else
 	{
 	  vui->vrings[q].kickfd = -1;
-	  vui->vrings[q].started = 1;
+	  vring_start(vui, q);
 	}
 
       //TODO: When kickfd is specified, 'started' is set when the first kick
@@ -1685,16 +1637,36 @@ vhost_user_intfc_tx (vlib_main_t * vm,
       goto done3;
     }
 
-  qid =
-    VHOST_VRING_IDX_RX (*vec_elt_at_index (vui->per_cpu_tx_qid, cpu_index));
-  rxvq = &vui->vrings[qid];
-  if (PREDICT_FALSE (vui->use_tx_spinlock))
-    vhost_user_vring_lock (vui, qid);
+  u32 num_q = clib_bitmap_last_set(vui->vrings_started) + 1;
 
-  if (PREDICT_FALSE ((rxvq->avail->idx == rxvq->last_avail_idx)))
+  if (num_q % 2)
+    num_q++;
+
+  qid = (cpu_index * 2) % num_q;
+  while (1)
     {
-      error = VHOST_USER_TX_FUNC_ERROR_PKT_DROP_NOBUF;
-      goto done2;
+      /* Try to acquire lock */
+      if (vring_is_started(vui, qid) &&
+	  __sync_lock_test_and_set (vui->vring_locks[qid], 1) == 0)
+	{
+	  /* Lock acquired, is there any space in the ring */
+	  rxvq = &vui->vrings[qid];
+	  if (PREDICT_FALSE ((rxvq->avail->idx == rxvq->last_avail_idx)))
+	    {
+	      /* No space in the ring, unlock and try next one */
+	      *vui->vring_locks[qid] = 0;
+	    }
+	  else
+	    break;
+
+	}
+      qid = (qid + 2) % num_q;
+      if (qid == (cpu_index * 2) % num_q)
+	{
+	  /* No single queue available */
+	  error = VHOST_USER_TX_FUNC_ERROR_PKT_DROP_NOBUF;
+	  goto done2;
+	}
     }
 
   qsz_mask = rxvq->qsz - 1;	/* qsz is always power of 2 */
@@ -1916,7 +1888,7 @@ done:
     }
 
 done2:
-  vhost_user_vring_unlock (vui, qid);
+  *vui->vring_locks[qid] = 0;
 
 done3:
   if (PREDICT_FALSE (n_left && error != VHOST_USER_TX_FUNC_ERROR_NONE))
@@ -2240,10 +2212,6 @@ vhost_user_vui_init (vnet_main_t * vnm,
 						    CLIB_CACHE_LINE_BYTES);
       memset ((void *) vui->vring_locks[q], 0, CLIB_CACHE_LINE_BYTES);
     }
-
-  vec_validate (vui->per_cpu_tx_qid,
-		vlib_get_thread_main ()->n_vlib_mains - 1);
-  vhost_user_tx_thread_placement (vui);
 }
 
 // register vui and start polling on it
@@ -2518,7 +2486,6 @@ show_vhost_user_command_fn (vlib_main_t * vm,
   vnet_hw_interface_t *hi;
   vhost_cpu_t *vhc;
   vhost_iface_and_queue_t *vhiq;
-  u32 ci;
 
   int i, j, q;
   int show_descr = 0;
@@ -2634,15 +2601,6 @@ show_vhost_user_command_fn (vlib_main_t * vm,
 	    vlib_cli_output (vm, "   thread %d on vring %d\n",
 			     vhc - vum->cpus, VHOST_VRING_IDX_TX (vhiq->qid));
 	}
-      }
-
-      vlib_cli_output (vm, " tx placement: %s\n",
-		       vui->use_tx_spinlock ? "spin-lock" : "lock-free");
-
-      vec_foreach_index (ci, vui->per_cpu_tx_qid)
-      {
-	vlib_cli_output (vm, "   thread %d on vring %d\n", ci,
-			 VHOST_VRING_IDX_RX (vui->per_cpu_tx_qid[ci]));
       }
 
       vlib_cli_output (vm, "\n");

@@ -134,7 +134,16 @@ class TestL2xc(VppTestCase):
                             " arrive" % (o, i))
 
     def test_l2xc(self):
-        """ L2XC test """
+        """ L2XC test
+
+        Test scenario:
+        1.config
+            2 pairs of 2 interfaces, l2xconnected
+
+        2.sending l2 eth packets between 4 interfaces
+            64B, 512B, 1518B, 9018B (ether_size)
+            burst of packets per interface
+        """
 
         # Create incoming packet streams for packet-generator interfaces
         for i in self.interfaces:

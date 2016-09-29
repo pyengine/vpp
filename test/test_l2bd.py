@@ -12,6 +12,17 @@ from scapy.all import *
 class TestL2bd(VppTestCase):
     """ L2BD Test Case """
 
+    # Test variables
+    interf_nr = 3           # Number of interfaces
+    bd_id = 1               # Bridge domain ID
+    mac_entries = 100       # Number of MAC entries
+    dot1q_sub_id = 100      # SubID of Dot1Q sub-interface
+    dot1q_tag = 100         # VLAN tag for Dot1Q sub-interface
+    dot1ad_sub_id = 200     # SubID of Dot1AD sub-interface
+    dot1ad_tag1 = 200       # VLAN S-tag for Dot1AD sub-interface
+    dot1ad_tag2 = 300       # VLAN C-tag for Dot1AD sub-interface
+    pkts_per_burst = 257    # Number of packets per burst
+
     @classmethod
     def setUpClass(cls):
         super(TestL2bd, cls).setUpClass()
@@ -19,20 +30,21 @@ class TestL2bd(VppTestCase):
         try:
             cls.cli(2, "show trace")
             # Create interfaces and sub-interfaces
-            cls.create_interfaces_and_subinterfaces()
+            cls.create_interfaces_and_subinterfaces(TestL2bd.interf_nr)
 
             # Create BD with MAC learning enabled and put interfaces and
             # sub-interfaces to this BD
-            cls.api("bridge_domain_add_del bd_id 1 learn 1" )
+            cls.api("bridge_domain_add_del bd_id %u learn 1" % TestL2bd.bd_id)
             for i in cls.interfaces:
                 if isinstance(cls.INT_DETAILS[i], cls.Subint):
                     interface = "pg%u.%u" % (i, cls.INT_DETAILS[i].sub_id)
                 else:
                     interface = "pg%u" % i
-                cls.api("sw_interface_set_l2_bridge %s bd_id 1" % interface)
+                cls.api("sw_interface_set_l2_bridge %s bd_id %u"
+                        % (interface, TestL2bd.bd_id))
 
             # create 100 MAC entries
-            cls.create_mac_entries(100)
+            cls.create_mac_entries(TestL2bd.mac_entries)
             cls.cli(0, "show l2fib")
 
         except Exception as e:
@@ -82,9 +94,10 @@ class TestL2bd(VppTestCase):
             self.inner_vlan = inner_vlan
 
     @classmethod
-    def create_interfaces_and_subinterfaces(cls):
-        cls.interfaces = range(3)
+    def create_interfaces_and_subinterfaces(cls, int_nr):
+        cls.interfaces = range(int_nr)
 
+        # Create interfaces
         cls.create_interfaces(cls.interfaces)
 
         # Make vpp_api_test see interfaces created using debug CLI (in function
@@ -93,17 +106,20 @@ class TestL2bd(VppTestCase):
 
         cls.INT_DETAILS = dict()
 
+        # 1st interface is untagged - no sub-interface required
         cls.INT_DETAILS[0] = cls.HardInt()
 
-        cls.INT_DETAILS[1] = cls.Dot1QSubint(100)
+        # 2nd interface is Dot1Q tagged
+        cls.INT_DETAILS[1] = cls.Dot1QSubint(TestL2bd.dot1q_sub_id, TestL2bd.dot1q_tag)
         cls.create_vlan_subif(1, cls.INT_DETAILS[1].vlan)
 
+        # 3rd interface is Dot1AD tagged
         # FIXME: Wrong packet format/wrong layer on output of interface 2
-        #self.INT_DETAILS[2] = self.Dot1ADSubint(10, 200, 300)
+        #self.INT_DETAILS[2] = self.Dot1ADSubint(TestL2bd.dot1ad_sub_id, TestL2bd.dot1ad_tag1, TestL2bd.dot1ad_tag2)
         #self.create_dot1ad_subif(2, self.INT_DETAILS[2].sub_id, self.INT_DETAILS[2].outer_vlan, self.INT_DETAILS[2].inner_vlan)
 
-        # Use dot1q for now
-        cls.INT_DETAILS[2] = cls.Dot1QSubint(200)
+        # Use Dot1Q for now
+        cls.INT_DETAILS[2] = cls.Dot1QSubint(TestL2bd.dot1ad_sub_id, TestL2bd.dot1ad_tag1)
         cls.create_vlan_subif(2, cls.INT_DETAILS[2].vlan)
 
         for i in cls.interfaces:
@@ -175,12 +191,13 @@ class TestL2bd(VppTestCase):
         packet.add_payload(payload)
 
     def create_stream(self, pg_id):
+        # TODO: use variables to create lists based on interface number
         pg_targets = [None] * 3
         pg_targets[0] = [1, 2]
         pg_targets[1] = [0, 2]
         pg_targets[2] = [0, 1]
         pkts = []
-        for i in range(0, 257):
+        for i in range(0, TestL2bd.pkts_per_burst):
             target_pg_id = pg_targets[pg_id][i % 2]
             target_id = random.randrange(len(self.MY_HOST_MACS[target_pg_id]))
             source_id = random.randrange(len(self.MY_HOST_MACS[pg_id]))
@@ -209,9 +226,6 @@ class TestL2bd(VppTestCase):
             last_info[i] = None
         for packet in capture:
             try:
-                self.log("Processing packet:", 2)
-                if self.verbose >= 2:
-                    packet.show()
                 ip = packet[IP]
                 udp = packet[UDP]
                 payload_info = self.payload_to_info(str(packet[Raw]))
@@ -248,13 +262,16 @@ class TestL2bd(VppTestCase):
     def test_l2bd(self):
         """ L2BD MAC learning test """
 
+        # Create incoming packet streams for packet-generator interfaces
         for i in self.interfaces:
             pkts = self.create_stream(i)
             self.pg_add_stream(i, pkts)
 
+        # Enable packet capture and start packet sending
         self.pg_enable_capture(self.interfaces)
         self.pg_start()
 
+        # Verify outgoing packet streams per packet-generator interface
         for i in self.interfaces:
             out = self.pg_get_capture(i)
             self.log("Verifying capture %u" % i)

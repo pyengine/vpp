@@ -12,6 +12,11 @@ from scapy.all import *
 class TestL2xc(VppTestCase):
     """ L2XC Test Case """
 
+    # Test variables
+    interf_nr = 4           # Number of interfaces
+    hosts_nr = 10           # Number of hosts
+    pkts_per_burst = 257    # Number of packets per burst
+
     @classmethod
     def setUpClass(cls):
         super(TestL2xc, cls).setUpClass()
@@ -19,8 +24,8 @@ class TestL2xc(VppTestCase):
         try:
             cls.cli(2, "show trace")
 
-            # Create four interfaces
-            cls.interfaces = range(4)
+            # Create interfaces
+            cls.interfaces = range(TestL2xc.interf_nr)
             cls.create_interfaces(cls.interfaces)
 
             # Create bi-directional cross-connects between pg0 and pg1
@@ -33,8 +38,8 @@ class TestL2xc(VppTestCase):
 
             cls.cli(0, "show l2patch")
 
-            # Create host lists - by default 10 hosts per interface
-            cls.create_host_lists()
+            # Create host MAC and IPv4 lists
+            cls.create_host_lists(TestL2xc.hosts_nr)
 
         except Exception as e:
           super(TestL2xc, cls).tearDownClass()
@@ -64,13 +69,14 @@ class TestL2xc(VppTestCase):
                 cls.MY_HOST_IP4S[i].append(my_ip4)
 
     def create_stream(self, pg_id):
+        # TODO: use variables to create lists based on interface number
         pg_targets = [None] * 4
         pg_targets[0] = [1]
         pg_targets[1] = [0]
         pg_targets[2] = [3]
         pg_targets[3] = [2]
         pkts = []
-        for i in range(0, 257):
+        for i in range(0, TestL2xc.pkts_per_burst):
             target_pg_id = pg_targets[pg_id][0]
             target_id = random.randrange(len(self.MY_HOST_MACS[target_pg_id]))
             source_id = random.randrange(len(self.MY_HOST_MACS[pg_id]))
@@ -130,13 +136,16 @@ class TestL2xc(VppTestCase):
     def test_l2xc(self):
         """ L2XC test """
 
+        # Create incoming packet streams for packet-generator interfaces
         for i in self.interfaces:
             pkts = self.create_stream(i)
             self.pg_add_stream(i, pkts)
 
+        # Enable packet capturing and start packet sending
         self.pg_enable_capture(self.interfaces)
         self.pg_start()
 
+        # Verify outgoing packet streams per packet-generator interface
         for i in self.interfaces:
             out = self.pg_get_capture(i)
             self.log("Verifying capture %u" % i)

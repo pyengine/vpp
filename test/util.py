@@ -1,10 +1,24 @@
+## @package util
+#  Module with functions used by test cases.
+#
+#  The module provides a set of tools for setup test environment
 
 from scapy.layers.l2 import Ether, ARP
 from scapy.layers.inet6 import IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr
 
 
+## Util class
+#
+#  Test case which want use util functions should inherit it.
+#  class Example(Util, VppTestCase):
+#      pass
 class Util(object):
 
+    ## Send ARP request for each VPP IP to determine VPP MAC address to the IP
+    #
+    #  Resolved IP address is saved to the VPP_MACS dictionary with interface
+    #  index as a key. Request is sent from MAC in MY_MACS dictionary with
+    #  interface index as a key.
     @classmethod
     def resolve_arp(cls, args):
         for i in args:
@@ -26,6 +40,11 @@ class Util(object):
                 cls.log("No ARP received on port %u" % i)
             cls.cli(2, "show trace")
 
+    ## Send ND request for each VPP IP to determine VPP MAC address to the IP
+    #
+    #  Resolved MAC address is saved to the VPP_MACS dictionary with interface
+    #  index as a key. Request is sent from MAC in MY_MACS dictionary with
+    #  interface index as a key.
     @classmethod
     def resolve_icmpv6_nd(cls, args):
         for i in args:
@@ -45,6 +64,12 @@ class Util(object):
             dst_ll_addr = icmpv6_na['ICMPv6 Neighbor Discovery Option - Destination Link-Layer Address']
             cls.VPP_MACS[i] = dst_ll_addr.lladdr
 
+    ## Configure IPv4 address on VPP interface
+    #
+    #  Set IPv4 address to class dicts MY_IP4S and VPP_IP4S for interfaces in
+    #  args parameter. VPP address is set with .1 IP and MY address is .2 of
+    #  the /24 range.
+    #  As the network prefix is used 172.16.{interface index}.0/24
     @classmethod
     def config_ip4(cls, args):
         for i in args:
@@ -53,6 +78,12 @@ class Util(object):
             cls.api("sw_interface_add_del_address pg%u %s/24" % (i, cls.VPP_IP4S[i]))
             cls.log("My IPv4 address is %s" % (cls.MY_IP4S[i]))
 
+    ## Configure IPv6 address on VPP interface
+    #
+    #  Set IPv4 address to class dicts MY_IP4S and VPP_IP4S for interfaces in
+    #  args parameter. VPP address is set with net::1 IP and MY address
+    #  is net::2 of the /32 range.
+    #  For the network prefix is used fd00:{interface index}::0/32
     @classmethod
     def config_ip6(cls, args):
         for i in args:

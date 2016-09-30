@@ -3,7 +3,7 @@
 from framework import *
 from template_bd import BridgeDomain
 from scapy.layers.inet import IP, UDP
-from scapy.contrib.vxlan import VXLAN
+from scapy_handlers.vxlan import VXLAN
 
 
 class TestVxlan(BridgeDomain, VppTestCase):

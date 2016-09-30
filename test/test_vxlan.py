@@ -1,12 +1,16 @@
 #!/usr/bin/env python
 
-from framework import *
+import unittest
+from framework import VppTestCase, VppTestRunner
+from util import Util
 from template_bd import BridgeDomain
+
+from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 from scapy_handlers.vxlan import VXLAN
 
 
-class TestVxlan(BridgeDomain, VppTestCase):
+class TestVxlan(BridgeDomain, Util, VppTestCase):
     """ VXLAN Test Case """
 
     def __init__(self, *args):

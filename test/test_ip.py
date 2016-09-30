@@ -4,11 +4,16 @@ import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
 import unittest
-from framework import *
-from scapy.all import *
+from framework import VppTestCase, VppTestRunner
+from util import Util
+
+from scapy.packet import Raw
+from scapy.layers.l2 import Ether, ARP, Dot1Q
+from scapy.layers.inet import IP, UDP
 
 
-class TestIPv4(VppTestCase):
+
+class TestIPv4(Util, VppTestCase):
     """ IPv4 Test Case """
 
     @classmethod

@@ -4,11 +4,18 @@ import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
 import unittest
-from framework import *
-from scapy.all import *
+from framework import VppTestCase, VppTestRunner
+from util import Util
+
+from scapy.packet import Raw
+from scapy.layers.l2 import Ether, Dot1Q
+from scapy.layers.inet6 import (IPv6, UDP,
+    ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr,
+    ICMPv6ND_NA, ICMPv6NDOptDstLLAddr)
 
 
-class TestIPv6(VppTestCase):
+@unittest.skip('Not finished yet.\n')
+class TestIPv6(Util, VppTestCase):
     """ IPv6 Test Case """
 
     @classmethod

@@ -26,13 +26,16 @@ class TestBridgeDomain(BridgeDomain, VppTestCase):
     @classmethod
     def setUpClass(cls):
         super(TestBridgeDomain, cls).setUpClass()
+        try:
+            # Create 2 interfaces
+            cls.create_interfaces(range(2))
 
-        # Create 2 interfaces
-        cls.create_interfaces(range(2))
-
-        # Put pg0 and pg1 into BD
-        cls.api("sw_interface_set_l2_bridge pg0 bd_id 1")
-        cls.api("sw_interface_set_l2_bridge pg1 bd_id 1")
+            # Put pg0 and pg1 into BD
+            cls.api("sw_interface_set_l2_bridge pg0 bd_id 1")
+            cls.api("sw_interface_set_l2_bridge pg1 bd_id 1")
+        except:
+            cls.tearDownClass()
+            raise
 
     def tearDown(self):
         super(TestBridgeDomain, self).tearDown()

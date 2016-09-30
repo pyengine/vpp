@@ -12,7 +12,6 @@ from scapy.layers.l2 import Ether, ARP, Dot1Q
 from scapy.layers.inet import IP, UDP
 
 
-
 class TestIPv4(Util, VppTestCase):
     """ IPv4 Test Case """
 

@@ -15,8 +15,8 @@ class TestVxlan(BridgeDomain, Util, VppTestCase):
 
     def __init__(self, *args):
         BridgeDomain.__init__(self)
-        self.test_decap.__func__.__doc__ = ' Decaps path to BD '
-        self.test_encap.__func__.__doc__ = ' Encaps path to BD '
+        self.test_decap.__func__.__doc__ = ' Decapsulate path to BD '
+        self.test_encap.__func__.__doc__ = ' Encapsulate path to BD '
         VppTestCase.__init__(self, *args)
 
     def encapsulate(self, pkt):
@@ -42,19 +42,22 @@ class TestVxlan(BridgeDomain, Util, VppTestCase):
     @classmethod
     def setUpClass(cls):
         super(TestVxlan, cls).setUpClass()
+        try:
+            # Create 2 interfaces
+            cls.create_interfaces(range(2))
+            # Configure IPv4 addressing on pg0
+            cls.config_ip4([0])
+            # Send ARP on pg0 interface
+            cls.resolve_arp([0])
 
-        # Create 2 interfaces
-        cls.create_interfaces(range(2))
-        # Configure IPv4 addressing on pg0
-        cls.config_ip4([0])
-        # Send ARP on pg0 interface
-        cls.resolve_arp([0])
-
-        # Create VXLAN VTEP on pg0, and put vxlan_tunnel0 and pg1 into BD
-        cls.api("vxlan_add_del_tunnel src %s dst %s vni 1" %
-                (cls.VPP_IP4S[0], cls.MY_IP4S[0]))
-        cls.api("sw_interface_set_l2_bridge vxlan_tunnel0 bd_id 1")
-        cls.api("sw_interface_set_l2_bridge pg1 bd_id 1")
+            # Create VXLAN VTEP on pg0, and put vxlan_tunnel0 and pg1 into BD
+            cls.api("vxlan_add_del_tunnel src %s dst %s vni 1" %
+                    (cls.VPP_IP4S[0], cls.MY_IP4S[0]))
+            cls.api("sw_interface_set_l2_bridge vxlan_tunnel0 bd_id 1")
+            cls.api("sw_interface_set_l2_bridge pg1 bd_id 1")
+        except:
+            cls.tearDownClass()
+            raise
 
     def tearDown(self):
         super(TestVxlan, self).tearDown()

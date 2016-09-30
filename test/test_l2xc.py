@@ -43,7 +43,7 @@ class TestL2xc(VppTestCase):
             cls.create_host_lists(TestL2xc.hosts_nr)
 
         except Exception as e:
-            super(TestL2xc, cls).tearDownClass()
+            cls.tearDownClass()
             raise e
 
     def tearDown(self):
@@ -54,9 +54,15 @@ class TestL2xc(VppTestCase):
         self.cli(2, "show error")
         self.cli(2, "show run")
 
+    # IP addresses and MAC addresses of hosts
+    MY_HOST_IP4S = {}
+    MY_HOST_MACS = {}
+
     @classmethod
     def create_host_lists(cls, count=10):
         for i in cls.interfaces:
+            cls.MY_HOST_MACS[i] = []
+            cls.MY_HOST_IP4S[i] = []
             for j in range(0, count):
                 my_mac = "00:00:00:ff:%02x:%02x" % (i, j)
                 cls.MY_HOST_MACS[i].append(my_mac)

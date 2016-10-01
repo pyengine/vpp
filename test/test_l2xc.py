@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+## @file test_l2xc.py
+#  Module to provide L2 cross-connect test case.
+#
+#  The module provides a set of tools for L2 cross-connect tests.
 
 import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
@@ -10,6 +14,11 @@ from scapy.layers.l2 import Ether, Raw
 from scapy.layers.inet import IP, UDP
 
 
+## Subclass of the VppTestCase class.
+#
+#  This subclass is a class for L2 cross-connect test cases. It provides methods
+#  to create interfaces, configuring L2 cross-connects, creating and verifying
+#  packet streams.
 class TestL2xc(VppTestCase):
     """ L2XC Test Case """
 
@@ -18,34 +27,40 @@ class TestL2xc(VppTestCase):
     hosts_nr = 10           # Number of hosts
     pkts_per_burst = 257    # Number of packets per burst
 
+    ## Class method to start the test case.
+    #  Overrides setUpClass method in VppTestCase class.
+    #  There is used try..except statement to ensure that the tear down of
+    #  the class will be executed even if any exception is raised.
+    #  @param cls The class pointer.
     @classmethod
     def setUpClass(cls):
         super(TestL2xc, cls).setUpClass()
 
         try:
-            cls.cli(2, "show trace")
-
-            # Create interfaces
+            ## Create interfaces
             cls.interfaces = range(TestL2xc.interf_nr)
             cls.create_interfaces(cls.interfaces)
 
-            # Create bi-directional cross-connects between pg0 and pg1
+            ## Create bi-directional cross-connects between pg0 and pg1
             cls.api("sw_interface_set_l2_xconnect rx pg0 tx pg1 enable")
             cls.api("sw_interface_set_l2_xconnect rx pg1 tx pg0 enable")
 
-            # Create bi-directional cross-connects between pg2 and pg3
+            ## Create bi-directional cross-connects between pg2 and pg3
             cls.api("sw_interface_set_l2_xconnect rx pg2 tx pg3 enable")
             cls.api("sw_interface_set_l2_xconnect rx pg3 tx pg2 enable")
 
             cls.cli(0, "show l2patch")
 
-            # Create host MAC and IPv4 lists
+            ## Create host MAC and IPv4 lists
             cls.create_host_lists(TestL2xc.hosts_nr)
 
         except Exception as e:
             cls.tearDownClass()
             raise e
 
+    ## Method to define tear down VPP actions of the test case.
+    #  Overrides tearDown method in VppTestCase class.
+    #  @param self The object pointer.
     def tearDown(self):
         self.cli(2, "show int")
         self.cli(2, "show trace")
@@ -54,21 +69,33 @@ class TestL2xc(VppTestCase):
         self.cli(2, "show error")
         self.cli(2, "show run")
 
-    # IP addresses and MAC addresses of hosts
-    MY_HOST_IP4S = {}
-    MY_HOST_MACS = {}
-
+    ## Class method to create required number of MAC and IPv4 addresses.
+    #  Create required number of host MAC addresses and distribute them among
+    #  interfaces. Create host IPv4 address for every host MAC address too.
+    #  @param cls The class pointer.
+    #  @param count Integer variable to store the number of MAC addresses to be
+    #  created.
     @classmethod
-    def create_host_lists(cls, count=10):
+    def create_host_lists(cls, count):
         for i in cls.interfaces:
-            cls.MY_HOST_MACS[i] = []
-            cls.MY_HOST_IP4S[i] = []
+            cls.MY_MACS[i] = []
+            cls.MY_IP4S[i] = []
             for j in range(0, count):
-                my_mac = "00:00:00:ff:%02x:%02x" % (i, j)
-                cls.MY_HOST_MACS[i].append(my_mac)
-                my_ip4 = "172.17.1%02x.%u" % (i, j)
-                cls.MY_HOST_IP4S[i].append(my_ip4)
+                cls.MY_MACS[i].append("00:00:00:ff:%02x:%02x" % (i, j))
+                cls.MY_IP4S[i].append("172.17.1%02x.%u" % (i, j))
+        ## @var MY_MACS
+        #  Dictionary variable to store list of MAC addresses per interface.
+        ## @var MY_IP4S
+        #  Dictionary variable to store list of IPv4 addresses per interface.
 
+    ## Method to create packet stream for the packet generator interface.
+    #  Create input packet stream for the given packet generator interface with
+    #  packets of different length targeted for all other created packet
+    #  generator interfaces.
+    #  @param self The object pointer.
+    #  @param pg_id Integer variable to store the index of the interface to
+    #  create the input packet stream.
+    #  @return pkts List variable to store created input stream of packets.
     def create_stream(self, pg_id):
         # TODO: use variables to create lists based on interface number
         pg_targets = [None] * 4
@@ -79,14 +106,14 @@ class TestL2xc(VppTestCase):
         pkts = []
         for i in range(0, TestL2xc.pkts_per_burst):
             target_pg_id = pg_targets[pg_id][0]
-            target_id = random.randrange(len(self.MY_HOST_MACS[target_pg_id]))
-            source_id = random.randrange(len(self.MY_HOST_MACS[pg_id]))
+            target_id = random.randrange(len(self.MY_MACS[target_pg_id]))
+            source_id = random.randrange(len(self.MY_MACS[pg_id]))
             info = self.create_packet_info(pg_id, target_pg_id)
             payload = self.info_to_payload(info)
-            p = (Ether(dst=self.MY_HOST_MACS[target_pg_id][target_id],
-                       src=self.MY_HOST_MACS[pg_id][source_id]) /
-                 IP(src=self.MY_HOST_IP4S[pg_id][source_id],
-                    dst=self.MY_HOST_IP4S[target_pg_id][target_id]) /
+            p = (Ether(dst=self.MY_MACS[target_pg_id][target_id],
+                       src=self.MY_MACS[pg_id][source_id]) /
+                 IP(src=self.MY_IP4S[pg_id][source_id],
+                    dst=self.MY_IP4S[target_pg_id][target_id]) /
                  UDP(sport=1234, dport=1234) /
                  Raw(payload))
             info.data = p.copy()
@@ -95,7 +122,39 @@ class TestL2xc(VppTestCase):
             self.extend_packet(p, size)
             pkts.append(p)
         return pkts
+        ## @var pg_targets
+        #  List variable to store list of indexes of target packet generator
+        #  interfaces for evey packet generator interface.
+        ## @var target_pg_id
+        #  Integer variable to store the index of the random target packet
+        #  generator interfaces.
+        ## @var target_id
+        #  Integer variable to store the index of the randomly chosen
+        #  destination host MAC/IPv4 address.
+        ## @var source_id
+        #  Integer variable to store the index of the randomly chosen source
+        #  host MAC/IPv4 address.
+        ## @var info
+        #  Object variable to store the information about the generated packet.
+        ## @var payload
+        #  String variable to store the payload of the packet to be generated.
+        ## @var p
+        #  Object variable to store the generated packet.
+        ## @var packet_sizes
+        #  List variable to store required packet sizes.
+        ## @var size
+        #  List variable to store required packet sizes.
 
+    ## Method to verify packet stream received on the packet generator interface.
+    #  Verify packet by packet of the output stream captured on the given packet
+    #  stream generator according to data from the packet payload - order of
+    #  the packet in the stream, index of the source and destination packet
+    #  generator interface as well as by source and destination host IPv4
+    #  addresses and sport and dport values of UDP layer.
+    #  @param self The object pointer.
+    #  @param o Integer variable to store the index of the interface to
+    #  verify the output packet stream.
+    #  @param capture List variable to store the captured output packet stream.
     def verify_capture(self, o, capture):
         last_info = {}
         for i in self.interfaces:
@@ -108,32 +167,47 @@ class TestL2xc(VppTestCase):
                 ip = packet[IP]
                 udp = packet[UDP]
                 payload_info = self.payload_to_info(str(packet[Raw]))
-                packet_index = payload_info.index
-                src_pg = payload_info.src
-                dst_pg = payload_info.dst
-                self.assertEqual(dst_pg, o)
+                self.assertEqual(payload_info.dst, o)
                 self.log("Got packet on port %u: src=%u (id=%u)"
-                         % (o, src_pg, packet_index), 1)
-                next_info = self.get_next_packet_info_for_interface2(src_pg, dst_pg, last_info[src_pg])
-                last_info[src_pg] = next_info
+                         % (o, payload_info.src, payload_info.index), 1)
+                next_info = self.get_next_packet_info_for_interface2(
+                    payload_info.src, payload_info.dst,
+                    last_info[payload_info.src])
+                last_info[payload_info.src] = next_info
                 self.assertTrue(next_info is not None)
-                self.assertEqual(packet_index, next_info.index)
-                saved_packet = next_info.data
+                self.assertEqual(payload_info.index, next_info.index)
                 # Check standard fields
-                self.assertEqual(ip.src, saved_packet[IP].src)
-                self.assertEqual(ip.dst, saved_packet[IP].dst)
-                self.assertEqual(udp.sport, saved_packet[UDP].sport)
-                self.assertEqual(udp.dport, saved_packet[UDP].dport)
+                self.assertEqual(ip.src, next_info.data[IP].src)
+                self.assertEqual(ip.dst, next_info.data[IP].dst)
+                self.assertEqual(udp.sport, next_info.data[UDP].sport)
+                self.assertEqual(udp.dport, next_info.data[UDP].dport)
             except:
                 self.log("Unexpected or invalid packet:")
                 packet.show()
                 raise
         for i in self.interfaces:
-            remaining_packet = self.get_next_packet_info_for_interface2(i, o, last_info[i])
+            remaining_packet = self.get_next_packet_info_for_interface2(
+                i, o, last_info[i])
             self.assertTrue(remaining_packet is None,
                             "Port %u: Packet expected from source %u didn't"
                             " arrive" % (o, i))
+        ## @var last_info
+        #  Dictionary variable to store verified packets per packet generator
+        #  interface.
+        ## @var ip
+        #  Object variable to store the IP layer of the packet.
+        ## @var udp
+        #  Object variable to store the UDP layer of the packet.
+        ## @var payload_info
+        #  Object variable to store required information about the packet.
+        ## @var next_info
+        #  Object variable to store information about next packet.
+        ## @var remaining_packet
+        #  Object variable to store information about remaining packet.
 
+    ## Method defining L2 cross-connect test case.
+    #  Contains steps of the test case.
+    #  @param self The object pointer.
     def test_l2xc(self):
         """ L2XC test
 
@@ -146,20 +220,26 @@ class TestL2xc(VppTestCase):
             burst of packets per interface
         """
 
-        # Create incoming packet streams for packet-generator interfaces
+        ## Create incoming packet streams for packet-generator interfaces
         for i in self.interfaces:
             pkts = self.create_stream(i)
             self.pg_add_stream(i, pkts)
 
-        # Enable packet capturing and start packet sending
+        ## Enable packet capturing and start packet sending
         self.pg_enable_capture(self.interfaces)
         self.pg_start()
 
-        # Verify outgoing packet streams per packet-generator interface
+        ## Verify outgoing packet streams per packet-generator interface
         for i in self.interfaces:
             out = self.pg_get_capture(i)
             self.log("Verifying capture %u" % i)
             self.verify_capture(i, out)
+        ## @var pkts
+        #  List variable to store created input stream of packets for the packet
+        #  generator interface.
+        ## @var out
+        #  List variable to store captured output stream of packets for
+        #  the packet generator interface.
 
 
 if __name__ == '__main__':

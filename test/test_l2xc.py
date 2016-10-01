@@ -106,17 +106,17 @@ class TestL2xc(VppTestCase):
         pkts = []
         for i in range(0, TestL2xc.pkts_per_burst):
             target_pg_id = pg_targets[pg_id][0]
-            target_id = random.randrange(len(self.MY_MACS[target_pg_id]))
-            source_id = random.randrange(len(self.MY_MACS[pg_id]))
-            info = self.create_packet_info(pg_id, target_pg_id)
-            payload = self.info_to_payload(info)
-            p = (Ether(dst=self.MY_MACS[target_pg_id][target_id],
-                       src=self.MY_MACS[pg_id][source_id]) /
-                 IP(src=self.MY_IP4S[pg_id][source_id],
-                    dst=self.MY_IP4S[target_pg_id][target_id]) /
+            target_host_id = random.randrange(len(self.MY_MACS[target_pg_id]))
+            source_host_id = random.randrange(len(self.MY_MACS[pg_id]))
+            pkt_info = self.create_packet_info(pg_id, target_pg_id)
+            payload = self.info_to_payload(pkt_info)
+            p = (Ether(dst=self.MY_MACS[target_pg_id][target_host_id],
+                       src=self.MY_MACS[pg_id][source_host_id]) /
+                 IP(src=self.MY_IP4S[pg_id][source_host_id],
+                    dst=self.MY_IP4S[target_pg_id][target_host_id]) /
                  UDP(sport=1234, dport=1234) /
                  Raw(payload))
-            info.data = p.copy()
+            pkt_info.data = p.copy()
             packet_sizes = [64, 512, 1518, 9018]
             size = packet_sizes[(i / 2) % len(packet_sizes)]
             self.extend_packet(p, size)
@@ -124,17 +124,17 @@ class TestL2xc(VppTestCase):
         return pkts
         ## @var pg_targets
         #  List variable to store list of indexes of target packet generator
-        #  interfaces for evey packet generator interface.
+        #  interfaces for every source packet generator interface.
         ## @var target_pg_id
         #  Integer variable to store the index of the random target packet
         #  generator interfaces.
-        ## @var target_id
+        ## @var target_host_id
         #  Integer variable to store the index of the randomly chosen
         #  destination host MAC/IPv4 address.
-        ## @var source_id
+        ## @var source_host_id
         #  Integer variable to store the index of the randomly chosen source
         #  host MAC/IPv4 address.
-        ## @var info
+        ## @var pkt_info
         #  Object variable to store the information about the generated packet.
         ## @var payload
         #  String variable to store the payload of the packet to be generated.
@@ -146,11 +146,11 @@ class TestL2xc(VppTestCase):
         #  List variable to store required packet sizes.
 
     ## Method to verify packet stream received on the packet generator interface.
-    #  Verify packet by packet of the output stream captured on the given packet
-    #  stream generator according to data from the packet payload - order of
-    #  the packet in the stream, index of the source and destination packet
-    #  generator interface as well as by source and destination host IPv4
-    #  addresses and sport and dport values of UDP layer.
+    #  Verify packet-by-packet the output stream captured on a given packet
+    #  generator (pg) interface using following packet payload data - order of
+    #  packet in the stream, index of the source and destination pg interface,
+    #  src and dst host IPv4 addresses and src port and dst port values of UDP
+    #  layer.
     #  @param self The object pointer.
     #  @param o Integer variable to store the index of the interface to
     #  verify the output packet stream.

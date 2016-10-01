@@ -23,9 +23,9 @@ class TestL2bd(VppTestCase):
     """ L2BD Test Case """
 
     ## Test variables
-    interf_nr = 3           # Number To represent SWof interfaces for bridge-domain to learn
+    interf_nr = 3           # Number of interfaces
     bd_id = 1               # Bridge domain ID
-    mac_entries = 100       # Number of MAC entries
+    mac_entries = 100       # Number of MAC entries for bridge-domain to learn
     dot1q_sub_id = 100      # SubID of dot1q sub-interface
     dot1q_tag = 100         # VLAN tag for dot1q sub-interface
     dot1ad_sub_id = 200     # SubID of dot1ad sub-interface
@@ -79,7 +79,7 @@ class TestL2bd(VppTestCase):
         self.cli(2, "show bridge-domain 1 detail")
 
     ## Class method to create VLAN sub-interface.
-    #  Use VPP API command to create VLAN sub-interface.
+    #  Uses VPP API command to create VLAN sub-interface.
     #  @param cls The class pointer.
     #  @param pg_index Integer variable to store the index of the packet
     #  generator interface to create VLAN sub-interface on.
@@ -202,7 +202,7 @@ class TestL2bd(VppTestCase):
         ## @var INT_DETAILS
         #  Dictionary variable to store data about interfaces.
 
-    ## Class method to learn defined number of MAC addresses.
+    ## Class method for bridge-domain to learn defined number of MAC addresses.
     #  Create required number of host MAC addresses and distribute them among
     #  interfaces. Create host IPv4 address for every host MAC address. Create
     #  L2 MAC packet stream with host MAC addresses per interface to let
@@ -348,7 +348,7 @@ class TestL2bd(VppTestCase):
         return pkts
         ## @var pg_targets
         #  List variable to store list of indexes of target packet generator
-        #  interfaces for every packet generator interface.
+        #  interfaces for every source packet generator interface.
         ## @var target_pg_id
         #  Integer variable to store the index of the random target packet
         #  generator interfaces.
@@ -372,9 +372,9 @@ class TestL2bd(VppTestCase):
     ## Method to verify packet stream received on the packet generator interface.
     #  Verify packet-by-packet the output stream captured on a given packet
     #  generator (pg) interface using following packet payload data - order of
-    #  the packet in the stream, index of the source and destination pg
-    #  interface, src and dst host IPv4 addresses and src port and dst port
-    #  values of UDP layer.
+    #  packet in the stream, index of the source and destination pg interface,
+    #  src and dst host IPv4 addresses and src port and dst port values of UDP
+    #  layer.
     #  @param self The object pointer.
     #  @param o Integer variable to store the index of the interface to
     #  verify the output packet stream.

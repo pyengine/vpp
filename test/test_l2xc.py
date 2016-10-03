@@ -161,15 +161,12 @@ class TestL2xc(VppTestCase):
             last_info[i] = None
         for packet in capture:
             try:
-                self.log("Processing packet:", 2)
-                if self.verbose >= 2:
-                    packet.show()
                 ip = packet[IP]
                 udp = packet[UDP]
                 payload_info = self.payload_to_info(str(packet[Raw]))
                 self.assertEqual(payload_info.dst, o)
                 self.log("Got packet on port %u: src=%u (id=%u)"
-                         % (o, payload_info.src, payload_info.index), 1)
+                         % (o, payload_info.src, payload_info.index), 2)
                 next_info = self.get_next_packet_info_for_interface2(
                     payload_info.src, payload_info.dst,
                     last_info[payload_info.src])

@@ -394,7 +394,7 @@ class TestL2bd(VppTestCase):
                 self.assertTrue(Dot1Q not in packet)
                 self.assertEqual(payload_info.dst, o)
                 self.log("Got packet on port %u: src=%u (id=%u)"
-                         % (o, payload_info.src, payload_info.index), 1)
+                         % (o, payload_info.src, payload_info.index), 2)
                 next_info = self.get_next_packet_info_for_interface2(
                     payload_info.src, payload_info.dst,
                     last_info[payload_info.src])

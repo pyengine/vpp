@@ -154,8 +154,6 @@ class VppTestCase(unittest.TestCase):
         self.cli(2, "show int")
         self.cli(2, "show trace")
         self.cli(2, "show hardware")
-        self.cli(2, "show ip arp")
-        self.cli(2, "show ip fib")
         self.cli(2, "show error")
         self.cli(2, "show run")
 
@@ -493,6 +491,17 @@ class VppTestResult(unittest.TestResult):
     def addSuccess(self, test):
         unittest.TestResult.addSuccess(self, test)
         self.result_string = GREEN + "OK" + END
+        ## @var result_string
+        #  String variable to store the test case result string.
+
+    ## Method called when the test case is skipped.
+    #  Run the default implementation and set the result string.
+    #  @param self The object pointer.
+    #  @param test Object variable to store the test case instance.
+    #  @param reason String variable with reason of skipping.
+    def addSkip(self, test, reason):
+        unittest.TestResult.addSkip(self, test, reason)
+        self.result_string = YELLOW + "SKIP" + END
         ## @var result_string
         #  String variable to store the test case result string.
 

@@ -62,12 +62,8 @@ class TestL2xc(VppTestCase):
     #  Overrides tearDown method in VppTestCase class.
     #  @param self The object pointer.
     def tearDown(self):
-        self.cli(2, "show int")
-        self.cli(2, "show trace")
-        self.cli(2, "show hardware")
+        super(TestL2xc, self).tearDown()
         self.cli(2, "show l2patch")
-        self.cli(2, "show error")
-        self.cli(2, "show run")
 
     ## Class method to create required number of MAC and IPv4 addresses.
     #  Create required number of host MAC addresses and distribute them among

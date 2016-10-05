@@ -97,6 +97,8 @@ class TestVxlan(BridgeDomain, Util, VppTestCase):
     def tearDown(self):
         super(TestVxlan, self).tearDown()
         self.cli(2, "show bridge-domain 1 detail")
+        self.cli(2, "show ip arp")
+        self.cli(2, "show ip fib")
 
 if __name__ == '__main__':
     unittest.main(testRunner=VppTestRunner)

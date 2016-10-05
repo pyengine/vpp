@@ -70,12 +70,8 @@ class TestL2bd(VppTestCase):
     #  Overrides tearDown method in VppTestCase class.
     #  @param self The object pointer.
     def tearDown(self):
-        self.cli(2, "show int")
-        self.cli(2, "show trace")
-        self.cli(2, "show hardware")
+        super(TestL2bd, self).tearDown()
         self.cli(2, "show l2fib verbose")
-        self.cli(2, "show error")
-        self.cli(2, "show run")
         self.cli(2, "show bridge-domain 1 detail")
 
     ## Class method to create VLAN sub-interface.
@@ -111,12 +107,14 @@ class TestL2bd(VppTestCase):
     ## Sub-class of the interface class.
     #  To define object representation of the HW interface.
     class HardInt(Interface):
-        pass
+        def __init__(self):
+            pass
 
     ## Sub-class of the interface class.
     #  To define object representation of the SW interface.
     class SoftInt(Interface):
-        pass
+        def __init__(self):
+            pass
 
     ## Sub-class of the SW interface class.
     #  To represent the general sub-interface.

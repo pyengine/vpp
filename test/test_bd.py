@@ -5,9 +5,9 @@ from framework import VppTestCase, VppTestRunner
 from template_bd import BridgeDomain
 
 
-## Simple Bridge domain tests with template
+## Simple Bridge domain tests which forwards frames
 class TestBridgeDomain(BridgeDomain, VppTestCase):
-    """ BD Test Case """
+    """ BD Forwarding Test Case """
 
     ## Run __init__ for all parent class
     #

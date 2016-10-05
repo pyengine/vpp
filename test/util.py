@@ -75,10 +75,16 @@ class Util(object):
 
             cls.cli(2, "trace add pg-input 1")
             cls.pg_start()
-            nd_reply = cls.pg_get_capture(i)[0]
-            icmpv6_na = nd_reply['ICMPv6 Neighbor Discovery - Neighbor Advertisement']
-            dst_ll_addr = icmpv6_na['ICMPv6 Neighbor Discovery Option - Destination Link-Layer Address']
-            cls.VPP_MACS[i] = dst_ll_addr.lladdr
+            for nd_reply in cls.pg_get_capture(i):
+                try:
+                    icmpv6_na = nd_reply['ICMPv6 Neighbor Discovery - Neighbor Advertisement']
+                    dst_ll_addr = icmpv6_na['ICMPv6 Neighbor Discovery Option - Destination Link-Layer Address']
+                    cls.VPP_MACS[i] = dst_ll_addr.lladdr
+                    break
+                except IndexError:
+                    pass
+            else:
+                raise RuntimeError('Neighbor Advertisement not found')
             ## @var ip
             #  <TODO add description>
             ## @var nd_req

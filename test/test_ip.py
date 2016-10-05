@@ -36,18 +36,14 @@ class TestIPv4(Util, VppTestCase):
             # config 2M FIB enries
             cls.config_fib_entries(2000000)
 
-        except Exception as e:
+        except:
             super(TestIPv4, cls).tearDownClass()
             raise
 
     def tearDown(self):
-        self.cli(2, "show int")
-        self.cli(2, "show trace")
-        self.cli(2, "show hardware")
+        super(TestIPv4, self).tearDown()
         self.cli(2, "show ip arp")
         # self.cli(2, "show ip fib")  # 2M entries
-        self.cli(2, "show error")
-        self.cli(2, "show run")
 
     @classmethod
     def create_vlan_subif(cls, pg_index, vlan):
@@ -62,7 +58,8 @@ class TestIPv4(Util, VppTestCase):
         pass
 
     class HardInt(SoftInt):
-        pass
+        def __init__(self):
+            pass
 
     class Subint(SoftInt):
         def __init__(self, sub_id):

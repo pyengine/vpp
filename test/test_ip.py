@@ -15,6 +15,8 @@ from scapy.layers.inet import IP, UDP
 class TestIPv4(Util, VppTestCase):
     """ IPv4 Test Case """
 
+    DOT1AD = 0x88A8
+
     @classmethod
     def setUpClass(cls):
         super(TestIPv4, cls).setUpClass()
@@ -51,8 +53,12 @@ class TestIPv4(Util, VppTestCase):
 
     @classmethod
     def create_dot1ad_subif(cls, pg_index, sub_id, outer_vlan_id, inner_vlan_id):
-        cls.api("create_subif pg%u sub_id %u outer_vlan_id %u inner_vlan_id %u dot1ad"
+        cls.api("create_subif pg%u sub_id %u outer_vlan_id %u inner_vlan_id %u dot1ad two_tags exact_match"
                  % (pg_index, sub_id, outer_vlan_id, inner_vlan_id))
+
+    @classmethod
+    def create_vlan_tag_rewrite_subif(cls, pg_index, vlan, opr, tag1, tag2):
+        cls.api("l2_interface_vlan_tag_rewrite pg%u.%u %s" % (pg_index, vlan, opr))
 
     class SoftInt(object):
         pass
@@ -95,12 +101,9 @@ class TestIPv4(Util, VppTestCase):
         cls.create_vlan_subif(1, cls.INT_DETAILS[1].vlan)
 
         # FIXME: Wrong packet format/wrong layer on output of interface 2
-        #self.INT_DETAILS[2] = self.Dot1ADSubint(10, 200, 300)
-        #self.create_dot1ad_subif(2, self.INT_DETAILS[2].sub_id, self.INT_DETAILS[2].outer_vlan, self.INT_DETAILS[2].inner_vlan)
-
-        # Use dor1q for now
-        cls.INT_DETAILS[2] = cls.Dot1QSubint(200)
-        cls.create_vlan_subif(2, cls.INT_DETAILS[2].vlan)
+        cls.INT_DETAILS[2] = cls.Dot1ADSubint(100, 200, 300)
+        cls.create_dot1ad_subif(2, cls.INT_DETAILS[2].sub_id, cls.INT_DETAILS[2].outer_vlan, cls.INT_DETAILS[2].inner_vlan)
+        cls.create_vlan_tag_rewrite_subif(2, 100, 'push-2', 200, 300)
 
         for i in cls.interfaces:
             det = cls.INT_DETAILS[i]
@@ -139,6 +142,7 @@ class TestIPv4(Util, VppTestCase):
 
             cls.cli(2, "trace add pg-input 1")
             cls.pg_start()
+            cls.cli(2, "show trace")
 
             # We don't need to read output
 
@@ -169,15 +173,14 @@ class TestIPv4(Util, VppTestCase):
             self.assertEqual(type(payload), Dot1Q)
             self.assertEqual(payload.vlan, self.INT_DETAILS[i].vlan)
             payload = payload.payload
+            packet.remove_payload()
+            packet.add_payload(payload)
         elif isinstance(det, self.Dot1ADSubint):  # TODO: change 88A8 type
-            self.assertEqual(type(payload), Dot1Q)
-            self.assertEqual(payload.vlan, self.INT_DETAILS[i].outer_vlan)
-            payload = payload.payload
-            self.assertEqual(type(payload), Dot1Q)
-            self.assertEqual(payload.vlan, self.INT_DETAILS[i].inner_vlan)
-            payload = payload.payload
-        packet.remove_payload()
-        packet.add_payload(payload)
+            self.assertEqual(packet.type, self.DOT1AD)
+            vlan_header = str(packet.payload).encode('hex')[0:12]
+            self.assertEqual(int(vlan_header[0:4],16), self.INT_DETAILS[i].outer_vlan)
+            self.assertEqual(int(vlan_header[4:8],16), 0x8100)
+            self.assertEqual(int(vlan_header[8:12],16), self.INT_DETAILS[i].inner_vlan)
 
     def create_stream(self, pg_id):
         pg_targets = [None] * 3
@@ -212,9 +215,11 @@ class TestIPv4(Util, VppTestCase):
             self.remove_dot1_layers(o, packet)  # Check VLAN tags and Ethernet header
             self.assertTrue(Dot1Q not in packet)
             try:
-                ip = packet[IP]
-                udp = packet[UDP]
-                payload_info = self.payload_to_info(str(packet[Raw]))
+                if packet.type != self.DOT1AD:
+                    payload_info = self.payload_to_info(str(packet[Raw]))
+                else:
+                    raw_data = str(packet.payload)[36:]
+                    payload_info = self.payload_to_info(raw_data)
                 packet_index = payload_info.index
                 src_pg = payload_info.src
                 dst_pg = payload_info.dst
@@ -224,12 +229,15 @@ class TestIPv4(Util, VppTestCase):
                 last_info[src_pg] = next_info
                 self.assertTrue(next_info is not None)
                 self.assertEqual(packet_index, next_info.index)
-                saved_packet = next_info.data
-                # Check standard fields
-                self.assertEqual(ip.src, saved_packet[IP].src)
-                self.assertEqual(ip.dst, saved_packet[IP].dst)
-                self.assertEqual(udp.sport, saved_packet[UDP].sport)
-                self.assertEqual(udp.dport, saved_packet[UDP].dport)
+                if packet.type != 0x88A8:
+                    saved_packet = next_info.data
+                    # Check standard fields
+                    ip = packet[IP]
+                    udp = packet[UDP]
+                    self.assertEqual(ip.src, saved_packet[IP].src)
+                    self.assertEqual(ip.dst, saved_packet[IP].dst)
+                    self.assertEqual(udp.sport, saved_packet[UDP].sport)
+                    self.assertEqual(udp.dport, saved_packet[UDP].dport)
             except:
                 self.log("Unexpected or invalid packet:")
                 packet.show()

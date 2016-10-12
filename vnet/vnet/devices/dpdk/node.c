@@ -23,6 +23,7 @@
 #include <vnet/classify/vnet_classify.h>
 #include <vnet/mpls/packet.h>
 #include <vnet/handoff.h>
+#include <vnet/span/span.h>
 
 #include "dpdk_priv.h"
 
@@ -171,6 +172,7 @@ dpdk_rx_trace (dpdk_main_t * dm,
       t0->queue_index = queue_id;
       t0->device_index = xd->device_index;
       t0->buffer_index = bi0;
+      t0->span_next_index = xd->vlib_span_next_sw_if_index;
 
       clib_memcpy (&t0->mb, mb, sizeof (t0->mb));
       clib_memcpy (&t0->buffer, b0, sizeof (b0[0]) - sizeof (b0->pre_data));
@@ -403,11 +405,14 @@ dpdk_device_input (dpdk_main_t * dm,
   vlib_buffer_free_list_t *fl;
   u8 efd_discard_burst = 0;
   u32 buffer_flags_template;
+  vnet_main_t *vnm = vnet_get_main ();
+  u32 n_span_buffers;
 
   if ((xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) == 0)
     return 0;
 
-  n_buffers = dpdk_rx_burst (dm, xd, queue_id);
+  n_span_buffers =
+          n_buffers = dpdk_rx_burst (dm, xd, queue_id);
 
   if (n_buffers == 0)
     {
@@ -621,6 +626,67 @@ dpdk_device_input (dpdk_main_t * dm,
 			    n_trace - vec_len (xd->d_trace_buffers));
     }
 
+  // SPAN cloning
+  if (PREDICT_FALSE ((xd->flags & DPDK_DEVICE_FLAG_SPAN) &&
+          (xd->vlib_span_next_sw_if_index != ~0)))
+  {
+        vnet_sw_interface_t *sw_if = vnet_get_sw_interface (vnm, xd->vlib_span_next_sw_if_index);
+
+        if (PREDICT_TRUE ((sw_if != 0) &&
+                (sw_if->flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP)))
+        {
+            vlib_trace_next_frame (vm, node, DPDK_RX_NEXT_SPAN_OUTPUT);
+
+            mb_index = 0;
+            while (n_span_buffers > 0)
+              {
+                vlib_buffer_t *b0;
+
+                vlib_get_next_frame (vm, node, DPDK_RX_NEXT_SPAN_OUTPUT, to_next, n_left_to_next);
+
+                while (n_span_buffers > 0 && n_left_to_next > 0)
+              {
+                struct rte_mbuf *mb = xd->rx_vectors[queue_id][mb_index];
+
+                if (PREDICT_TRUE (n_span_buffers > 2))
+                  {
+                    struct rte_mbuf *pfmb = xd->rx_vectors[queue_id][mb_index + 2];
+                    vlib_buffer_t *bp = vlib_buffer_from_rte_mbuf (pfmb);
+                    CLIB_PREFETCH (pfmb, CLIB_CACHE_LINE_BYTES, STORE);
+                    CLIB_PREFETCH (bp, CLIB_CACHE_LINE_BYTES, STORE);
+                  }
+
+                ASSERT (mb);
+
+                b0 = vlib_buffer_from_rte_mbuf (mb);
+
+                vlib_buffer_t *c0 = span_duplicate_buffer (vm, b0, xd->vlib_span_next_sw_if_index, 1);
+                if (c0 != 0)
+                   {
+                       u32 ci0 = vlib_get_buffer_index (vm, c0);
+
+                       to_next[0] = ci0;
+                       to_next++;
+                       n_left_to_next--;
+                   } else {
+                       clib_error ("span_duplicate_buffer failed");
+                   }
+
+                   n_span_buffers--;
+                   mb_index++;
+              }
+
+              vlib_put_next_frame (vm, node, DPDK_RX_NEXT_SPAN_OUTPUT, n_left_to_next);
+              }
+
+            // span per interface counter
+            vlib_increment_simple_counter
+                (vnm->interface_main.sw_if_counters
+                        + VNET_INTERFACE_COUNTER_SPAN,
+                        cpu_index, xd->vlib_sw_if_index, mb_index);
+        }
+    }
+
   vlib_increment_combined_counter
     (vnet_get_main ()->interface_main.combined_sw_if_counters
      + VNET_INTERFACE_COUNTER_RX,
@@ -792,6 +858,7 @@ VLIB_REGISTER_NODE (dpdk_input_node) = {
     [DPDK_RX_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
     [DPDK_RX_NEXT_IP6_INPUT] = "ip6-input",
     [DPDK_RX_NEXT_MPLS_INPUT] = "mpls-input",
+    [DPDK_RX_NEXT_SPAN_OUTPUT] = "interface-output",
   },
 };
 

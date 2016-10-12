@@ -221,6 +221,7 @@ typedef struct
 
   u32 vlib_hw_if_index;
   u32 vlib_sw_if_index;
+  u32 vlib_span_next_sw_if_index;
 
   /* next node index if we decide to steal the rx graph arc */
   u32 per_interface_next_index;
@@ -243,6 +244,7 @@ typedef struct
 #define DPDK_DEVICE_FLAG_VHOST_USER     (1 << 4)
 #define DPDK_DEVICE_FLAG_HAVE_SUBIF     (1 << 5)
 #define DPDK_DEVICE_FLAG_HQOS           (1 << 6)
+#define DPDK_DEVICE_FLAG_SPAN           (1 << 7)
 
   u16 nb_tx_desc;
     CLIB_CACHE_LINE_ALIGN_MARK (cacheline1);
@@ -529,6 +531,7 @@ typedef enum
   DPDK_RX_NEXT_MPLS_INPUT,
   DPDK_RX_NEXT_ETHERNET_INPUT,
   DPDK_RX_NEXT_DROP,
+  DPDK_RX_NEXT_SPAN_OUTPUT,
   DPDK_RX_N_NEXT,
 } dpdk_rx_next_t;
 
@@ -547,6 +550,7 @@ typedef struct
   u32 buffer_index;
   u16 device_index;
   u16 queue_index;
+  u32 span_next_index;
   struct rte_mbuf mb;
   vlib_buffer_t buffer;		/* Copy of VLIB buffer; pkt data stored in pre_data. */
   u8 data[256];			/* First 256 data bytes, used for hexdump */

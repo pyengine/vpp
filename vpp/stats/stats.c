@@ -692,6 +692,9 @@ vl_api_vnet_interface_counters_t_handler (vl_api_vnet_interface_counters_t *
 	case VNET_INTERFACE_COUNTER_TX_ERROR:
 	  , counter_name = "tx-error (fifo-full)";
 	  break;
+    case VNET_INTERFACE_COUNTER_SPAN:
+      counter_name = "span";
+      break;
 	default:
 	  counter_name = "bogus";
 	  break;

@@ -1082,6 +1082,7 @@ vnet_interface_init (vlib_main_t * vm)
   im->sw_if_counters[VNET_INTERFACE_COUNTER_RX_MISS].name = "rx-miss";
   im->sw_if_counters[VNET_INTERFACE_COUNTER_RX_ERROR].name = "rx-error";
   im->sw_if_counters[VNET_INTERFACE_COUNTER_TX_ERROR].name = "tx-error";
+  im->sw_if_counters[VNET_INTERFACE_COUNTER_SPAN].name = "span";
 
   vec_validate (im->combined_sw_if_counters,
 		VNET_N_COMBINED_INTERFACE_COUNTER - 1);

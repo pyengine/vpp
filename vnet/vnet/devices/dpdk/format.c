@@ -462,6 +462,15 @@ format_dpdk_device (u8 * s, va_list * args)
 		  xd->rx_q_used, xd->rx_q_used, xd->tx_q_used, xd->tx_q_used);
     }
 
+  if (verbose && xd->vlib_span_next_sw_if_index != ~0)
+    {
+      vnet_sw_interface_t *si =
+              vnet_get_sw_interface (dm->vnet_main, xd->vlib_span_next_sw_if_index);
+      s = format (s, "%USPAN to %U\n",
+                format_white_space, indent + 2,
+                format_vnet_sw_interface_name, dm->vnet_main, si);
+    }
+
   s = format (s, "%Urx queues %d, rx desc %d, tx queues %d, tx desc %d\n",
 	      format_white_space, indent + 2,
 	      xd->rx_q_used, xd->nb_rx_desc, xd->tx_q_used, xd->nb_tx_desc);
@@ -646,6 +655,10 @@ format_dpdk_rx_dma_trace (u8 * s, va_list * va)
     f = format_hex_bytes;
   s = format (s, "\n%U%U", format_white_space, indent,
 	      f, t->buffer.pre_data, sizeof (t->buffer.pre_data));
+  if (t->span_next_index != ~0)
+      s = format (s, "\n%USPAN: %U",
+              format_white_space, indent,
+              format_vnet_sw_if_index_name, vnm, t->span_next_index);
 
   return s;
 }

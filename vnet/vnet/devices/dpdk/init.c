@@ -765,6 +765,7 @@ dpdk_lib_init (dpdk_main_t * dm)
       sw = vnet_get_hw_sw_interface (dm->vnet_main, xd->vlib_hw_if_index);
       xd->vlib_sw_if_index = sw->sw_if_index;
       hi = vnet_get_hw_interface (dm->vnet_main, xd->vlib_hw_if_index);
+      xd->vlib_span_next_sw_if_index = ~0;
 
       /*
        * DAW-FIXME: The Cisco VIC firmware does not provide an api for a

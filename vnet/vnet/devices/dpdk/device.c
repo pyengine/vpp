@@ -1170,6 +1170,26 @@ dpdk_interface_admin_up_down (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
   return /* no error */ 0;
 }
 
+static clib_error_t *
+dpdk_span_enable_disable (vnet_main_t * vnm, u32 hw_if_index_src, u32 sw_if_index_dst)
+{
+  vnet_hw_interface_t *hif = vnet_get_hw_interface (vnm, hw_if_index_src);
+  dpdk_main_t *dm = &dpdk_main;
+  dpdk_device_t *xd = vec_elt_at_index (dm->devices, hif->dev_instance);
+
+  if (sw_if_index_dst != ~0)
+    {
+      xd->flags |= DPDK_DEVICE_FLAG_SPAN;
+    }
+  else
+    {
+      xd->flags &= ~DPDK_DEVICE_FLAG_SPAN;
+    }
+  xd->vlib_span_next_sw_if_index = sw_if_index_dst;
+
+  return /* no error */ 0;
+}
+
 /*
  * Dynamically redirect all pkts from a specific interface
  * to the specified node
@@ -1272,6 +1292,7 @@ VNET_DEVICE_CLASS (dpdk_device_class) = {
   .clear_counters = dpdk_clear_hw_interface_counters,
   .admin_up_down_function = dpdk_interface_admin_up_down,
   .subif_add_del_function = dpdk_subif_add_del_function,
+  .span_enable_disable_function = dpdk_span_enable_disable,
   .rx_redirect_to_node = dpdk_set_interface_next_node,
   .no_flatten_output_chains = 1,
   .name_renumber = dpdk_device_renumber,

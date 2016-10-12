@@ -55,6 +55,10 @@ typedef clib_error_t *(vnet_subif_add_del_function_t)
   (struct vnet_main_t * vnm, u32 if_index,
    struct vnet_sw_interface_t * template, int is_add);
 
+/* SPAN enable/disable callback. */
+typedef clib_error_t *(vnet_span_function_t)
+  (struct vnet_main_t * vnm, u32 hw_if_index_src, u32 sw_if_index_dst);
+
 /* Interface set mac address callback. */
 typedef clib_error_t *(vnet_interface_set_mac_address_function_t)
   (struct vnet_hw_interface_t * hi, char *address);
@@ -105,6 +109,9 @@ typedef struct _vnet_device_class
 
   /* Function to call when sub-interface is added/deleted */
   vnet_subif_add_del_function_t *subif_add_del_function;
+
+  /* Function to call when SPAN is enabled/disabled */
+  vnet_span_function_t *span_enable_disable_function;
 
   /* Redistribute flag changes/existence of this interface class. */
   u32 redistribute;
@@ -466,7 +473,8 @@ typedef enum
   VNET_INTERFACE_COUNTER_RX_ERROR = 6,
   VNET_INTERFACE_COUNTER_TX_ERROR = 7,
   VNET_INTERFACE_COUNTER_MPLS = 8,
-  VNET_N_SIMPLE_INTERFACE_COUNTER = 9,
+  VNET_INTERFACE_COUNTER_SPAN = 9,
+  VNET_N_SIMPLE_INTERFACE_COUNTER = 10,
   /* Combined counters. */
   VNET_INTERFACE_COUNTER_RX = 0,
   VNET_INTERFACE_COUNTER_TX = 1,

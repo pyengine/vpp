@@ -27,6 +27,7 @@ if [ "${FULL}" == "1" ]; then
 else
 	FILELIST=$((git diff HEAD~1.. --name-only; git ls-files -m ) | sort -u)
 fi
+FILELIST=$(git ls-files)
 
 # Check to make sure we have indent.  Exit if we don't with an error message, but
 # don't *fail*.

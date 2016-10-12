@@ -336,7 +336,7 @@ cli_show_trace_buffer (vlib_main_t * vm,
 
         clib_mem_set_heap (mainheap);
 
-        s = format (s, "Packet %d\n%U\n\n", i + 1,
+        s = format (s, "Packet %d/%d\n%U\n\n", i + 1, vec_len (traces),
                          format_vlib_trace, vm, traces[i]);
 
         mainheap = clib_mem_set_heap (this_vlib_main->heap_base);

@@ -45,6 +45,9 @@
 #include <acl/acl_all_api_h.h>
 #undef vl_api_version
 
+
+acl_main_t acl_main;
+
 static void
 noop_handler (void *notused)
 {
@@ -144,7 +147,7 @@ acl_plugin_api_hookup (vlib_main_t *vm)
 }
 
 /*static*/ int
-acl_add_list (bool is_ingress, u32 count, acl_rule_t rules[],
+acl_add_list (u32 count, acl_rule_t rules[],
 	      u32 * acl_list_index)
 {
   acl_main_t *am = &acl_main;
@@ -156,7 +159,7 @@ acl_add_list (bool is_ingress, u32 count, acl_rule_t rules[],
   *acl_list_index = a - am->acls;
 
   /* Init ACL struct */
-  a->is_ingress = is_ingress;
+  a->count = count;
   a->rules = clib_mem_alloc_aligned (sizeof(acl_rule_t) * count,
 				     CLIB_CACHE_LINE_BYTES);
   if (!a->rules)

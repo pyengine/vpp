@@ -40,32 +40,46 @@ typedef struct
  */
 typedef struct
 {
-  bool is_permit;
-  bool is_ipv6;
-  bool is_establieshed;
-  address_t src;
+  u8 is_permit;
+  u8 is_ipv6;
+  ip46_address_t src;
   u8 src_prefixlen;
-  address_t dst;
+  ip46_address_t dst;
   u8 dst_prefixlen;
   u8 proto;
   u16 src_port;
   u16 dst_port;
 } acl_rule_t;
 
+typedef struct
+{
+  u8 is_permit;
+  u16 type;
+  u8 src[6];
+  u8 dst[6];
+} l2_acl_rule_t;
+
 /*
  * ACL
  */
 typedef struct
 {
-  bool is_ingress;
+  u32 count;
   acl_rule_t *rules;
 } acl_list_t;
+
+typedef struct
+{
+  u32 count;
+  l2_acl_rule_t *rules;
+} l2_acl_list_t;
 
 typedef struct {
   /* API message ID base */
   u16 msg_id_base;
 
   acl_list_t *acls;	/* Pool of ACLs */
+  l2_acl_list_t *l2_acls;	/* Pool of L2 ACLs */
 
   /* convenience */
   vlib_main_t * vlib_main;
@@ -73,7 +87,7 @@ typedef struct {
   ethernet_main_t * ethernet_main;
 } acl_main_t;
 
-acl_main_t acl_main;
+extern acl_main_t acl_main;
 
 
 #endif

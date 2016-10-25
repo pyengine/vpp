@@ -1118,7 +1118,7 @@ static u8 * format_ip4_rewrite_trace (u8 * s, va_list * args)
 
   s = format (s, "tx_sw_if_index %d dpo-idx %d : %U flow hash: 0x%08x",
               t->fib_index, t->dpo_index, format_ip_adjacency,
-              vnm, t->dpo_index, FORMAT_IP_ADJACENCY_NONE,
+              t->dpo_index, FORMAT_IP_ADJACENCY_NONE,
 	      t->flow_hash);
   s = format (s, "\n%U%U",
               format_white_space, indent,
@@ -1889,6 +1889,13 @@ ip4_arp_inline (vlib_main_t * vm,
 	  n_left_to_next_drop -= 1;
 
 	  p0->error = node->errors[drop0 ? IP4_ARP_ERROR_DROP : IP4_ARP_ERROR_REQUEST_SENT];
+
+	  /*
+	   * the adj has been updated to a rewrite but the node the DPO that got
+	   * us here hasn't - yet. no big deal. we'll drop while we wait.
+	   */
+	  if (IP_LOOKUP_NEXT_REWRITE == adj0->lookup_next_index)
+	    continue;
 
 	  if (drop0)
 	    continue;
@@ -2693,7 +2700,7 @@ add_del_interface_table (vlib_main_t * vm,
  * display the current IPv4 FIB table, use the command '<em>show ip fib</em>'.
  * FIB table will only be displayed if a route has been added to the table, or
  * an IP Address is assigned to an interface in the table (which adds a route
- * automatically), or '<em>include-empty</em>' is included.
+ * automatically).
  *
  * @note IP addresses added after setting the interface IP table end up in
  * the indicated FIB table. If the IP address is added prior to adding the
@@ -2982,6 +2989,7 @@ test_lookup_command_fn (vlib_main_t * vm,
                         unformat_input_t * input,
                         vlib_cli_command_t * cmd)
 {
+  ip4_fib_t *fib;
   u32 table_id = 0;
   f64 count = 1;
   u32 n;
@@ -2991,7 +2999,13 @@ test_lookup_command_fn (vlib_main_t * vm,
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
       if (unformat (input, "table %d", &table_id))
-	;
+      {
+          /* Make sure the entry exists. */
+          fib = ip4_fib_get(table_id);
+          if ((fib) && (fib->index != table_id))
+              return clib_error_return (0, "<fib-index> %d does not exist",
+                                        table_id);
+      }
       else if (unformat (input, "count %f", &count))
 	;
 
@@ -3112,21 +3126,79 @@ set_ip_flow_hash_command_fn (vlib_main_t * vm,
  * @cliexcmd{set ip flow-hash table 7 dst sport dport proto}
  * Example of display the configured flow hash:
  * @cliexstart{show ip fib}
- * Table 0, fib_index 0, flow hash: src dst sport dport proto
- *      Destination         Packets          Bytes         Adjacency
- * 172.16.2.0/24                      0               0 weight 1, index 5
- *                                                       172.16.2.1/24
- * 172.16.2.1/32                      0               0 weight 1, index 6
- *                                                       172.16.2.1/24
- * Table 7, fib_index 1, flow hash: dst sport dport proto
- *      Destination         Packets          Bytes         Adjacency
- * 172.16.1.0/24                      0               0 weight 1, index 3
- *                                                       172.16.1.1/24
- * 172.16.1.1/32                      1              98 weight 1, index 4
- *                                                       172.16.1.1/24
- * 172.16.1.2/32                      0               0 weight 1, index 7
- *                                                      GigabitEthernet2/0/0
- *                                                      IP4: 02:fe:6a:07:39:6f -> 16:d9:e0:91:79:86
+ * ipv4-VRF:0, fib_index 0, flow hash: src dst sport dport proto
+ * 0.0.0.0/0
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:0 buckets:1 uRPF:0 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 0.0.0.0/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:1 buckets:1 uRPF:1 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 224.0.0.0/8
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:3 buckets:1 uRPF:3 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 6.0.1.2/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:30 buckets:1 uRPF:29 to:[0:0]]
+ *     [0] [@3]: arp-ipv4: via 6.0.0.1 af_packet0
+ * 7.0.0.1/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:31 buckets:4 uRPF:30 to:[0:0]]
+ *     [0] [@3]: arp-ipv4: via 6.0.0.2 af_packet0
+ *     [1] [@3]: arp-ipv4: via 6.0.0.2 af_packet0
+ *     [2] [@3]: arp-ipv4: via 6.0.0.2 af_packet0
+ *     [3] [@3]: arp-ipv4: via 6.0.0.1 af_packet0
+ * 240.0.0.0/8
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:2 buckets:1 uRPF:2 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 255.255.255.255/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:4 buckets:1 uRPF:4 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * ipv4-VRF:7, fib_index 1, flow hash: dst sport dport proto
+ * 0.0.0.0/0
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:12 buckets:1 uRPF:11 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 0.0.0.0/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:13 buckets:1 uRPF:12 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 172.16.1.0/24
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:17 buckets:1 uRPF:16 to:[0:0]]
+ *     [0] [@4]: ipv4-glean: af_packet0
+ * 172.16.1.1/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:18 buckets:1 uRPF:17 to:[1:84]]
+ *     [0] [@2]: dpo-receive: 172.16.1.1 on af_packet0
+ * 172.16.1.2/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:21 buckets:1 uRPF:20 to:[0:0]]
+ *     [0] [@5]: ipv4 via 172.16.1.2 af_packet0: IP4: 02:fe:9e:70:7a:2b -> 26:a5:f6:9c:3a:36
+ * 172.16.2.0/24
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:19 buckets:1 uRPF:18 to:[0:0]]
+ *     [0] [@4]: ipv4-glean: af_packet1
+ * 172.16.2.1/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:20 buckets:1 uRPF:19 to:[0:0]]
+ *     [0] [@2]: dpo-receive: 172.16.2.1 on af_packet1
+ * 224.0.0.0/8
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:15 buckets:1 uRPF:14 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 240.0.0.0/8
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:14 buckets:1 uRPF:13 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
+ * 255.255.255.255/32
+ *   unicast-ip4-chain
+ *   [@0]: dpo-load-balance: [index:16 buckets:1 uRPF:15 to:[0:0]]
+ *     [0] [@0]: dpo-drop ip6
  * @cliexend
 ?*/
 /* *INDENT-OFF* */

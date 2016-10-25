@@ -170,13 +170,29 @@ do {                                                            \
 #define REPLY_MACRO3(t, n, body)				\
 do {                                                            \
     unix_shared_memory_queue_t * q;                             \
-    u8 is_error = 0;                                            \
     rv = vl_msg_api_pd_handler (mp, rv);                        \
     q = vl_api_client_index_to_input_queue (mp->client_index);  \
     if (!q)                                                     \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp) + n);                 \
+    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->context = mp->context;                                 \
+    rmp->retval = ntohl(rv);                                    \
+    do {body;} while (0);                                       \
+    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
+} while(0);
+
+#define REPLY_MACRO4(t, n, body)                                \
+do {                                                            \
+    unix_shared_memory_queue_t * q;                             \
+    u8 is_error = 0;                                            \
+    rv = vl_msg_api_pd_handler (mp, rv);                        \
+    q = vl_api_client_index_to_input_queue (mp->client_index);  \
+    if (!q)                                                     \
+        return;                                                 \
+                                                                \
+    rmp = vl_msg_api_alloc_or_null (sizeof (*rmp) + n);         \
     if (!rmp)                                                   \
       {                                                         \
         /* if there isn't enough memory, try to allocate */     \
@@ -189,7 +205,6 @@ do {                                                            \
         rv = VNET_API_ERROR_TABLE_TOO_BIG;                      \
         is_error = 1;                                           \
       }                                                         \
-                                                                \
     rmp->_vl_msg_id = ntohs((t));                               \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
@@ -3196,7 +3211,9 @@ dhcp_compl_event_callback (u32 client_index, u32 pid, u8 * hostname,
   mp->hostname[vec_len (hostname) + 1] = '\n';
   clib_memcpy (&mp->host_address[0], host_address, 16);
   clib_memcpy (&mp->router_address[0], router_address, 16);
-  clib_memcpy (&mp->host_mac[0], host_mac, 6);
+
+  if (NULL != host_mac)
+    clib_memcpy (&mp->host_mac[0], host_mac, 6);
 
   mp->_vl_msg_id = ntohs (VL_API_DHCP_COMPL_EVENT);
 
@@ -6093,7 +6110,7 @@ vl_api_lisp_adjacencies_get_t_handler (vl_api_lisp_adjacencies_get_t * mp)
   size = vec_len (adjs) * sizeof (a);
 
   /* *INDENT-OFF* */
-  REPLY_MACRO3 (VL_API_LISP_ADJACENCIES_GET_REPLY, size,
+  REPLY_MACRO4 (VL_API_LISP_ADJACENCIES_GET_REPLY, size,
   {
     rmp->count = clib_host_to_net_u32 (vec_len (adjs));
     lisp_adjacency_copy (rmp->adjacencies, adjs);

@@ -136,11 +136,34 @@ acl_plugin_api_hookup (vlib_main_t *vm)
                            vl_noop_handler,                     \
                            vl_api_##n##_t_endian,               \
                            vl_api_##n##_t_print,                \
-                           sizeof(vl_api_##n##_t), 1); 
+                           sizeof(vl_api_##n##_t), 1);
     foreach_acl_plugin_api_msg;
 #undef _
 
     return 0;
+}
+
+/*static*/ int
+acl_add_list (bool is_ingress, u32 count, acl_rule_t rules[],
+	      u32 * acl_list_index)
+{
+  acl_main_t *am = &acl_main;
+  acl_list_t  * a;
+
+  /* Get ACL index */
+  pool_get_aligned (am->acls, a, CLIB_CACHE_LINE_BYTES);
+  memset (a, 0, sizeof (*a));
+  *acl_list_index = a - am->acls;
+
+  /* Init ACL struct */
+  a->is_ingress = is_ingress;
+  a->rules = clib_mem_alloc_aligned (sizeof(acl_rule_t) * count,
+				     CLIB_CACHE_LINE_BYTES);
+  if (!a->rules)
+    return -1;
+  clib_memcpy (a->rules, rules, sizeof(acl_rule_t) * count);
+
+  return 0;
 }
 
 static clib_error_t *
@@ -148,9 +171,8 @@ acl_init (vlib_main_t * vm)
 {
   acl_main_t * am = &acl_main;
   clib_error_t * error = 0;
-  u8 * name;
 
-  name = format (0, "acl_%08x%c", api_version, 0);
+  u8 * name = format (0, "acl_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
   am->msg_id_base = vl_msg_api_get_msg_ids ((char *) name,

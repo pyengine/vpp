@@ -24,14 +24,32 @@ acl_plugin_la_SOURCES =				\
 	acl/node.c				\
 	acl/acl_plugin.api.h
 
-BUILT_SOURCES = acl/acl.api.h
+BUILT_SOURCES = acl/acl.api.h acl/acl.py
 
 SUFFIXES = .api.h .api
 
+#
+# ACL API
+#
 %.api.h: %.api
-	mkdir -p `dirname $@` ; \
+	mkdir -p $(dir $@) ; \
 	$(CC) $(CPPFLAGS) -E -P -C -x c $^ \
 	| vppapigen --input - --output $@ --show-name $@
+
+define python_packaging_fn
+$(file >setup.py,from setuptools import setup)
+$(file >>setup.py,setup(name='vpp_papi_plugins.$(1)',packages=['vpp_papi_plugins','vpp_papi_plugins.$(1)'],namespace_packages=['vpp_papi_plugins']))
+$(file >vpp_papi_plugins/__init__.py,__import__('pkg_resources').declare_namespace(__name__))
+$(file >vpp_papi_plugins/$(1)/__init__.py,from . $(1) import *)
+endef
+
+%.py: %.api
+	$(info Creating Python binding for $@)
+	mkdir -p $(dir vpp_papi_plugins/$@) ;
+	$(CC) $(CPPFLAGS) -E -P -C -x c $<			\
+	| vppapigen --input - --python -			\
+	| pyvppapigen.py --input - > vpp_papi_plugins/$@
+	$(call python_packaging_fn,acl)
 
 noinst_HEADERS =				\
   acl/acl_all_api_h.h				\
@@ -41,3 +59,4 @@ noinst_HEADERS =				\
 # Remove *.la files
 install-data-hook:
 	@(cd $(vpppluginsdir) && $(RM) $(vppplugins_LTLIBRARIES))
+

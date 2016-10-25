@@ -36,7 +36,7 @@ format_struct = {'u8': 'B',
                  'f64' : 'd',
                  'vl_api_ip4_fib_counter_t' : 'IBQQ',
                  'vl_api_ip6_fib_counter_t' : 'QQBQQ',
-                 'vl_api_lisp_adjacency_t' : 'B' * 35
+                 'vl_api_lisp_adjacency_t' : 'B' * 35,
                  };
 #
 # NB: If new types are introduced in vpe.api, these must be updated.
@@ -150,11 +150,19 @@ def encode_print(name, id, t):
     # first, deal with all the other fields
     pack = '>' + ''.join([get_pack(f)[0] for f in t[:-1]])
 
-    # now see if the last field is a vla
-    if len(t[-1]) >= 3 and t[-1][2] == '0':
+   # named variable-length-array
+    if len(t[-1]) == 4 and t[-1][2] == '0' and t[-1][3] == t[-2][1]:
+        print(u"    vpp_api.write(pack('" + pack + "', base + "
+              + id + ", 0, context, " + ', '.join(args[3:-2] + ["len(" + args[-1] + ")"])
+              + ") + " + args[-1] + ")")
+
+    # unnamed variable-length-array
+    elif len(t[-1]) >= 3 and t[-1][2] == '0':
         print(u"    vpp_api.write(pack('" + pack + "', base + " +
               id + ", 0, context, " + ', '.join(args[3:-1]) + ") + "
               + args[-1] + ")")
+
+    # not a variable-length-array
     else:
         pack += get_pack(t[-1])[0]
         print(u"    vpp_api.write(pack('" + pack + "', base + " + id +
@@ -254,6 +262,20 @@ def decode_print(name, t):
     print('')
 
 #
+# Add type
+# Size and pack string only at the moment. Code for variable length arrays later
+#
+#
+def add_type(name, t):
+    n = 'vl_api_' + name + '_t'
+    args = get_args(t)
+    t = list(t)
+    pack = ''.join([get_pack(f)[0] for f in t])
+    size = sum(get_pack(f)[2] for f in t)
+    format_struct[n] = pack
+    type_size[n] = size
+
+#
 # Generate the main Python file
 #
 def main():
@@ -261,13 +283,16 @@ def main():
 #
 # AUTO-GENERATED FILE. PLEASE DO NOT EDIT.
 #
-from vpp_api_base import *
+from vpp_papi.vpp_api_base import *
 from struct import *
 from collections import namedtuple
 import vpp_api
 api_func_table = []
 api_name_to_id = {}
     ''')
+
+    for a in types:
+        add_type(a[0], a[1:])
 
     for i, a in enumerate(messages):
         name = a[0]

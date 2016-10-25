@@ -37,10 +37,10 @@ SUFFIXES = .api.h .api
 	| vppapigen --input - --output $@ --show-name $@
 
 define python_packaging_fn
-$(file >setup.py,from setuptools import setup)
-$(file >>setup.py,setup(name='vpp_papi_plugins.$(1)',packages=['vpp_papi_plugins','vpp_papi_plugins.$(1)'],namespace_packages=['vpp_papi_plugins']))
-$(file >vpp_papi_plugins/__init__.py,__import__('pkg_resources').declare_namespace(__name__))
-$(file >vpp_papi_plugins/$(1)/__init__.py,from . $(1) import *)
+echo "from setuptools import setup" >setup.py
+echo "setup(name='vpp_papi_plugins.$(1)',packages=['vpp_papi_plugins','vpp_papi_plugins.$(1)'],namespace_packages=['vpp_papi_plugins'])" >>setup.py
+echo "__import__('pkg_resources').declare_namespace(__name__)" >vpp_papi_plugins/__init__.py
+echo "from . $(1) import *" >vpp_papi_plugins/$(1)/__init__.py
 endef
 
 %.py: %.api

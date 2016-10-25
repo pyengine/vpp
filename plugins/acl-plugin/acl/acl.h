@@ -81,6 +81,10 @@ typedef struct {
   acl_list_t *acls;	/* Pool of ACLs */
   l2_acl_list_t *l2_acls;	/* Pool of L2 ACLs */
 
+  /* ACLs associated with interfaces */
+  u32 **input_acl_vec_by_sw_if_index;
+  u32 **output_acl_vec_by_sw_if_index;
+
   /* convenience */
   vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;

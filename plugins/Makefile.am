@@ -55,3 +55,7 @@ endif
 if ENABLE_acl_PLUGIN
 SUBDIRS += acl-plugin
 endif
+
+if ENABLE_l2sess_PLUGIN
+SUBDIRS += l2sess-plugin
+endif

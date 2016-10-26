@@ -283,7 +283,10 @@ def main():
 #
 # AUTO-GENERATED FILE. PLEASE DO NOT EDIT.
 #
-from vpp_papi.vpp_api_base import *
+if 'vpp_papi.' in __name__:
+    from vpp_api_base import *
+else:
+    from vpp_papi.vpp_api_base import *
 from struct import *
 from collections import namedtuple
 import vpp_api

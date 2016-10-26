@@ -83,7 +83,7 @@ def msg_handler(msg):
     waiting_for_reply_clear()
 
 def handler(signum, frame):
-    print('Signal handler called with signal', signum)
+    eprint('Signal handler called with signal', signum)
     raise IOError("Couldn't connect to VPP!")
 
 def connect(name, chroot_prefix = None):
@@ -104,6 +104,7 @@ def connect(name, chroot_prefix = None):
     try:
         plugin_map_plugins()
     except:
+        eprint('Mapping plugins failed')
         return -1
     return rv
 
@@ -119,7 +120,6 @@ def plugin_name_to_id(plugin, name_to_id_table, base):
         m = globals()[plugin]
     except KeyError:
         m = sys.modules[plugin]
-
     for name in name_to_id_table:
         setattr(m, name, name_to_id_table[name] + base)
 
@@ -153,7 +153,7 @@ def plugin_map_plugins():
         for entry in func_table:
             api_func_table[i] = entry
             i += 1
-        plugin_name_to_id(p, plugins[p]['name_to_id_table'], base)
+        #plugin_name_to_id(p, plugins[p]['name_to_id_table'], base)
 
 #
 # Set up core API

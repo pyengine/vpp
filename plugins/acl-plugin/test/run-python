@@ -2,10 +2,11 @@
 #
 # Do all the legwork to run a scapy shell with APIs available for load
 #
+CURR_DIR=`pwd`
 ROOT_DIR=`git rev-parse --show-toplevel`
 cd $ROOT_DIR
 sudo apt-get install -y python-virtualenv
-# uncomment the line below to enable the build of plugins and API each time..
+# uncomment the line below to enable build of plugins and api each time
 # make plugins && make build-vpp-api || exit
 virtualenv virtualenv
 virtualenv/bin/pip install ipaddress
@@ -20,7 +21,8 @@ $ROOT_DIR/virtualenv/bin/python setup.py install
 cd $ROOT_DIR
 # figure out the shared library path and start scapy
 export LD_LIBRARY_PATH=`pwd`/`find . -name "libpneum.so" -exec dirname {} \; | grep lib64 | head -n 1`
-sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH virtualenv/bin/scapy
+cd $CURR_DIR
+sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH $ROOT_DIR/virtualenv/bin/python $1 $2 $3 $4 $5 $6 $7 $8 $9
 
 
 

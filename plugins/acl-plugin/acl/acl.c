@@ -88,7 +88,7 @@ do {                                                            \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = ntohs((t)+am->msg_id_base);                               \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
     do {body;} while (0);                                       \
@@ -104,7 +104,7 @@ do {                                                            \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp) + n);                 \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = ntohs((t)+am->msg_id_base);                               \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
     do {body;} while (0);                                       \
@@ -277,6 +277,7 @@ static void
 vl_api_acl_add_t_handler (vl_api_acl_add_t * mp)
 {
   vl_api_acl_add_reply_t * rmp;
+  acl_main_t *am = &acl_main;
   int rv;
   u32 acl_list_index = ~0;
 

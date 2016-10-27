@@ -222,6 +222,48 @@ acl_del_list(u32 acl_list_index)
   return 0;
 }
 
+int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
+                                   int enable_disable)
+{
+ /*
+  * At present this function hooks the inbound ACL into the ethernet processing,
+  * effectively making it the very first feature which sees all packets.
+  * This is just for the testing - we will want to hook it from the classifier.
+  */
+
+  vnet_sw_interface_t * sw;
+  int rv;
+  u32 node_index = enable_disable ? acl_in_node.index : ~0;
+
+  /* Utterly wrong? */
+  if (pool_is_free_index (am->vnet_main->interface_main.sw_interfaces,
+                          sw_if_index))
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  /* Not a physical port? */
+  sw = vnet_get_sw_interface (am->vnet_main, sw_if_index);
+  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  /*
+   * Redirect pkts from the driver to the ACL node.
+   * Returns VNET_API_ERROR_UNIMPLEMENTED if the h/w driver
+   * doesn't implement the API.
+   *
+   * Node_index = ~0 => shut off redirection
+   */
+  rv = vnet_hw_interface_rx_redirect_to_node (am->vnet_main, sw_if_index,
+                                              node_index);
+  return rv;
+}
+
+int acl_interface_out_enable_disable (acl_main_t * am, u32 sw_if_index,
+                                   int enable_disable)
+{
+  return -1; /* FIXME: implement this */
+}
+
+
 static int
 acl_interface_add_inout_acl (u32 sw_if_index, u8 is_input, u32 acl_list_index)
 {
@@ -229,9 +271,11 @@ acl_interface_add_inout_acl (u32 sw_if_index, u8 is_input, u32 acl_list_index)
   if (is_input) {
     vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
     vec_add(am->input_acl_vec_by_sw_if_index[sw_if_index], &acl_list_index, 1);
+    acl_interface_in_enable_disable(am, sw_if_index, 1);
   } else {
     vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
     vec_add(am->output_acl_vec_by_sw_if_index[sw_if_index], &acl_list_index, 1);
+    acl_interface_out_enable_disable(am, sw_if_index, 1);
   }
   return 0;
 }
@@ -251,6 +295,9 @@ acl_interface_del_inout_acl (u32 sw_if_index, u8 is_input, u32 acl_list_index)
 	break;
       }
     }
+    if (0 == vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index])) {
+      acl_interface_in_enable_disable(am, sw_if_index, 0);
+    }
   } else {
     vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
     for (i=0; i<vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]); i++) {
@@ -259,6 +306,9 @@ acl_interface_del_inout_acl (u32 sw_if_index, u8 is_input, u32 acl_list_index)
 	rv = 0;
 	break;
       }
+    }
+    if (0 == vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index])) {
+      acl_interface_out_enable_disable(am, sw_if_index, 0);
     }
   }
   return rv;

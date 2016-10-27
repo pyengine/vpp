@@ -55,6 +55,7 @@ static char * acl_out_error_strings[] = {
 
 typedef enum {
   ACL_OUT_ERROR_DROP,
+  ACL_OUT_INTERFACE_OUTPUT,
   ACL_OUT_N_NEXT,
 } acl_out_next_t;
 
@@ -82,7 +83,7 @@ acl_out_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = ACL_OUT_ERROR_DROP;
+          u32 next0 = ACL_OUT_INTERFACE_OUTPUT;
           u32 sw_if_index0;
 
           /* speculatively enqueue b0 to the current next frame */
@@ -138,5 +139,6 @@ VLIB_REGISTER_NODE (acl_out_node) = {
   /* edit / add dispositions here */
   .next_nodes = {
         [ACL_OUT_ERROR_DROP] = "error-drop",
+        [ACL_OUT_INTERFACE_OUTPUT] = "interface-output",
   },
 };

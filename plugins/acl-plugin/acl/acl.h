@@ -23,7 +23,8 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 
-vlib_node_registration_t acl_node;
+extern vlib_node_registration_t acl_in_node;
+extern vlib_node_registration_t acl_out_node;
 
 enum address_e { IP4, IP6 };
 typedef struct

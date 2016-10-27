@@ -328,7 +328,7 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
                          u32 sw_if_index, acl_list_t *acl, u32 context)
 {
   vl_api_acl_details_t *mp;
-  int msg_size = sizeof (*mp);
+  int msg_size = sizeof (*mp) + sizeof(mp->r[0])*acl->count;
 
   mp = vl_msg_api_alloc (msg_size);
   memset (mp, 0, msg_size);
@@ -338,6 +338,7 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
   mp->context = context;
   mp->sw_if_index = htonl(sw_if_index);
   mp->count = htonl(acl->count);
+  mp->acl_index = htonl(acl - am->acls);
   clib_memcpy (mp->r, acl->rules, acl->count * sizeof(acl->rules[0]));
 
   vl_msg_api_send_shmem (q, (u8 *) & mp);

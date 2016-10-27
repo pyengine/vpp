@@ -189,6 +189,9 @@ acl_del_list(u32 acl_list_index)
   acl_main_t *am = &acl_main;
   acl_list_t  * a;
   int i, ii;
+  if (pool_is_free_index(am->acls, acl_list_index)) {
+    return -1;
+  }
 
   /* delete any references to the ACL */
   for(i = 0; i<vec_len(am->output_acl_vec_by_sw_if_index); i++) {
@@ -212,9 +215,11 @@ acl_del_list(u32 acl_list_index)
 
   /* now we can delete the ACL itself */
   a = &am->acls[acl_list_index];
-  clib_mem_free(a->rules);
+  if (a->rules) {
+    clib_mem_free(a->rules);
+  }
   pool_put(am->acls, a);
-  return -1;
+  return 0;
 }
 
 static int
@@ -319,7 +324,7 @@ vl_api_acl_interface_add_del_t_handler (vl_api_acl_interface_add_del_t * mp)
 }
 
 static void
-send_acl_details(unix_shared_memory_queue_t * q,
+send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
                          u32 sw_if_index, acl_list_t *acl, u32 context)
 {
   vl_api_acl_details_t *mp;
@@ -327,7 +332,7 @@ send_acl_details(unix_shared_memory_queue_t * q,
 
   mp = vl_msg_api_alloc (msg_size);
   memset (mp, 0, msg_size);
-  mp->_vl_msg_id = ntohs (VL_API_ACL_DETAILS);
+  mp->_vl_msg_id = ntohs (VL_API_ACL_DETAILS+am->msg_id_base);
 
   /* fill in the message */
   mp->context = context;
@@ -346,10 +351,10 @@ send_all_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q, u32 sw_if_
   vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
   /* FIXME API: no way to tell to the caller which is input ACL and which one is output ACL */
   vec_foreach (p_acl_index, am->input_acl_vec_by_sw_if_index[sw_if_index]) {
-    send_acl_details(q, sw_if_index, &am->acls[*p_acl_index], context);
+    send_acl_details(am, q, sw_if_index, &am->acls[*p_acl_index], context);
   }
   vec_foreach (p_acl_index, am->output_acl_vec_by_sw_if_index[sw_if_index]) {
-    send_acl_details(q, sw_if_index, &am->acls[*p_acl_index], context);
+    send_acl_details(am, q, sw_if_index, &am->acls[*p_acl_index], context);
   }
 }
 
@@ -360,28 +365,32 @@ vl_api_acl_dump_t_handler (vl_api_acl_dump_t * mp)
   acl_main_t * am = &acl_main;
   vnet_sw_interface_t *swif;
   vnet_interface_main_t *im = &am->vnet_main->interface_main;
+  acl_list_t  * acl;
+
   int rv = -1;
-  
   u32 sw_if_index;
   unix_shared_memory_queue_t *q;
-  VALIDATE_SW_IF_INDEX (mp);
-
-  sw_if_index = ntohl (mp->sw_if_index);
 
   q = vl_api_client_index_to_input_queue (mp->client_index);
-  if (q == 0)
-    {
-      return;
-    }
-  
-  if (~0 == sw_if_index) {
+  if (q == 0) {
+    return;
+  }
+
+  if (mp->sw_if_index == ~0) {
     /* *INDENT-OFF* */
     pool_foreach (swif, im->sw_interfaces,
     ({
       send_all_acl_details(am, q, swif->sw_if_index, mp->context);
     }));
+    /* Just dump all ACLs for now, with sw_if_index = ~0 */
+    pool_foreach (acl, am->acls,
+    ({
+      send_acl_details(am, q, ~0, acl, mp->context);
+    }));
     /* *INDENT-ON* */
   } else {
+    VALIDATE_SW_IF_INDEX (mp);
+    sw_if_index = ntohl (mp->sw_if_index);
     send_all_acl_details(am, q, sw_if_index, mp->context);
   }
   return;
@@ -418,6 +427,9 @@ acl_init (vlib_main_t * vm)
 {
   acl_main_t * am = &acl_main;
   clib_error_t * error = 0;
+  memset(am, 0, sizeof(*am));
+  am->vlib_main = vm;
+  am->vnet_main = vnet_get_main();
 
   u8 * name = format (0, "acl_%08x%c", api_version, 0);
 

@@ -21,7 +21,8 @@ vppplugins_LTLIBRARIES = acl_plugin.la
 
 acl_plugin_la_SOURCES =				\
 	acl/acl.c				\
-	acl/node.c				\
+	acl/node_in.c				\
+	acl/node_out.c				\
 	acl/acl_plugin.api.h
 
 BUILT_SOURCES = acl/acl.api.h acl/acl.py

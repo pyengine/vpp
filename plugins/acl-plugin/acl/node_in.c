@@ -21,50 +21,50 @@
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
-} acl_trace_t;
+} acl_in_trace_t;
 
 /* packet trace format function */
-static u8 * format_acl_trace (u8 * s, va_list * args)
+static u8 * format_acl_in_trace (u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
-  acl_trace_t * t = va_arg (*args, acl_trace_t *);
+  acl_in_trace_t * t = va_arg (*args, acl_in_trace_t *);
 
-  s = format (s, "ACL: sw_if_index %d, next index %d",
+  s = format (s, "ACL_IN: sw_if_index %d, next index %d",
               t->sw_if_index, t->next_index);
   return s;
 }
 
-vlib_node_registration_t acl_node;
+vlib_node_registration_t acl_in_node;
 
-#define foreach_acl_error \
+#define foreach_acl_in_error \
 _(SWAPPED, "Mac swap packets processed")
 
 typedef enum {
-#define _(sym,str) ACL_ERROR_##sym,
-  foreach_acl_error
+#define _(sym,str) ACL_IN_ERROR_##sym,
+  foreach_acl_in_error
 #undef _
-  ACL_N_ERROR,
-} acl_error_t;
+  ACL_IN_N_ERROR,
+} acl_in_error_t;
 
-static char * acl_error_strings[] = {
+static char * acl_in_error_strings[] = {
 #define _(sym,string) string,
-  foreach_acl_error
+  foreach_acl_in_error
 #undef _
 };
 
 typedef enum {
-  ACL_ERROR_DROP,
-  ACL_N_NEXT,
-} acl_next_t;
+  ACL_IN_ERROR_DROP,
+  ACL_IN_N_NEXT,
+} acl_in_next_t;
 
 static uword
-acl_node_fn (vlib_main_t * vm,
+acl_in_node_fn (vlib_main_t * vm,
 		  vlib_node_runtime_t * node,
 		  vlib_frame_t * frame)
 {
   u32 n_left_from, * from, * to_next;
-  acl_next_t next_index;
+  acl_in_next_t next_index;
   u32 pkts_swapped = 0;
 
   from = vlib_frame_vector_args (frame);
@@ -82,7 +82,7 @@ acl_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = ACL_ERROR_DROP;
+          u32 next0 = ACL_IN_ERROR_DROP;
           u32 sw_if_index0;
 
           /* speculatively enqueue b0 to the current next frame */
@@ -101,7 +101,7 @@ acl_node_fn (vlib_main_t * vm,
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
-            acl_trace_t *t =
+            acl_in_trace_t *t =
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
@@ -118,25 +118,25 @@ acl_node_fn (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, acl_node.index,
-                               ACL_ERROR_SWAPPED, pkts_swapped);
+  vlib_node_increment_counter (vm, acl_in_node.index,
+                               ACL_IN_ERROR_SWAPPED, pkts_swapped);
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (acl_node) = {
-  .function = acl_node_fn,
-  .name = "acl",
+VLIB_REGISTER_NODE (acl_in_node) = {
+  .function = acl_in_node_fn,
+  .name = "acl-plugin-in",
   .vector_size = sizeof (u32),
-  .format_trace = format_acl_trace,
+  .format_trace = format_acl_in_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
 
-  .n_errors = ARRAY_LEN(acl_error_strings),
-  .error_strings = acl_error_strings,
+  .n_errors = ARRAY_LEN(acl_in_error_strings),
+  .error_strings = acl_in_error_strings,
 
-  .n_next_nodes = ACL_N_NEXT,
+  .n_next_nodes = ACL_IN_N_NEXT,
 
   /* edit / add dispositions here */
   .next_nodes = {
-        [ACL_ERROR_DROP] = "error-drop",
+        [ACL_IN_ERROR_DROP] = "error-drop",
   },
 };

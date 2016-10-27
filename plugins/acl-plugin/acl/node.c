@@ -54,7 +54,7 @@ static char * acl_error_strings[] = {
 };
 
 typedef enum {
-  ACL_NEXT_INTERFACE_OUTPUT,
+  ACL_ERROR_DROP,
   ACL_N_NEXT,
 } acl_next_t;
 
@@ -82,7 +82,7 @@ acl_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = ACL_NEXT_INTERFACE_OUTPUT;
+          u32 next0 = ACL_ERROR_DROP;
           u32 sw_if_index0;
 
           /* speculatively enqueue b0 to the current next frame */
@@ -94,16 +94,10 @@ acl_node_fn (vlib_main_t * vm,
 	  n_left_to_next -= 1;
 
 	  b0 = vlib_get_buffer (vm, bi0);
-          /*
-           * Direct from the driver, we should be at offset 0
-           * aka at &b0->data[0]
-           */
-          ASSERT (b0->current_data == 0);
+
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
@@ -143,6 +137,6 @@ VLIB_REGISTER_NODE (acl_node) = {
 
   /* edit / add dispositions here */
   .next_nodes = {
-        [ACL_NEXT_INTERFACE_OUTPUT] = "interface-output",
+        [ACL_ERROR_DROP] = "error-drop",
   },
 };

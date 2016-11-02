@@ -164,6 +164,8 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
 {
   acl_main_t *am = &acl_main;
   acl_list_t  * a;
+  acl_rule_t  * r;
+  int i;
 
   /* Get ACL index */
   pool_get_aligned (am->acls, a, CLIB_CACHE_LINE_BYTES);
@@ -178,6 +180,18 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
     return -1;
   }
   clib_memcpy (a->rules, rules, sizeof(acl_rule_t) * count);
+  for(i=0; i<count; i++) {
+    r = &a->rules[i];
+    r->is_permit = rules[i].is_permit;
+    r->is_ipv6 = rules[i].is_ipv6;
+    memcpy(&r->src, rules[i].src_ip_addr, sizeof(r->src));
+    r->src_prefixlen = rules[i].src_ip_prefix_len;
+    memcpy(&r->dst, rules[i].dst_ip_addr, sizeof(r->dst));
+    r->dst_prefixlen = rules[i].dst_ip_prefix_len;
+    r->proto = rules[i].proto;
+    r->src_port = rules[i].src_port;
+    r->dst_port = rules[i].dst_port;
+  }
   *acl_list_index = a - am->acls;
 
   return 0;
@@ -326,6 +340,139 @@ acl_interface_add_del_inout_acl(u32 sw_if_index, u8 is_add, u8 is_input, u32 acl
   return rv;
 }
 
+
+static void *
+get_ptr_to_offset(vlib_buffer_t * b0, int offset)
+{
+  u8 *p = vlib_buffer_get_current (b0) + offset;
+  return p;
+}
+
+static u8
+acl_get_l4_proto(vlib_buffer_t * b0, int node_is_ip6)
+{
+  u8 proto;
+  int proto_offset;
+  if (node_is_ip6) {
+    proto_offset = 20;
+  } else {
+    proto_offset = 23;
+  }
+  proto = *( (u8 *)vlib_buffer_get_current (b0) + proto_offset);
+  return proto;
+}
+
+static int
+acl_match_addr(ip46_address_t *addr1, ip46_address_t *addr2, int prefixlen, int is_ip6)
+{
+  if (prefixlen == 0) {
+    /* match any always succeeds */
+    return 1;
+  }
+  if (is_ip6) {
+    if (memcmp(addr1, addr2, prefixlen/8)) {
+      /* If the starting full bytes do not match, no point in bittwidling the thumbs further */
+      return 0;
+    }
+    if (prefixlen % 8) {
+      u8 b1 = *((u8 *)addr1 + 1 + prefixlen/8);
+      u8 b2 = *((u8 *)addr2 + 1 + prefixlen/8);
+      u8 mask0 = (0xff - ((1<<(8-(prefixlen%8))) -1));
+      return (b1 & mask0) == b2;
+    } else {
+      /* The prefix fits into integer number of bytes, so nothing left to do */
+      return 1;
+    }
+  } else {
+    return 0; /* FIXME IPv4 match tbd */
+  }
+}
+
+static int
+acl_match_port(u16 port1, u16 port2, int is_ip6)
+{
+  if(port2 == 0)
+    return 1;
+  return (port1 == port2);
+}
+
+static int
+acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+{
+  ethernet_header_t *h0;
+  u16 type0;
+
+  ip46_address_t src, dst;
+  int is_ip6;
+  int is_ip4;
+  u8 proto;
+  u16 src_port;
+  u16 dst_port;
+  int i;
+  acl_list_t  * a;
+  acl_rule_t * r;
+
+  h0 = vlib_buffer_get_current (b0);
+  type0 =  clib_net_to_host_u16 (h0->type);
+  is_ip4 = (type0 == ETHERNET_TYPE_IP4);
+  is_ip6 = (type0 == ETHERNET_TYPE_IP6);
+
+  if ( ! (is_ip4 || is_ip6) ) {
+    return 0;
+  }
+  /* The bunch of hardcoded offsets here is intentional to get rid of them
+     ASAP, when getting to a faster matching code */
+  if (is_ip4) {
+    clib_memcpy(&src, get_ptr_to_offset(b0, 26), 4);
+    clib_memcpy(&dst, get_ptr_to_offset(b0, 30), 4);
+    proto = acl_get_l4_proto(b0, 0);
+    src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
+    dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+  }
+  if (is_ip6) {
+    clib_memcpy(&src, get_ptr_to_offset(b0, 22), 16);
+    clib_memcpy(&dst, get_ptr_to_offset(b0, 38), 16);
+    proto = acl_get_l4_proto(b0, 1);
+    src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
+    dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+  }
+  a = am->acls + acl_index;
+  for(i=0; i<a->count; i++) {
+    r = a->rules + i;
+    if (is_ip6 != r->is_ipv6) {
+      continue;
+    }
+    if (!acl_match_addr(&dst, &r->dst, r->dst_prefixlen, is_ip6))
+      continue;
+    if (!acl_match_addr(&src, &r->src, r->src_prefixlen, is_ip6))
+      continue;
+    if (r->proto && (proto != r->proto))
+      continue;
+    if (!acl_match_port(dst_port, r->dst_port, is_ip6))
+      continue;
+    if (!acl_match_port(src_port, r->src_port, is_ip6))
+      continue;
+    /* everything matches! */
+    *nextp = r->is_permit ? 1 : 0;
+    if (acl_match_p) *acl_match_p = acl_index;
+    if (rule_match_p) *rule_match_p = i;
+    return 1;
+  }
+  return 0;
+}
+
+void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+{
+  acl_main_t *am = &acl_main;
+  int i;
+  vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
+  for (i=0; i<vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index]); i++) {
+    if(acl_packet_match(am, am->input_acl_vec_by_sw_if_index[sw_if_index][i], b0, nextp, acl_match_p, rule_match_p)) {
+      return;
+    }
+  }
+
+}
 
 /* API message handler */
 static void

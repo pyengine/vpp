@@ -88,6 +88,24 @@ vppapitestplugins_LTLIBRARIES += ioam_export_test_plugin.la
 vppplugins_LTLIBRARIES += ioam_export_plugin.la
 
 ########################################
+# iOAM record cache and rewrite
+########################################
+
+ioam_ip6_cache_plugin_la_SOURCES =   \
+ioam/ip6/ioam_cache.c         \
+ioam/ip6/ioam_cache_node.c                \
+ioam/ip6/ioam_cache.api.h
+
+BUILT_SOURCES += ioam/ip6/ioam_cache.api.h
+
+noinst_HEADERS +=                       \
+  ioam/ip6/ioam_cache_all_api_h.h   \
+  ioam/ip6/ioam_cache_msg_enum.h    \
+  ioam/ip6/ioam_cache.api.h
+
+vppplugins_LTLIBRARIES += ioam_ip6_cache_plugin.la
+
+########################################
 # iOAM Trace
 ########################################
 ioam_trace_plugin_la_SOURCES =			\

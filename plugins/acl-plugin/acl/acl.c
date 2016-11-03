@@ -17,6 +17,8 @@
 #include <vnet/plugin/plugin.h>
 #include <acl/acl.h>
 
+#include <vnet/l2/l2_classify.h>
+
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
@@ -236,11 +238,11 @@ acl_del_list(u32 acl_list_index)
   return 0;
 }
 
-int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
+int acl_interface_early_in_enable_disable (acl_main_t * am, u32 sw_if_index,
                                    int enable_disable)
 {
  /*
-  * At present this function hooks the inbound ACL into the ethernet processing,
+  * This function hooks the inbound ACL into the ethernet processing,
   * effectively making it the very first feature which sees all packets.
   * This is just for the testing - we will want to hook it from the classifier.
   */
@@ -268,6 +270,136 @@ int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
    */
   rv = vnet_hw_interface_rx_redirect_to_node (am->vnet_main, sw_if_index,
                                               node_index);
+  return rv;
+}
+
+int
+acl_unhook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
+{
+  return 0;
+}
+
+/* Some aids in ASCII graphing the content */
+#define XX "\377"
+#define __ "\000"
+#define _(x)
+#define v
+
+u8 ip4_5tuple_mask[] =
+_("             dmac               smac            etype ")
+_( ether)  __ __ __ __ __ __ v __ __ __ __ __ __ v __ __ v
+_("        v ihl totlen ")
+_(0x0000)  __ __ __ __
+_("        ident fl+fo ")
+_(0x0004)  __ __ __ __
+_("       ttl pr checksum")
+_(0x0008)  __ XX __ __
+_("        src address    ")
+_(0x000C)  XX XX XX XX
+_("        dst address    ")
+_(0x0010)  XX XX XX XX
+_("L4 T/U  sport dport   ")
+_(tcpudp)  XX XX XX XX
+_(padpad)  __ __ __ __
+_(padpad)  __ __ __ __
+_(padeth)  __ __
+;
+
+u8 ip6_5tuple_mask[] =
+_("             dmac               smac            etype ")
+_( ether)  __ __ __ __ __ __ v __ __ __ __ __ __ v __ __ v
+_("        v  tc + flow ")
+_(0x0000)  __ __ __ __
+_("        plen  nh hl  ")
+_(0x0004)  __ __ XX __
+_("        src address  ")
+_(0x0008)  XX XX XX XX
+_(0x000C)  XX XX XX XX
+_(0x0010)  XX XX XX XX
+_(0x0014)  XX XX XX XX
+_("        dst address    ")
+_(0x0018)  XX XX XX XX
+_(0x001C)  XX XX XX XX
+_(0x0020)  XX XX XX XX
+_(0x0024)  XX XX XX XX
+_("L4T/U  sport dport   ")
+_(tcpudp)  XX XX XX XX
+_(padpad)  __ __ __ __
+_(padeth)  __ __
+;
+
+#undef XX
+#undef __
+#undef _
+#undef v
+
+static int
+count_skip(u8 *p, u32 size)
+{
+  u64 *p64 = (u64 *)p;
+  while ( (0ULL == *p64) && ((u8 *)p64 - p) < size ) {
+    p64++;
+  }
+  return (p64-(u64 *)p)/2;
+}
+
+static int
+acl_classify_add_del_table(vnet_classify_main_t * cm, u8 * mask, u32 mask_len, u32 next_table_index, u32 miss_next_index, u32 *table_index, int is_add)
+{
+  u32 nbuckets = 64;
+  u32 memory_size = 32768;
+  u32 skip = count_skip(mask, mask_len);
+  u32 match = (mask_len/16) - skip;
+  u8 *skip_mask_ptr = mask + 16*skip;
+  return vnet_classify_add_del_table(cm, skip_mask_ptr, nbuckets, memory_size, skip, match, next_table_index, miss_next_index, table_index, is_add);
+}
+
+static int
+acl_hook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
+{
+  vnet_classify_main_t *cm = &vnet_classify_main;
+  u32 ip4_table_index;
+  u32 ip6_table_index;
+  int rv;
+
+  /* in case there were previous tables attached */
+  acl_unhook_l2_input_classify(am, sw_if_index);
+  rv = acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip4_table_index, 1);
+  if (rv)
+    return rv;
+  rv = acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip6_table_index, 1);
+  if (rv) {
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip4_table_index, 0);
+    return rv;
+  }
+  rv = vnet_l2_input_classify_set_tables (sw_if_index, ip4_table_index, ip6_table_index, ~0);
+  clib_warning("ACL enabling on interface sw_if_index %d, setting tables to the following: ip4: %d ip6: %d\n", sw_if_index, ip4_table_index, ip6_table_index);
+  if (rv) {
+    acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip6_table_index, 0);
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip4_table_index, 0);
+    return rv;
+  }
+  vnet_l2_input_classify_enable_disable(sw_if_index, 1);
+  return rv;
+}
+
+
+int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
+                                   int enable_disable)
+{
+  int rv;
+
+  /* Utterly wrong? */
+  if (pool_is_free_index (am->vnet_main->interface_main.sw_interfaces,
+                          sw_if_index))
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  if(enable_disable) {
+    rv = acl_hook_l2_input_classify(am, sw_if_index);
+  } else {
+    rv = acl_unhook_l2_input_classify(am, sw_if_index);
+  }
+
   return rv;
 }
 
@@ -453,7 +585,7 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, 
     if (!acl_match_port(src_port, r->src_port, is_ip6))
       continue;
     /* everything matches! */
-    *nextp = r->is_permit ? 1 : 0;
+    *nextp = r->is_permit ? ~0 : 0;
     if (acl_match_p) *acl_match_p = acl_index;
     if (rule_match_p) *rule_match_p = i;
     return 1;
@@ -619,6 +751,22 @@ acl_plugin_api_hookup (vlib_main_t *vm)
     return 0;
 }
 
+void
+acl_setup_nodes (void)
+{
+  vlib_main_t *vm = vlib_get_main ();
+  acl_main_t * am = &acl_main;
+  vlib_node_t *n;
+
+  n = vlib_get_node_by_name(vm, (u8 *) "l2-input-classify");
+  am->l2_input_classify_next_acl = vlib_node_add_next_with_slot(vm, n->index, acl_in_node.index, ~0);
+  n = vlib_get_node_by_name(vm, (u8 *) "l2-output-classify");
+  am->l2_output_classify_next_acl = vlib_node_add_next_with_slot(vm, n->index, acl_out_node.index, ~0);
+
+  feat_bitmap_init_next_nodes(vm, acl_in_node.index, L2INPUT_N_FEAT,  l2input_get_feat_names (), am->acl_in_node_input_next_node_index);
+}
+
+
 
 static clib_error_t *
 acl_init (vlib_main_t * vm)
@@ -636,6 +784,7 @@ acl_init (vlib_main_t * vm)
 					    VL_MSG_FIRST_AVAILABLE);
 
   error = acl_plugin_api_hookup (vm);
+  acl_setup_nodes();
 
   vec_free(name);
 

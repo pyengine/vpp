@@ -58,6 +58,8 @@ static char * acl_in_error_strings[] = {
 typedef enum {
   ACL_IN_ERROR_DROP,
   ACL_IN_ETHERNET_INPUT,
+  ACL_IN_L2S_INPUT_IP4_ADD,
+  ACL_IN_L2S_INPUT_IP6_ADD,
   ACL_IN_N_NEXT,
 } acl_in_next_t;
 
@@ -69,6 +71,8 @@ acl_in_node_fn (vlib_main_t * vm,
   u32 n_left_from, * from, * to_next;
   acl_in_next_t next_index;
   u32 pkts_swapped = 0;
+  u32 feature_bitmap0;
+  u32 *input_feat_next_node_index = acl_main.acl_in_node_input_next_node_index;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -85,7 +89,7 @@ acl_in_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = ACL_IN_ETHERNET_INPUT;
+          u32 next0 = ~0;
           u32 sw_if_index0;
           u32 next = ~0;
           u32 match_acl_index = ~0;
@@ -103,10 +107,16 @@ acl_in_node_fn (vlib_main_t * vm,
 
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+          feature_bitmap0 = vnet_buffer (b0)->l2.feature_bitmap;
 
           input_acl_packet_match(sw_if_index0, b0, &next, &match_acl_index, &match_rule_index);
           if (next != ~0) {
             next0 = next;
+          }
+          if (next0 == ~0) {
+                next0 =
+                feat_bitmap_get_next_node_index (input_feat_next_node_index,
+                                                 feature_bitmap0);
           }
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
@@ -153,5 +163,7 @@ VLIB_REGISTER_NODE (acl_in_node) = {
   .next_nodes = {
         [ACL_IN_ERROR_DROP] = "error-drop",
         [ACL_IN_ETHERNET_INPUT] = "ethernet-input",
+        [ACL_IN_L2S_INPUT_IP4_ADD] = "l2s-input-ip4-add",
+        [ACL_IN_L2S_INPUT_IP6_ADD] = "l2s-input-ip6-add",
   },
 };

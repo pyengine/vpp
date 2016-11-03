@@ -89,6 +89,13 @@ typedef struct {
   u32 **input_acl_vec_by_sw_if_index;
   u32 **output_acl_vec_by_sw_if_index;
 
+  /* next indices for our nodes in the l2-classify tables */
+  u32 l2_input_classify_next_acl;
+  u32 l2_output_classify_next_acl;
+
+  /* next node indices for feature bitmap */
+  u32 acl_in_node_input_next_node_index[32];
+
   /* convenience */
   vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;

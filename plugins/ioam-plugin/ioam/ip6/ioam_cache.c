@@ -102,8 +102,22 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
   return error;
 }
 
-/* Action function shared between message handler and debug CLI */
 
+static u8 * ioam_e2e_id_trace_handler (u8 * s,
+                                    ip6_hop_by_hop_option_t *opt)
+{
+  ioam_e2e_id_option_t * e2e = (ioam_e2e_id_option_t *)opt;
+
+  if (e2e)
+    {
+      s = format (s, "IP6_HOP_BY_HOP E2E ID = %U", format_ip6_address, &(e2e->id));
+    }
+
+
+  return s;
+}
+
+/* Action function shared between message handler and debug CLI */
 int
 ioam_cache_ip6_enable_disable (ioam_cache_main_t * em,
 			       u8 is_disable)
@@ -114,11 +128,16 @@ ioam_cache_ip6_enable_disable (ioam_cache_main_t * em,
     {
         ioam_cache_table_init(vm);
 	ip6_hbh_set_next_override (em->my_hbh_slot);
+	ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
+                          0,
+                          ioam_e2e_id_trace_handler);
+
     }
   else
     {
       ip6_hbh_set_next_override (IP6_LOOKUP_NEXT_POP_HOP_BY_HOP); 
       ioam_cache_table_destroy(vm);
+      ip6_hbh_unregister_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID);
     }
 
   return 0;
@@ -244,7 +263,6 @@ ioam_cache_init (vlib_main_t * vm)
   ip6_hbyh_node = vlib_get_node_by_name (vm, (u8 *) "ip6-hop-by-hop");
   em->my_hbh_slot = vlib_node_add_next (vm, ip6_hbyh_node->index, node_index);
   vec_free (name);
-  
   return error;
 }
 

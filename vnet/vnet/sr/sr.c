@@ -2647,7 +2647,7 @@ sr_local (vlib_main_t * vm,
 		{
 		  ip6_hop_by_hop_ext_t *ext_hdr =
 		    (ip6_hop_by_hop_ext_t *) ip6_next_header (ip0);
-		  copy_len_u64s0 = ((ip6_ext_header_t *) ext_hdr)->n_data_u64s;
+		  copy_len_u64s0 = (((ip6_ext_header_t *) ext_hdr)->n_data_u64s) + 1;
 		  ext_hdr->next_hdr = sr0->protocol;
 		}
 	      else
@@ -2779,7 +2779,7 @@ sr_local (vlib_main_t * vm,
 		{
 		  ip6_hop_by_hop_ext_t *ext_hdr =
 		    (ip6_hop_by_hop_ext_t *) ip6_next_header (ip1);
-		  copy_len_u64s1 = ((ip6_ext_header_t *) ext_hdr)->n_data_u64s;
+		  copy_len_u64s1 = (((ip6_ext_header_t *) ext_hdr)->n_data_u64s) + 1;
 		  ext_hdr->next_hdr = sr1->protocol;
 		}
 	      else
@@ -2931,7 +2931,7 @@ sr_local (vlib_main_t * vm,
 		{
 		  ip6_hop_by_hop_ext_t *ext_hdr =
 		    (ip6_hop_by_hop_ext_t *) ip6_next_header (ip0);
-		  copy_len_u64s0 = ((ip6_ext_header_t *) ext_hdr)->n_data_u64s;
+		  copy_len_u64s0 = (((ip6_ext_header_t *) ext_hdr)->n_data_u64s) + 1;
 		  ext_hdr->next_hdr = sr0->protocol;
 		}
 	      else

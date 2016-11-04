@@ -182,7 +182,8 @@ ip6_ioam_cache_node_fn (vlib_main_t * vm,
 		{
 		  /* Cache the ioam hbh header */
 		  hbh0 = (ip6_hop_by_hop_header_t *) (ip0 + 1);
-		  if (0 == ioam_cache_add (ip0,
+		  if (0 == ioam_cache_add (p0,
+                                           ip0,
 					   clib_net_to_host_u16(tcp0->ports.src),
 					   clib_net_to_host_u16(tcp0->ports.dst),
 					   hbh0,

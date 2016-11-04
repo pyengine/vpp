@@ -88,7 +88,7 @@ ioam_e2e_rewrite_handler (u8 *rewrite_string,
 {
   ioam_e2e_option_t *e2e_option;
 
-  if (rewrite_string && *rewrite_size == sizeof(ioam_e2e_option_t))
+  if (rewrite_string && *rewrite_size >= sizeof(ioam_e2e_option_t))
     {
       e2e_option = (ioam_e2e_option_t *)rewrite_string;
       e2e_option->hdr.type = HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE

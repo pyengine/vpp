@@ -85,7 +85,6 @@ ioam_cache_main_t ioam_cache_main;
 
 vlib_node_registration_t ioam_cache_node;
 
-
 /* Compute flow hash.  We'll use it to select which Sponge to use for this
    flow.  And other things. */
 always_inline u32
@@ -97,7 +96,7 @@ ip6_compute_flow_hash_ext (const ip6_header_t * ip,
 {
     u64 a, b, c;
     u64 t1, t2;
-    
+
     t1 = (ip->src_address.as_u64[0] ^ ip->src_address.as_u64[1]);
     t1 = (flow_hash_config & IP_FLOW_HASH_SRC_ADDR) ? t1 : 0;
 
@@ -108,7 +107,7 @@ ip6_compute_flow_hash_ext (const ip6_header_t * ip,
     b = (flow_hash_config & IP_FLOW_HASH_REVERSE_SRC_DST) ? t1 : t2;
     b ^= (flow_hash_config & IP_FLOW_HASH_PROTO) ? protocol : 0;
 
-    t1 = src_port; 
+    t1 = src_port;
     t2 = dst_port;
 
     t1 = (flow_hash_config & IP_FLOW_HASH_SRC_PORT) ? t1 : 0;
@@ -127,9 +126,9 @@ inline static void ioam_cache_entry_free (ioam_cache_entry_t *entry)
   if (entry)
     {
       vec_free(entry->ioam_rewrite_string);
-      memset(entry, 0, sizeof(*entry)); 
+      memset(entry, 0, sizeof(*entry));
       pool_put(cm->ioam_rewrite_pool, entry);
-    }  
+    }
 }
 
 inline static ioam_cache_entry_t * ioam_cache_entry_cleanup (u32 pool_index)
@@ -152,7 +151,7 @@ inline static ioam_cache_entry_t * ioam_cache_lookup (ip6_header_t *ip0,
 					    src_port, dst_port,
 					    IP_FLOW_HASH_DEFAULT | IP_FLOW_HASH_REVERSE_SRC_DST);
   clib_bihash_kv_8_8_t kv, value;
-  
+
   kv.key = (u64)flow_hash << 32 | seq_no;
   kv.value = 0;
   value.key = 0;
@@ -161,7 +160,7 @@ inline static ioam_cache_entry_t * ioam_cache_lookup (ip6_header_t *ip0,
   if (clib_bihash_search_8_8(&cm->ioam_rewrite_cache_table, &kv, &value) >= 0)
     {
       ioam_cache_entry_t *entry = 0;
-      
+
       entry = pool_elt_at_index(cm->ioam_rewrite_pool, value.value);
       /* match */
       if (ip6_address_compare(&ip0->src_address, &entry->dst_address) == 0 &&
@@ -176,12 +175,72 @@ inline static ioam_cache_entry_t * ioam_cache_lookup (ip6_header_t *ip0,
 	}
       else
 	return(0);
-      
+
     }
   return(0);
 }
+#define HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID 30
 
-inline static int ioam_cache_add (ip6_header_t *ip0,
+typedef CLIB_PACKED(struct {
+  ip6_hop_by_hop_option_t hdr;
+  u8 e2e_type;
+  u8 reserved[5];
+  ip6_address_t id;
+}) ioam_e2e_id_option_t;
+
+/* get first interface address */
+static inline ip6_address_t *
+ip6_interface_first_address (u32 sw_if_index)
+{
+  ip6_main_t *im = &ip6_main;
+  ip_lookup_main_t *lm = &im->lookup_main;
+  ip_interface_address_t *ia = 0;
+  ip6_address_t *result = 0;
+
+  foreach_ip_interface_address (lm, ia, sw_if_index,
+                                1 /* honor unnumbered */ ,
+                                (
+				{
+                                  ip6_address_t * a =
+				    ip_interface_address_get_address (lm, ia);
+                                  if (ip6_address_is_link_local_unicast(a))
+				    continue;
+                                  result = a;
+                                  break;
+				}
+				  ));
+  return result;
+}
+static inline void
+ioam_e2e_id_rewrite_handler (ioam_e2e_id_option_t *e2e_option,
+                             vlib_buffer_t *b0)
+{
+  ip6_address_t *my_address = 0;
+  e2e_option->hdr.type = HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID
+    | HBH_OPTION_TYPE_SKIP_UNKNOWN;
+  e2e_option->hdr.length = sizeof (ioam_e2e_id_option_t) -
+    sizeof (ip6_hop_by_hop_option_t);
+  e2e_option->e2e_type = 1;
+  my_address = ip6_interface_first_address(vnet_buffer (b0)->sw_if_index[VLIB_RX]);
+  if (my_address)
+    {
+      e2e_option->id.as_u64[0] = my_address->as_u64[0];
+      e2e_option->id.as_u64[1] = my_address->as_u64[1];
+    }
+}
+
+
+
+#define IOAM_E2E_ID_OPTION_RND ((sizeof(ioam_e2e_id_option_t) + 7) & ~7)
+#define IOAM_E2E_ID_HBH_EXT_LEN (IOAM_E2E_ID_OPTION_RND >> 3)
+/*
+ * Caches ioam hbh header
+ * Extends the hbh header with option to contain IP6 address of the node
+ * that caches it
+ */
+inline static int ioam_cache_add (
+                                  vlib_buffer_t *b0,
+                                  ip6_header_t *ip0,
                                   u16 src_port,
 				  u16 dst_port,
 				  ip6_hop_by_hop_header_t *hbh0,
@@ -191,19 +250,26 @@ inline static int ioam_cache_add (ip6_header_t *ip0,
   ioam_cache_entry_t *entry = 0;
   u32 rewrite_len = 0;
   u32 pool_index = 0;
-  
+  ioam_e2e_id_option_t *e2e = 0;
+
   pool_get_aligned(cm->ioam_rewrite_pool, entry, CLIB_CACHE_LINE_BYTES);
   memset (entry, 0, sizeof (*entry));
   pool_index = entry - cm->ioam_rewrite_pool;
-  
+
   clib_memcpy(entry->dst_address.as_u64, ip0->dst_address.as_u64, sizeof(ip6_address_t));
   clib_memcpy(entry->src_address.as_u64, ip0->src_address.as_u64, sizeof(ip6_address_t));
   entry->src_port = src_port;
   entry->dst_port = dst_port;
   entry->seq_no = seq_no;
   rewrite_len = ((hbh0->length + 1) << 3);
-  vec_validate(entry->ioam_rewrite_string, rewrite_len);
+  vec_validate(entry->ioam_rewrite_string, rewrite_len + IOAM_E2E_ID_OPTION_RND);
+  /* setup e2e id option to insert v6 address of the node caching it */
+  hbh0->length += IOAM_E2E_ID_HBH_EXT_LEN;
   clib_memcpy(entry->ioam_rewrite_string, hbh0, rewrite_len);
+
+  /* suffix rewrite string with e2e ID option */
+  e2e = (ioam_e2e_id_option_t *)(entry->ioam_rewrite_string + rewrite_len);
+  ioam_e2e_id_rewrite_handler(e2e, b0);
 
   /* add it to hash, replacing and freeing any collision for now */
   u32 flow_hash = ip6_compute_flow_hash_ext(ip0, hbh0->protocol, src_port, dst_port,
@@ -241,7 +307,7 @@ inline static int ioam_cache_table_init (vlib_main_t *vm)
 inline static int ioam_cache_table_destroy (vlib_main_t *vm)
 {
   ioam_cache_main_t *cm = &ioam_cache_main;
-  ioam_cache_entry_t *entry = 0;  
+  ioam_cache_entry_t *entry = 0;
   /* free pool and hash table */
   clib_bihash_free_8_8(&cm->ioam_rewrite_cache_table);
   pool_foreach (entry, cm->ioam_rewrite_pool,
@@ -257,7 +323,7 @@ inline static u8 * format_ioam_cache_entry (u8 * s, va_list * args)
 {
   ioam_cache_entry_t *e = va_arg (*args, ioam_cache_entry_t *);
   ioam_cache_main_t *cm = &ioam_cache_main;
-  
+
   s = format (s, "%d: %U:%d to  %U:%d seq_no %lu\n",
 	      (e - cm->ioam_rewrite_pool),
 	      format_ip6_address, &e->src_address,

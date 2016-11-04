@@ -18,6 +18,8 @@
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 #include <vnet/ethernet/ethernet.h>
+#include <vnet/l2/l2_output.h>
+
 
 #include <vppinfra/hash.h>
 #include <vppinfra/error.h>
@@ -27,6 +29,7 @@ extern vlib_node_registration_t acl_in_node;
 extern vlib_node_registration_t acl_out_node;
 
 void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p);
+void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p);
 
 
 enum address_e { IP4, IP6 };
@@ -95,6 +98,8 @@ typedef struct {
 
   /* next node indices for feature bitmap */
   u32 acl_in_node_input_next_node_index[32];
+  /* the respective thing for the output feature */
+  l2_output_next_nodes_st acl_out_output_next_nodes;
 
   /* convenience */
   vlib_main_t * vlib_main;

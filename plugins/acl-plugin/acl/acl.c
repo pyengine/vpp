@@ -279,6 +279,12 @@ acl_unhook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
   return 0;
 }
 
+int
+acl_unhook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
+{
+  return 0;
+}
+
 /* Some aids in ASCII graphing the content */
 #define XX "\377"
 #define __ "\000"
@@ -383,6 +389,35 @@ acl_hook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
   return rv;
 }
 
+static int
+acl_hook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
+{
+  vnet_classify_main_t *cm = &vnet_classify_main;
+  u32 ip4_table_index;
+  u32 ip6_table_index;
+  int rv;
+
+  /* in case there were previous tables attached */
+  acl_unhook_l2_output_classify(am, sw_if_index);
+  rv = acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip4_table_index, 1);
+  if (rv)
+    return rv;
+  rv = acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip6_table_index, 1);
+  if (rv) {
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip4_table_index, 0);
+    return rv;
+  }
+  rv = vnet_l2_output_classify_set_tables (sw_if_index, ip4_table_index, ip6_table_index, ~0);
+  clib_warning("ACL enabling on interface sw_if_index %d, setting tables to the following: ip4: %d ip6: %d\n", sw_if_index, ip4_table_index, ip6_table_index);
+  if (rv) {
+    acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip6_table_index, 0);
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip4_table_index, 0);
+    return rv;
+  }
+  vnet_l2_output_classify_enable_disable(sw_if_index, 1);
+  return rv;
+}
+
 
 int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
                                    int enable_disable)
@@ -406,7 +441,20 @@ int acl_interface_in_enable_disable (acl_main_t * am, u32 sw_if_index,
 int acl_interface_out_enable_disable (acl_main_t * am, u32 sw_if_index,
                                    int enable_disable)
 {
-  return -1; /* FIXME: implement this */
+  int rv;
+
+  /* Utterly wrong? */
+  if (pool_is_free_index (am->vnet_main->interface_main.sw_interfaces,
+                          sw_if_index))
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  if(enable_disable) {
+    rv = acl_hook_l2_output_classify(am, sw_if_index);
+  } else {
+    rv = acl_unhook_l2_output_classify(am, sw_if_index);
+  }
+
+  return rv;
 }
 
 
@@ -604,6 +652,18 @@ void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32
     }
   }
 
+}
+
+void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+{
+  acl_main_t *am = &acl_main;
+  int i;
+  vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
+  for (i=0; i<vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]); i++) {
+    if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, nextp, acl_match_p, rule_match_p)) {
+      return;
+    }
+  }
 }
 
 /* API message handler */

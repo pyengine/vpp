@@ -21,6 +21,8 @@
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
+  u32 match_acl_index;
+  u32 match_rule_index;
 } acl_out_trace_t;
 
 /* packet trace format function */
@@ -29,9 +31,8 @@ static u8 * format_acl_out_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   acl_out_trace_t * t = va_arg (*args, acl_out_trace_t *);
-
-  s = format (s, "ACL_OUT: sw_if_index %d, next index %d",
-              t->sw_if_index, t->next_index);
+  s = format (s, "ACL_OUT: sw_if_index %d, next index %d, match: outacl %d rule %d",
+              t->sw_if_index, t->next_index, t->match_acl_index, t->match_rule_index);
   return s;
 }
 
@@ -64,9 +65,16 @@ acl_out_node_fn (vlib_main_t * vm,
 		  vlib_node_runtime_t * node,
 		  vlib_frame_t * frame)
 {
+  acl_main_t * am = &acl_main;
+  l2_output_next_nodes_st *next_nodes = &am->acl_out_output_next_nodes;
   u32 n_left_from, * from, * to_next;
   acl_out_next_t next_index;
   u32 pkts_swapped = 0;
+  u32 feature_bitmap0;
+  u32 cached_sw_if_index = (u32) ~ 0;
+  u32 cached_next_index = (u32) ~ 0;
+  u32 match_acl_index = ~0;
+  u32 match_rule_index = ~0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -83,7 +91,8 @@ acl_out_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = ACL_OUT_INTERFACE_OUTPUT;
+          u32 next0 = ~0;
+          u32 next = 0;
           u32 sw_if_index0;
 
           /* speculatively enqueue b0 to the current next frame */
@@ -97,7 +106,24 @@ acl_out_node_fn (vlib_main_t * vm,
 	  b0 = vlib_get_buffer (vm, bi0);
 
 
-          sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+          sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_TX];
+          feature_bitmap0 = vnet_buffer (b0)->l2.feature_bitmap;
+
+          output_acl_packet_match(sw_if_index0, b0, &next, &match_acl_index, &match_rule_index);
+          if (next != ~0) {
+            next0 = next;
+          }
+          if (next0 == ~0) {
+              l2_output_dispatch (vm,
+                                  am->vnet_main,
+                                  node,
+                                  acl_out_node.index,
+                                  &cached_sw_if_index,
+                                  &cached_next_index,
+                                  next_nodes,
+                                  b0, sw_if_index0, feature_bitmap0, &next0);
+          }
+
 
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
@@ -106,6 +132,8 @@ acl_out_node_fn (vlib_main_t * vm,
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
+            t->match_acl_index = match_acl_index;
+            t->match_rule_index = match_rule_index;
             }
 
           pkts_swapped += 1;

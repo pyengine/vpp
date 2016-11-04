@@ -32,7 +32,7 @@ static u8 * format_acl_in_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   acl_in_trace_t * t = va_arg (*args, acl_in_trace_t *);
 
-  s = format (s, "ACL_IN: sw_if_index %d, next index %d, match: acl %d rule %d",
+  s = format (s, "ACL_IN: sw_if_index %d, next index %d, match: inacl %d rule %d",
               t->sw_if_index, t->next_index, t->match_acl_index, t->match_rule_index);
   return s;
 }

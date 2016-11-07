@@ -567,7 +567,6 @@ acl_match_addr(ip46_address_t *addr1, ip46_address_t *addr2, int prefixlen, int 
     uint32_t a1 = ntohl(addr1->ip4.as_u32);
     uint32_t a2 = ntohl(addr2->ip4.as_u32);
     uint32_t mask0 = 0xffffffff - ((1<< (32-prefixlen))-1);
-    clib_warning("acl_match_addr a1 %08x : mask %08x : a2 %08x", a1, mask0, a2);
     return (a1 & mask0) == a2;
   }
 }

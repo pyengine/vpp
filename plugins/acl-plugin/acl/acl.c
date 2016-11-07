@@ -564,7 +564,11 @@ acl_match_addr(ip46_address_t *addr1, ip46_address_t *addr2, int prefixlen, int 
       return 1;
     }
   } else {
-    return 0; /* FIXME IPv4 match tbd */
+    uint32_t a1 = ntohl(addr1->ip4.as_u32);
+    uint32_t a2 = ntohl(addr2->ip4.as_u32);
+    uint32_t mask0 = 0xffffffff - ((1<< (32-prefixlen))-1);
+    clib_warning("acl_match_addr a1 %08x : mask %08x : a2 %08x", a1, mask0, a2);
+    return (a1 & mask0) == a2;
   }
 }
 
@@ -603,8 +607,8 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, 
   /* The bunch of hardcoded offsets here is intentional to get rid of them
      ASAP, when getting to a faster matching code */
   if (is_ip4) {
-    clib_memcpy(&src, get_ptr_to_offset(b0, 26), 4);
-    clib_memcpy(&dst, get_ptr_to_offset(b0, 30), 4);
+    clib_memcpy(&src.ip4, get_ptr_to_offset(b0, 26), 4);
+    clib_memcpy(&dst.ip4, get_ptr_to_offset(b0, 30), 4);
     proto = acl_get_l4_proto(b0, 0);
     src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
     dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));

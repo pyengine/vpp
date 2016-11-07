@@ -18,6 +18,8 @@
 #include <vppinfra/error.h>
 #include <acl/acl.h>
 
+#include "node_out.h"
+
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
@@ -53,12 +55,6 @@ static char * acl_out_error_strings[] = {
   foreach_acl_out_error
 #undef _
 };
-
-typedef enum {
-  ACL_OUT_ERROR_DROP,
-  ACL_OUT_INTERFACE_OUTPUT,
-  ACL_OUT_N_NEXT,
-} acl_out_next_t;
 
 static uword
 acl_out_node_fn (vlib_main_t * vm,
@@ -168,5 +164,7 @@ VLIB_REGISTER_NODE (acl_out_node) = {
   .next_nodes = {
         [ACL_OUT_ERROR_DROP] = "error-drop",
         [ACL_OUT_INTERFACE_OUTPUT] = "interface-output",
+        [ACL_OUT_L2S_OUTPUT_IP4_ADD] = "l2s-output-ip4-add",
+        [ACL_OUT_L2S_OUTPUT_IP6_ADD] = "l2s-output-ip6-add",
   },
 };

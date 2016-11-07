@@ -47,6 +47,8 @@
 #include <acl/acl_all_api_h.h>
 #undef vl_api_version
 
+#include "node_in.h"
+#include "node_out.h"
 
 acl_main_t acl_main;
 
@@ -580,7 +582,8 @@ acl_match_port(u16 port1, u16 port2, int is_ip6)
 }
 
 static int
-acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
+                 u8 *r_action, int *r_is_ip6, u32 *r_acl_match_p, u32 *r_rule_match_p)
 {
   ethernet_header_t *h0;
   u16 type0;
@@ -636,9 +639,10 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, 
     if (!acl_match_port(src_port, r->src_port, is_ip6))
       continue;
     /* everything matches! */
-    *nextp = r->is_permit ? ~0 : 0;
-    if (acl_match_p) *acl_match_p = acl_index;
-    if (rule_match_p) *rule_match_p = i;
+    *r_action = r->is_permit;
+    *r_is_ip6 = is_ip6;
+    if (r_acl_match_p) *r_acl_match_p = acl_index;
+    if (r_rule_match_p) *r_rule_match_p = i;
     return 1;
   }
   return 0;
@@ -647,10 +651,17 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0, u32 *nextp, 
 void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
 {
   acl_main_t *am = &acl_main;
+  uint8_t action = 0;
+  int is_ip6 = 0;
   int i;
   vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
   for (i=0; i<vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index]); i++) {
-    if(acl_packet_match(am, am->input_acl_vec_by_sw_if_index[sw_if_index][i], b0, nextp, acl_match_p, rule_match_p)) {
+    if(acl_packet_match(am, am->input_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p)) {
+      if (is_ip6) {
+        *nextp = am->acl_in_ip6_match_next[action];
+      } else {
+        *nextp = am->acl_in_ip4_match_next[action];
+      }
       return;
     }
   }
@@ -664,10 +675,17 @@ void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32
 void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
 {
   acl_main_t *am = &acl_main;
+  uint8_t action = 0;
+  int is_ip6 = 0;
   int i;
   vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
   for (i=0; i<vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]); i++) {
-    if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, nextp, acl_match_p, rule_match_p)) {
+    if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p)) {
+      if (is_ip6) {
+        *nextp = am->acl_out_ip6_match_next[action];
+      } else {
+        *nextp = am->acl_out_ip4_match_next[action];
+      }
       return;
     }
   }
@@ -838,6 +856,22 @@ acl_plugin_api_hookup (vlib_main_t *vm)
     return 0;
 }
 
+u32
+register_match_action_nexts (u32 next_in_ip4, u32 next_in_ip6, u32 next_out_ip4, u32 next_out_ip6)
+{
+  acl_main_t * am = &acl_main;
+  u32 act = am->n_match_actions;
+  if (am->n_match_actions == 255) {
+    return ~0;
+  }
+  am->n_match_actions++;
+  am->acl_in_ip4_match_next[act] = next_in_ip4;
+  am->acl_in_ip6_match_next[act] = next_in_ip6;
+  am->acl_out_ip4_match_next[act] = next_out_ip4;
+  am->acl_out_ip6_match_next[act] = next_out_ip6;
+  return act;
+}
+
 void
 acl_setup_nodes (void)
 {
@@ -851,6 +885,17 @@ acl_setup_nodes (void)
   am->l2_output_classify_next_acl = vlib_node_add_next_with_slot(vm, n->index, acl_out_node.index, ~0);
 
   feat_bitmap_init_next_nodes(vm, acl_in_node.index, L2INPUT_N_FEAT,  l2input_get_feat_names (), am->acl_in_node_input_next_node_index);
+
+  memset(&am->acl_in_ip4_match_next[0], 0, sizeof(am->acl_in_ip4_match_next));
+  memset(&am->acl_in_ip6_match_next[0], 0, sizeof(am->acl_in_ip6_match_next));
+  memset(&am->acl_out_ip4_match_next[0], 0, sizeof(am->acl_out_ip4_match_next));
+  memset(&am->acl_out_ip6_match_next[0], 0, sizeof(am->acl_out_ip6_match_next));
+  am->n_match_actions = 0;
+
+  register_match_action_nexts(0, 0, 0, 0);     /* drop */
+  register_match_action_nexts(~0, ~0, ~0, ~0); /* permit */
+  register_match_action_nexts(ACL_IN_L2S_INPUT_IP4_ADD, ACL_IN_L2S_INPUT_IP6_ADD,
+                              ACL_OUT_L2S_OUTPUT_IP4_ADD, ACL_OUT_L2S_OUTPUT_IP6_ADD); /* permit + create session */
 }
 
 

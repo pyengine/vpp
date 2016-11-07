@@ -31,7 +31,6 @@ extern vlib_node_registration_t acl_out_node;
 void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p);
 void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p);
 
-
 enum address_e { IP4, IP6 };
 typedef struct
 {
@@ -100,6 +99,15 @@ typedef struct {
   u32 acl_in_node_input_next_node_index[32];
   /* the respective thing for the output feature */
   l2_output_next_nodes_st acl_out_output_next_nodes;
+
+  /* ACL match actions (must be coherent across in/out ACLs to next indices (can differ) */
+
+  u32 acl_in_ip4_match_next[256];
+  u32 acl_in_ip6_match_next[256];
+  u32 acl_out_ip4_match_next[256];
+  u32 acl_out_ip6_match_next[256];
+  u32 n_match_actions;
+
 
   /* convenience */
   vlib_main_t * vlib_main;

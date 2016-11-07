@@ -17,6 +17,7 @@
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
 #include <acl/acl.h>
+#include "node_in.h"
 
 typedef struct {
   u32 next_index;
@@ -54,14 +55,6 @@ static char * acl_in_error_strings[] = {
   foreach_acl_in_error
 #undef _
 };
-
-typedef enum {
-  ACL_IN_ERROR_DROP,
-  ACL_IN_ETHERNET_INPUT,
-  ACL_IN_L2S_INPUT_IP4_ADD,
-  ACL_IN_L2S_INPUT_IP6_ADD,
-  ACL_IN_N_NEXT,
-} acl_in_next_t;
 
 static uword
 acl_in_node_fn (vlib_main_t * vm,

@@ -721,6 +721,9 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
                          u32 sw_if_index, acl_list_t *acl, u32 context)
 {
   vl_api_acl_details_t *mp;
+  vl_api_acl_rule_t *rules;
+  acl_rule_t  * r;
+  int i;
   int msg_size = sizeof (*mp) + sizeof(mp->r[0])*acl->count;
 
   mp = vl_msg_api_alloc (msg_size);
@@ -732,7 +735,20 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
   mp->sw_if_index = htonl(sw_if_index);
   mp->count = htonl(acl->count);
   mp->acl_index = htonl(acl - am->acls);
-  clib_memcpy (mp->r, acl->rules, acl->count * sizeof(acl->rules[0]));
+  // clib_memcpy (mp->r, acl->rules, acl->count * sizeof(acl->rules[0]));
+  rules = mp->r;
+  for(i=0; i<acl->count; i++) {
+    r = &acl->rules[i];
+    rules[i].is_permit = r->is_permit;
+    rules[i].is_ipv6 = r->is_ipv6;
+    memcpy(rules[i].src_ip_addr, &r->src, sizeof(r->src));
+    rules[i].src_ip_prefix_len = r->src_prefixlen;
+    memcpy(rules[i].dst_ip_addr, &r->dst, sizeof(r->dst));
+    rules[i].dst_ip_prefix_len = r->dst_prefixlen;
+    rules[i].proto = r->proto;
+    rules[i].src_port = r->src_port;
+    rules[i].dst_port = r->dst_port;
+  }
 
   vl_msg_api_send_shmem (q, (u8 *) & mp);
 }

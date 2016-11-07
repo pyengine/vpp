@@ -654,6 +654,10 @@ void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32
       return;
     }
   }
+  if (vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index]) > 0) {
+    /* If there are ACLs and none matched, deny by default */
+    *nextp = 0;
+  }
 
 }
 
@@ -666,6 +670,10 @@ void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u3
     if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, nextp, acl_match_p, rule_match_p)) {
       return;
     }
+  }
+  if (vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]) > 0) {
+    /* If there are ACLs and none matched, deny by default */
+    *nextp = 0;
   }
 }
 

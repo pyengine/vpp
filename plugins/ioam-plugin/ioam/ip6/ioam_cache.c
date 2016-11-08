@@ -127,7 +127,7 @@ ioam_cache_ip6_enable_disable (ioam_cache_main_t * em,
   if (is_disable == 0)
     {
         ioam_cache_table_init(vm);
-	ip6_hbh_set_next_override (em->my_hbh_slot);
+	ip6_hbh_set_next_override (em->cache_hbh_slot);
 	ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
                           0,
                           ioam_e2e_id_trace_handler);
@@ -137,6 +137,31 @@ ioam_cache_ip6_enable_disable (ioam_cache_main_t * em,
     {
       ip6_hbh_set_next_override (IP6_LOOKUP_NEXT_POP_HOP_BY_HOP); 
       ioam_cache_table_destroy(vm);
+      ip6_hbh_unregister_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID);
+    }
+
+  return 0;
+}
+/* Action function shared between message handler and debug CLI */
+int
+ioam_tunnel_select_ip6_enable_disable (ioam_cache_main_t * em,
+			       u8 is_disable)
+{
+  vlib_main_t *vm = em->vlib_main;
+
+  if (is_disable == 0)
+    {
+        ioam_cache_ts_table_init(vm);
+	ip6_hbh_set_next_override (em->ts_hbh_slot);
+	ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
+                          0,
+                          ioam_e2e_id_trace_handler);
+
+    }
+  else
+    {
+      ip6_hbh_set_next_override (IP6_LOOKUP_NEXT_POP_HOP_BY_HOP); 
+      ioam_cache_ts_table_destroy(vm);
       ip6_hbh_unregister_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID);
     }
 
@@ -208,15 +233,55 @@ VLIB_CLI_COMMAND (set_ioam_cache_command, static) =
 };
 /* *INDENT_ON* */
 
+static clib_error_t *
+set_ioam_tunnel_select_command_fn (vlib_main_t * vm,
+				  unformat_input_t * input,
+				  vlib_cli_command_t * cmd)
+{
+  ioam_cache_main_t *em = &ioam_cache_main;
+  u8 is_disable = 0;
+
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (input, "disable"))
+	is_disable = 1;
+      else
+	break;
+    }
+
+  /* Turn on the ip6 timer process */
+  // vlib_process_signal_event (vm, flow_report_process_node.index,
+  //1, 0);
+  ioam_tunnel_select_ip6_enable_disable (em, is_disable);
+
+  return 0;
+}
+
+/* *INDENT_OFF* */
+VLIB_CLI_COMMAND (set_ioam_cache_ts_command, static) =
+{
+  .path = "set ioam ip6 sr-tunnel-select",
+  .short_help =
+    "set ioam ip6 sr-tunnel-select [disable]",
+  .function = set_ioam_tunnel_select_command_fn
+};
+/* *INDENT_ON* */
+
 static void ioam_cache_table_print (vlib_main_t *vm)
 {
   ioam_cache_main_t *cm = &ioam_cache_main;
   ioam_cache_entry_t *entry = 0;  
+  ioam_cache_ts_entry_t *ts_entry = 0;  
 
   pool_foreach (entry, cm->ioam_rewrite_pool,
 		({
 		    vlib_cli_output (vm, "%U",
 				format_ioam_cache_entry, entry);
+		}));
+  pool_foreach (ts_entry, cm->ioam_ts_pool,
+		({
+		    vlib_cli_output (vm, "%U",
+				format_ioam_cache_ts_entry, ts_entry);
 		}));
   
 }
@@ -246,23 +311,31 @@ ioam_cache_init (vlib_main_t * vm)
   ioam_cache_main_t *em = &ioam_cache_main;
   clib_error_t *error = 0;
   u8 *name;
-  u32 node_index = ioam_cache_node.index;
-  vlib_node_t *ip6_hbyh_node = NULL;
+  u32 cache_node_index = ioam_cache_node.index;
+  u32 ts_node_index = ioam_cache_ts_node.index;
+  vlib_node_t *ip6_hbyh_node = NULL, *ip6_hbh_pop_node = NULL, *error_node = NULL;
 
   name = format (0, "ioam_cache_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
   em->msg_id_base = vl_msg_api_get_msg_ids
     ((char *) name, VL_MSG_FIRST_AVAILABLE);
-  em->unix_time_0 = (u32) time (0);	/* Store starting time */
-  em->vlib_time_0 = vlib_time_now (vm);
 
   error = ioam_cache_plugin_api_hookup (vm);
 
   /* Hook this node to ip6-hop-by-hop */
   ip6_hbyh_node = vlib_get_node_by_name (vm, (u8 *) "ip6-hop-by-hop");
-  em->my_hbh_slot = vlib_node_add_next (vm, ip6_hbyh_node->index, node_index);
+  em->cache_hbh_slot = vlib_node_add_next (vm, ip6_hbyh_node->index, cache_node_index);
+  em->ts_hbh_slot = vlib_node_add_next (vm, ip6_hbyh_node->index, ts_node_index);
+
+  ip6_hbh_pop_node = vlib_get_node_by_name (vm, (u8 *) "ip6-pop-hop-by-hop");
+  em->ip6_hbh_pop_node_index = ip6_hbh_pop_node->index;
+
+  error_node = vlib_get_node_by_name (vm, (u8 *) "error-drop");
+  em->error_node_index = error_node->index;
+
   vec_free (name);
+
   return error;
 }
 

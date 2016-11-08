@@ -175,7 +175,7 @@ sr_replicate_node_fn (vlib_main_t * vm,
 	  ip6_sr_header_t *hdr_sr0 = 0;
 	  ip6_header_t *ip0 = 0, *hdr_ip0 = 0;
 	  int num_replicas = 0;
-	  int i;
+	  int i, j;
 	  u32 len_bytes = sizeof (ip6_header_t);
 	  u8 next_hdr, ip_next_hdr = IPPROTO_IPV6_ROUTE;
 
@@ -239,16 +239,22 @@ sr_replicate_node_fn (vlib_main_t * vm,
 
 	  vec_reset_length (hdr_vec);
 	  vec_reset_length (rte_mbuf_vec);
-
+          
+          j = 0;
 	  for (i = 0; i < num_replicas; i++)
 	    {
 	      uint8_t nb_seg;
 	      struct rte_mbuf *clone0i;
 	      vlib_buffer_t *clone0_c, *clone_b0;
 
+	      t0 = vec_elt_at_index (sm->tunnels, pol0->tunnel_indices[i]);
+              if (t0->inactive)
+		continue;
+              j++;
 	      hdr_mb0 = rte_pktmbuf_alloc (bm->pktmbuf_pools[socket_id]);
-
-	      if (i < (num_replicas - 1))
+ 
+             
+	      if (j > 1)
 		{
 		  /* Not the last tunnel to process */
 		  clone0 = rte_pktmbuf_clone
@@ -284,7 +290,7 @@ sr_replicate_node_fn (vlib_main_t * vm,
 
 		}
 	      else
-		/* Last tunnel to process, use original MB */
+		/* First tunnel to process, use original MB */
 		clone0 = orig_mb0;
 
 
@@ -312,16 +318,17 @@ sr_replicate_node_fn (vlib_main_t * vm,
 
 	    }
 
-	  for (i = 0; i < num_replicas; i++)
+	  for (i = 0, j = 0; i < num_replicas; i++)
 	    {
 	      vlib_buffer_t *hdr_b0;
 
 	      t0 = vec_elt_at_index (sm->tunnels, pol0->tunnel_indices[i]);
-
+              if (t0->inactive)
+		continue;
 	      /* Our replicas */
-	      hdr_mb0 = hdr_vec[i];
-	      clone0 = rte_mbuf_vec[i];
-
+	      hdr_mb0 = hdr_vec[j];
+	      clone0 = rte_mbuf_vec[j++];
+	      
 	      hdr_mb0->data_len = len_bytes + vec_len (t0->rewrite);
 	      hdr_mb0->pkt_len = hdr_mb0->data_len +
 		vlib_buffer_length_in_chain (vm, orig_b0);
@@ -338,6 +345,7 @@ sr_replicate_node_fn (vlib_main_t * vm,
 	      hdr_b0->current_length = len_bytes + vec_len (t0->rewrite);
 	      hdr_b0->flags = orig_b0->flags | VLIB_BUFFER_NEXT_PRESENT;
 	      hdr_b0->trace_index = orig_b0->trace_index;
+	      vnet_buffer(hdr_b0)->l2_classify.opaque_index = 0;
 
 	      hdr_b0->total_length_not_including_first_buffer =
 		hdr_mb0->pkt_len - hdr_b0->current_length;

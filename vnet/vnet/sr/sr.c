@@ -1410,7 +1410,8 @@ ip6_sr_tunnel_display (vlib_main_t * vm, ip6_sr_tunnel_t * t)
   tx_fib = ip6_fib_get (t->tx_fib_index);
 
   if (t->name)
-    vlib_cli_output (vm, "sr tunnel name: %s", (char *) t->name);
+    vlib_cli_output (vm, "sr tunnel name: %s %s", (char *) t->name, 
+		     t->inactive?"[inactive]":"");
 
   vlib_cli_output (vm, "src %U dst %U first hop %U",
 		   format_ip6_address, &t->key.src,
@@ -1748,6 +1749,63 @@ VLIB_CLI_COMMAND (show_sr_policy_command, static) = {
     .function = show_sr_policy_fn,
 };
 /* *INDENT-ON* */
+
+int 
+ip6_sr_multicastmap_reset (ip6_address_t *multicast_address)
+{
+  uword *p;
+  ip6_sr_tunnel_t *t;
+  ip6_sr_main_t *sm = &sr_main;
+  ip6_sr_policy_t *pt;
+  int i = 0;
+
+  p =
+    hash_get_mem (sm->policy_index_by_multicast_address,
+		  multicast_address);
+  if (!p)
+    return(-1);
+  pt = pool_elt_at_index (sm->policies, p[0]);
+
+  if (!pt)
+    return(0);
+  for (i = 0; i < vec_len (pt->tunnel_indices); i++)
+    {
+      t = pool_elt_at_index (sm->tunnels, pt->tunnel_indices[i]);
+      t->inactive = 0;
+
+    }
+  return (vec_len (pt->tunnel_indices));
+
+}
+
+int 
+ip6_sr_multicastmap_select_tunnel (ip6_address_t *multicast_address,
+                                  ip6_address_t *next_hop)
+{
+  uword *p;
+  ip6_sr_tunnel_t *t;
+  ip6_sr_main_t *sm = &sr_main;
+  ip6_sr_policy_t *pt;
+  int i;
+
+  p =
+    hash_get_mem (sm->policy_index_by_multicast_address,
+		  multicast_address);
+  if (!p)
+    return(-1);
+  pt = pool_elt_at_index (sm->policies, p[0]);
+
+  for (i = 0; pt && i < vec_len (pt->tunnel_indices); i++)
+    {
+      t = pool_elt_at_index (sm->tunnels, pt->tunnel_indices[i]);
+      if (t && ip6_address_is_equal(next_hop, &(t->first_hop)))
+	continue;
+      else
+	t->inactive = 1;
+
+    }
+  return (0);
+}
 
 /**
  * @brief Add or Delete a mapping of IP6 multicast address

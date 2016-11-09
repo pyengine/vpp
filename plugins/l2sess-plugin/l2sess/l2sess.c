@@ -269,6 +269,69 @@ VLIB_CLI_COMMAND (l2sess_bind_command, static) = {
     .function = macswap_enable_disable_command_fn,
 };
 
+static char *get_l4_proto_str(int is_ip6, uint8_t l4_proto) {
+  switch (l4_proto) {
+    case 6:  return "tcp";
+    case 17: return "udp";
+    case 1:  return "icmp";
+    case 58: return "icmp6";
+    default: return "<?l4-unknown?>";
+  }
+}
+
+static clib_error_t *
+l2sess_show_command_fn(vlib_main_t * vm,
+                                   unformat_input_t * input,
+                                   vlib_cli_command_t * cmd)
+{
+  l2sess_main_t * sm = &l2sess_main;
+  clib_time_t *ct = &vm->clib_time;
+  vnet_main_t *vnm = sm->vnet_main;
+  u32 swif;
+  l2s_session_t *s;
+  u64 now = clib_cpu_time_now ();
+  for(swif=0; swif<vec_len(sm->sessions_by_sw_if_index); swif++) {
+    if (pool_elts(sm->sessions_by_sw_if_index[swif]) > 0) {
+      vlib_cli_output(vm, "Interface %U", format_vnet_sw_if_index_name, vnm, swif);
+    }
+    pool_foreach(s, sm->sessions_by_sw_if_index[swif],
+    ({
+      f64 ctime = (now - s->create_time) * ct->seconds_per_clock;
+      f64 atime0 = (now - s->side[0].active_time) * ct->seconds_per_clock;
+      f64 atime1 = (now - s->side[1].active_time) * ct->seconds_per_clock;
+
+  /*
+      f64 ctime = (s->create_time - vm->cpu_time_main_loop_start) * ct->seconds_per_clock;
+      f64 atime0 = (s->side[0].active_time - vm->cpu_time_main_loop_start) * ct->seconds_per_clock;
+      f64 atime1 = (s->side[1].active_time - vm->cpu_time_main_loop_start) * ct->seconds_per_clock;
+  */
+      u8 *out0 = format(0, "%5d: create time: %U pkts/bytes/active time: [ %ld %ld %U : %ld %ld %U ]\n", (s - sm->sessions_by_sw_if_index[swif]),
+			  format_time_interval,  "h:m:s:u", ctime,
+			  s->side[0].n_packets, s->side[0].n_bytes,
+			  format_time_interval,  "h:m:s:u", atime0,
+			  s->side[1].n_packets, s->side[1].n_bytes,
+			  format_time_interval,  "h:m:s:u", atime1);
+      u8 *out1 = 0;
+      if (s->is_ip6) {
+	out1 = format(0, "%s %U :%u <-> %U :%u", get_l4_proto_str(s->is_ip6, s->l4_proto), format_ip6_address, &s->side[0].addr.ip6, s->side[0].port, format_ip6_address, &s->side[1].addr.ip6, s->side[1].port);
+      } else {
+	out1 = format(0, "%s %U :%u <-> %U :%u", get_l4_proto_str(s->is_ip6, s->l4_proto), format_ip4_address, &s->side[0].addr.ip4, s->side[0].port, format_ip4_address, &s->side[1].addr.ip4, s->side[1].port);
+      }
+      vlib_cli_output(vm, "%s       %s", out0, out1);
+      vec_free(out0);
+      vec_free(out1);
+    }));
+  }
+  return 0;
+}
+
+
+VLIB_CLI_COMMAND (l2sess_show_command, static) = {
+    .path = "show l2sess",
+    .short_help = "show l2sess",
+    .function = l2sess_show_command_fn,
+};
+
 /* API message handler */
 static void vl_api_l2sess_bind_tables_t_handler
 (vl_api_l2sess_bind_tables_t * mp)

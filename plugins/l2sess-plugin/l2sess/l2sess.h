@@ -43,6 +43,30 @@
 foreach_l2sess_node
 #undef _
 
+typedef struct {
+  ip46_address_t addr;
+  u64 active_time;
+  u64 n_packets;
+  u64 n_bytes;
+  u16 port;
+} l2s_session_side_t;
+
+enum {
+  L2S_SESSION_SIDE_IN = 0,
+  L2S_SESSION_SIDE_OUT,
+  L2S_N_SESSION_SIDES
+};
+
+typedef struct {
+  u64 create_time;
+  l2s_session_side_t side[L2S_N_SESSION_SIDES];
+  u8 l4_proto;
+  u8 is_ip6;
+} l2s_session_t;
+
+
+#define UDP_SESSION_IDLE_TIMEOUT_SEC 600
+#define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*24)
 
 typedef struct {
     /* API message ID base */
@@ -69,6 +93,16 @@ foreach_l2sess_node
      */
      
     u32 *fwd_to_rev_by_table_index;
+
+    /*
+     * The vector of per-interface session pools
+     */
+
+    l2s_session_t **sessions_by_sw_if_index;
+
+    /* The session timeouts */
+    u64 tcp_session_idle_timeout;
+    u64 udp_session_idle_timeout;
 
     /* convenience */
     vlib_main_t * vlib_main;

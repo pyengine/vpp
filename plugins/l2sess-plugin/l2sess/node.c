@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <netinet/in.h>
 #include <vlib/vlib.h>
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
@@ -190,11 +191,72 @@ l2sess_flip_l3l4_fields(vlib_buffer_t * b0, int node_is_ip6, u8 l4_proto)
 }
 
 void
-l2sess_add_session(vlib_buffer_t * b0,  int node_is_out, int node_is_ip6, u32 session_table, u32 session_match_next)
+l2sess_add_session(vlib_buffer_t * b0,  int node_is_out, int node_is_ip6, u32 session_table, u32 session_match_next, u32 opaque_index)
 {
   vnet_classify_main_t * cm = &vnet_classify_main;
   printf("Adding session to table %d with next %d\n", session_table, session_match_next);
-  vnet_classify_add_del_session(cm, session_table, vlib_buffer_get_current (b0), session_match_next, 0, 0, 1);
+  vnet_classify_add_del_session(cm, session_table, vlib_buffer_get_current (b0), session_match_next, opaque_index, 0, 1);
+}
+
+
+static void
+session_side_account_buffer(vlib_buffer_t * b0, l2s_session_side_t *ss, u64 now)
+{
+  ss->active_time = now;
+  ss->n_packets++;
+  ss->n_bytes += b0->current_data + b0->current_length;
+}
+
+
+static void *
+get_ptr_to_offset(vlib_buffer_t * b0, int offset)
+{
+  u8 *p = vlib_buffer_get_current (b0) + offset;
+  return p;
+}
+
+
+/*
+ * FIXME: Hardcoded offsets are ugly, although if casting to structs one
+ * would need to take care about alignment.. So let's for now be naive and simple.
+ */
+
+void
+session_store_ip4_l3l4_info(vlib_buffer_t * b0, l2s_session_t *sess, int node_is_out)
+{
+    clib_memcpy(&sess->side[1-node_is_out].addr.ip4, get_ptr_to_offset(b0, 26), 4);
+    clib_memcpy(&sess->side[node_is_out].addr.ip4, get_ptr_to_offset(b0, 30), 4);
+    sess->side[1-node_is_out].port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
+    sess->side[node_is_out].port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+}
+
+void
+session_store_ip6_l3l4_info(vlib_buffer_t * b0, l2s_session_t *sess, int node_is_out)
+{
+    clib_memcpy(&sess->side[1-node_is_out].addr.ip6, get_ptr_to_offset(b0, 22), 16);
+    clib_memcpy(&sess->side[node_is_out].addr.ip4, get_ptr_to_offset(b0, 38), 16);
+    sess->side[1-node_is_out].port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
+    sess->side[node_is_out].port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+}
+
+static void
+delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_idx)
+{
+  /* FIXME: delete the session and its associated classifier entries */
+}
+
+static int
+session_is_alive(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
+{
+  u64 last_active = sess->side[0].active_time > sess->side[1].active_time ? sess->side[0].active_time : sess->side[1].active_time;
+
+  u64 idle_timeout = 0;
+  switch (sess->l4_proto) {
+    case  6: idle_timeout = sm->tcp_session_idle_timeout; break;
+    case 17: idle_timeout = sm->udp_session_idle_timeout; break;
+    default: idle_timeout = 0;
+  }
+  return ((now - last_active) < idle_timeout);
 }
 
 static uword
@@ -265,6 +327,7 @@ l2sess_node_fn (vlib_main_t * vm,
   l2_output_next_nodes_st *next_nodes;
   u32 *input_feat_next_node_index;
   u8 l4_proto;
+  u64 now = clib_cpu_time_now();
 
 #define _(node_name, node_var, is_out, is_ip6, is_track) \
 if(node_var.index == node->node_index) { node_is_out = is_out; node_is_ip6 = is_ip6; node_is_track = is_track; node_index = node_var.index; \
@@ -282,7 +345,16 @@ foreach_l2sess_node
   feature_bitmap0 = vnet_buffer (b0)->l2.feature_bitmap;
 
   if (node_is_track) {
-   /* lightweight TCP state tracking goes here */
+    u32 sess_index =  vnet_buffer (b0)->l2_classify.opaque_index;
+    l2s_session_t *sess = sm->sessions_by_sw_if_index[sw_if_index0] + sess_index;
+    if (session_is_alive(sm, sess, now)) {
+      /* lightweight TCP state tracking goes here */
+      session_side_account_buffer(b0, &sess->side[node_is_out], now);
+    } else {
+      delete_session(sm, sw_if_index0, sess_index);
+      /* FIXME: drop the packet that hit the obsolete node, for now. We really ought to recycle it. */
+      next0 = 0;
+    }
   } else {
    /*
     * "-add" node: take l2opaque which arrived to us, and deduce
@@ -290,16 +362,34 @@ foreach_l2sess_node
     * applied for this AF on the RX(for input)/TX(for output)) sw_if_index.
     * Also add the mirrored session to the paired table.
     */
+    l2s_session_t *sess;
+    u32 sess_index;
+
     l4_proto = l2sess_get_l4_proto(b0, node_is_ip6);
+
+    vec_validate(sm->sessions_by_sw_if_index, sw_if_index0);
+    pool_get(sm->sessions_by_sw_if_index[sw_if_index0], sess);
+    sess_index = sess - sm->sessions_by_sw_if_index[sw_if_index0];
+    sess->create_time = now;
+    sess->side[node_is_out].active_time = now;
+    sess->side[1-node_is_out].active_time = now;
+    sess->l4_proto = l4_proto;
+    sess->is_ip6 = node_is_ip6;
+    if (node_is_ip6) {
+      session_store_ip6_l3l4_info(b0, sess, node_is_out);
+    } else {
+      session_store_ip4_l3l4_info(b0, sess, node_is_out);
+    }
+
     l2sess_get_session_tables(sm, sw_if_index0, b0, node_is_out, node_is_ip6, l4_proto, session_tables, &trace_flags0);
     l2sess_get_session_nexts(sm, sw_if_index0, b0, node_is_out, node_is_ip6, l4_proto, session_nexts, &trace_flags0);
     l2sess_flip_l3l4_fields(b0, node_is_ip6, l4_proto);
     if (session_tables[1] != ~0) {
-      l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[1], session_nexts[1]);
+      l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[1], session_nexts[1], sess_index);
     }
     l2sess_flip_l3l4_fields(b0, node_is_ip6, l4_proto);
     if (session_tables[0] != ~0) {
-      l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[0], session_nexts[0]);
+      l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[0], session_nexts[0], sess_index);
     }
   }
   if (node_is_out) {

@@ -28,98 +28,7 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 #include <vppinfra/bihash_8_8.h>
-
-
-
-#if 1 //Temp till analyze gets committe
-#include <ioam/lib-trace/trace_util.h>
-always_inline
-void * ip6_ioam_find_hbh_option (ip6_hop_by_hop_header_t *hbh0, u8 option)
-{
-  ip6_hop_by_hop_option_t *opt0, *limit0;
-  u8 type0;
-
-  opt0 = (ip6_hop_by_hop_option_t *) (hbh0 + 1);
-  limit0 = (ip6_hop_by_hop_option_t *) ((u8 *)hbh0 + ((hbh0->length + 1) << 3));
-
-  while (opt0 < limit0)
-    {
-      type0 = opt0->type;
-      if (type0 == option)
-	return ((void *) opt0);
-
-      if (0 == type0) {
-	opt0 = (ip6_hop_by_hop_option_t *) ((u8 *)opt0) + 1;
-	continue;
-      }
-      opt0 = (ip6_hop_by_hop_option_t *)
-	(((u8 *)opt0) + opt0->length + sizeof (ip6_hop_by_hop_option_t));
-    }
-
-  return NULL;
-}
-
-always_inline f64
-ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
-{
-  u16 size_of_traceopt_per_node, size_of_all_traceopts;
-  u8 num_nodes;
-  u32 *start_elt, *end_elt;
-  u32 start_time, end_time;
-
-  size_of_traceopt_per_node = fetch_trace_data_size(trace->ioam_trace_type);
-  size_of_all_traceopts = trace->hdr.length - 2; /*ioam_trace_type,data_list_elts_left*/
-
-  num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
-
-  num_nodes -= trace->data_list_elts_left;
-
-  start_elt = trace->elts;
-  end_elt = trace->elts + (size_of_traceopt_per_node * (num_nodes - 1) / sizeof(u32));
-
-  if (trace->ioam_trace_type & BIT_TTL_NODEID)
-    {
-      start_elt++;
-      end_elt++;
-    }
-  if (trace->ioam_trace_type & BIT_ING_INTERFACE)
-    {
-      start_elt++;
-      end_elt++;
-    }
-
-  start_time = clib_net_to_host_u32 (*start_elt);
-  end_time = clib_net_to_host_u32 (*end_elt);
-
-  return (f64) (end_time - start_time);
-}
-
-
-static inline int ip6_ioam_analyse_compare_path_delay (ip6_hop_by_hop_header_t *hbh0,
-					 ip6_hop_by_hop_header_t *hbh1)
-{
-  ioam_trace_option_t *trace0 = NULL, *trace1 = NULL;
-  f64 delay0, delay1;
-
-  trace0 = ip6_ioam_find_hbh_option(hbh0, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
-  trace1 = ip6_ioam_find_hbh_option(hbh1, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
-
-  if (PREDICT_FALSE((trace0 == NULL) && (trace1 == NULL)))
-    return 0;
-
-  if (PREDICT_FALSE(trace1 == NULL))
-    return 1;
-
-  if (PREDICT_FALSE(trace0 == NULL))
-    return -1;
-
-  delay0 = ip6_ioam_analyse_calc_delay(trace0);
-  delay1 = ip6_ioam_analyse_calc_delay(trace1);
-
-  return (delay0 - delay1);
-}
-
-#endif
+#include <ioam/analyse/ioam_analyse.h>
 
 #define MAX_CACHE_ENTRIES 1024
 #define IOAM_CACHE_TABLE_DEFAULT_HASH_NUM_BUCKETS (4 * 1024)
@@ -165,6 +74,7 @@ typedef struct {
   /* Pool of ioam_cache_buffer_t */
   ioam_cache_ts_entry_t *ioam_ts_pool;
   clib_bihash_8_8_t ioam_ts_cache_table;
+  volatile u32 *lockp_ts;
 
 
   /* convenience */
@@ -175,6 +85,7 @@ typedef struct {
   uword ts_hbh_slot;
   u32 ip6_hbh_pop_node_index;
   u32 error_node_index;
+  u32 cleanup_process_node_index;
 } ioam_cache_main_t;
 
 ioam_cache_main_t ioam_cache_main;
@@ -450,6 +361,10 @@ inline static int ioam_cache_ts_table_init (vlib_main_t *vm)
   clib_bihash_init_8_8(&cm->ioam_ts_cache_table,
 	               "ioam tunnel select cache table",
 		       cm->lookup_table_nbuckets, cm->lookup_table_size);
+   cm->lockp_ts = clib_mem_alloc_aligned (CLIB_CACHE_LINE_BYTES,
+       				     CLIB_CACHE_LINE_BYTES);
+   memset ((void *) cm->lockp_ts, 0, CLIB_CACHE_LINE_BYTES);
+
   return(1);
 }
 
@@ -489,6 +404,8 @@ inline static int ioam_cache_ts_table_destroy (vlib_main_t *vm)
 		}));
   pool_free(cm->ioam_ts_pool);
   cm->ioam_ts_pool = 0;
+  clib_mem_free((void *) cm->lockp_ts);
+  cm->lockp_ts = 0;
   return(0);
 }
 
@@ -553,7 +470,7 @@ inline static void ioam_cache_ts_send (i32 pool_index)
   ioam_cache_main_t *cm = &ioam_cache_main;
   ioam_cache_ts_entry_t *entry = 0;
   entry = pool_elt_at_index(cm->ioam_ts_pool, pool_index);
-  if (entry)
+  if (entry && entry->hbh)
     {
       ioam_e2e_id_option_t *e2e;
       clib_bihash_kv_8_8_t kv;
@@ -574,7 +491,7 @@ inline static void ioam_cache_ts_check_and_send (i32 pool_index)
   ioam_cache_main_t *cm = &ioam_cache_main;
   ioam_cache_ts_entry_t *entry = 0;
   entry = pool_elt_at_index(cm->ioam_ts_pool, pool_index);
-  if (entry)
+  if (entry && entry->hbh)
     {
       if (entry->response_received == entry->max_responses ||
 	  entry->created_at + IOAM_CACHE_TS_TIMEOUT <= vlib_time_now(cm->vlib_main))

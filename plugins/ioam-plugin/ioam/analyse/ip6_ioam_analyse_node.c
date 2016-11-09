@@ -348,32 +348,6 @@ int ip6_ioam_analyse_hbh_e2e_internal (u32 flow_id, ip6_hop_by_hop_option_t *opt
   return 0;
 }
 
-always_inline
-void * ip6_ioam_find_hbh_option (ip6_hop_by_hop_header_t *hbh0, u8 option)
-{
-  ip6_hop_by_hop_option_t *opt0, *limit0;
-  u8 type0;
-
-  opt0 = (ip6_hop_by_hop_option_t *) (hbh0 + 1);
-  limit0 = (ip6_hop_by_hop_option_t *) ((u8 *)hbh0 + ((hbh0->length + 1) << 3));
-
-  while (opt0 < limit0)
-    {
-      type0 = opt0->type;
-      if (type0 == option)
-        return ((void *) opt0);
-
-      if (0 == type0) {
-          opt0 = (ip6_hop_by_hop_option_t *) ((u8 *)opt0) + 1;
-          continue;
-      }
-      opt0 = (ip6_hop_by_hop_option_t *)
-              (((u8 *)opt0) + opt0->length + sizeof (ip6_hop_by_hop_option_t));
-    }
-
-  return NULL;
-}
-
 int ip6_ioam_analyse_compare_path_delay (ip6_hop_by_hop_header_t *hbh0,
                                          ip6_hop_by_hop_header_t *hbh1)
 {

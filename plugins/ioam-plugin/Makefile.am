@@ -88,25 +88,6 @@ vppapitestplugins_LTLIBRARIES += libioam_export_test_plugin.la
 vppplugins_LTLIBRARIES += libioam_export_plugin.la
 
 ########################################
-# iOAM record cache and rewrite
-########################################
-
-ioam_ip6_cache_plugin_la_SOURCES =        \
-ioam/ip6/ioam_cache.c                     \
-ioam/ip6/ioam_cache_node.c                \
-ioam/ip6/ioam_cache_tunnel_select_node.c  \
-ioam/ip6/ioam_cache.api.h
-
-BUILT_SOURCES += ioam/ip6/ioam_cache.api.h
-
-noinst_HEADERS +=                       \
-  ioam/ip6/ioam_cache_all_api_h.h   \
-  ioam/ip6/ioam_cache_msg_enum.h    \
-  ioam/ip6/ioam_cache.api.h
-
-vppplugins_LTLIBRARIES += ioam_ip6_cache_plugin.la
-
-########################################
 # iOAM Trace
 ########################################
 libioam_trace_plugin_la_SOURCES =			\
@@ -114,7 +95,7 @@ libioam_trace_plugin_la_SOURCES =			\
 	ioam/encap/ip6_ioam_trace.c		\
 	ioam/lib-trace/trace_util.h			\
 	ioam/lib-trace/trace_api.c
-	
+
 BUILT_SOURCES +=					\
 	ioam/lib-trace/trace.api.h ioam/lib-trace/trace.py
 
@@ -188,15 +169,37 @@ libudp_ping_plugin_la_LIBADD =	\
 	libioam_analyse_plugin.la	\
 	libioam_e2e_plugin.la	\
 	libioam_trace_plugin.la
-	
 
 vppplugins_LTLIBRARIES += libudp_ping_plugin.la
+
+########################################
+# iOAM record cache and rewrite
+########################################
+
+libioam_ip6_cache_plugin_la_SOURCES =        \
+ioam/ip6/ioam_cache.c                     \
+ioam/ip6/ioam_cache_node.c                \
+ioam/ip6/ioam_cache_tunnel_select_node.c  \
+ioam/ip6/ioam_cache_thread.c              \
+ioam/ip6/ioam_cache.api.h
+
+BUILT_SOURCES += ioam/ip6/ioam_cache.api.h
+
+noinst_HEADERS +=                       \
+  ioam/ip6/ioam_cache_all_api_h.h   \
+  ioam/ip6/ioam_cache_msg_enum.h    \
+  ioam/ip6/ioam_cache.api.h
+
+libioam_ip6_cache_plugin_la_LIBADD =	\
+	libioam_analyse_plugin.la
+
+vppplugins_LTLIBRARIES += libioam_ip6_cache_plugin.la
+
 
 # Remove *.la files
 install-data-hook:
 	@(cd $(vpppluginsdir) && $(RM) $(vppplugins_LTLIBRARIES))
 	@(cd $(vppapitestpluginsdir) && $(RM) $(vppapitestplugins_LTLIBRARIES))
-
 
 #
 # Java code generation

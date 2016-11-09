@@ -151,18 +151,22 @@ ioam_tunnel_select_ip6_enable_disable (ioam_cache_main_t * em,
 
   if (is_disable == 0)
     {
-        ioam_cache_ts_table_init(vm);
-	ip6_hbh_set_next_override (em->ts_hbh_slot);
-	ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
-                          0,
-                          ioam_e2e_id_trace_handler);
-
+      ioam_cache_ts_table_init(vm);
+      ip6_hbh_set_next_override (em->ts_hbh_slot);
+      ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
+			      0,
+			      ioam_e2e_id_trace_handler);
+      /* Turn on the cleanup process */
+      vlib_process_signal_event (vm, em->cleanup_process_node_index, 1, 0);
     }
   else
     {
       ip6_hbh_set_next_override (IP6_LOOKUP_NEXT_POP_HOP_BY_HOP); 
       ioam_cache_ts_table_destroy(vm);
       ip6_hbh_unregister_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID);
+      /* Turn off the cleanup process */
+      vlib_process_signal_event (vm, em->cleanup_process_node_index, 2, 0);
+
     }
 
   return 0;

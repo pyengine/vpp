@@ -95,10 +95,36 @@ typedef  struct {
 
 } ioam_analyser_data_t;
 
+always_inline
+void * ip6_ioam_find_hbh_option (ip6_hop_by_hop_header_t *hbh0, u8 option)
+{
+  ip6_hop_by_hop_option_t *opt0, *limit0;
+  u8 type0;
+
+  opt0 = (ip6_hop_by_hop_option_t *) (hbh0 + 1);
+  limit0 = (ip6_hop_by_hop_option_t *) ((u8 *)hbh0 + ((hbh0->length + 1) << 3));
+
+  while (opt0 < limit0)
+    {
+      type0 = opt0->type;
+      if (type0 == option)
+        return ((void *) opt0);
+
+      if (0 == type0) {
+          opt0 = (ip6_hop_by_hop_option_t *) ((u8 *)opt0) + 1;
+          continue;
+      }
+      opt0 = (ip6_hop_by_hop_option_t *)
+              (((u8 *)opt0) + opt0->length + sizeof (ip6_hop_by_hop_option_t));
+    }
+
+  return NULL;
+}
+
 int ip6_ioam_analyse_compare_path_delay(ip6_hop_by_hop_header_t *hdr1,
                                 ip6_hop_by_hop_header_t *hdr2);
 
-always_inline f64
+always_inline i32
 ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
 {
   u16 size_of_traceopt_per_node, size_of_all_traceopts;
@@ -110,11 +136,9 @@ ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
   size_of_all_traceopts = trace->hdr.length - 2; /*ioam_trace_type,data_list_elts_left*/
 
   num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
-
-  num_nodes -= trace->data_list_elts_left;
-
-  start_elt = trace->elts;
-  end_elt = trace->elts + (size_of_traceopt_per_node * (num_nodes - 1) / sizeof(u32));
+  
+  end_elt = trace->elts + (size_of_traceopt_per_node * trace->data_list_elts_left / sizeof(u32));
+  start_elt = trace->elts + (size_of_traceopt_per_node * (num_nodes - 1) / sizeof(u32));
 
   if (trace->ioam_trace_type & BIT_TTL_NODEID)
     {
@@ -130,7 +154,7 @@ ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
   start_time = clib_net_to_host_u32 (*start_elt);
   end_time = clib_net_to_host_u32 (*end_elt);
 
-  return (f64) (end_time - start_time);
+  return (end_time - start_time);
 }
 
 always_inline int
@@ -242,7 +266,7 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   if (trace->ioam_trace_type & BIT_TIMESTAMP)
     {
       /* Calculate time delay */
-      f64 delay = ip6_ioam_analyse_calc_delay(trace);
+      i32 delay = ip6_ioam_analyse_calc_delay(trace);
       if (delay < trace_record->min_delay)
         trace_record->min_delay = delay;
       else if (delay > trace_record->max_delay)

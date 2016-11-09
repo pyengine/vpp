@@ -321,6 +321,7 @@ sr_replicate_node_fn (vlib_main_t * vm,
 	  for (i = 0, j = 0; i < num_replicas; i++)
 	    {
 	      vlib_buffer_t *hdr_b0;
+	      u16 new_l0 = 0;
 
 	      t0 = vec_elt_at_index (sm->tunnels, pol0->tunnel_indices[i]);
               if (t0->inactive)
@@ -352,9 +353,13 @@ sr_replicate_node_fn (vlib_main_t * vm,
 	      vnet_buffer (hdr_b0)->sw_if_index[VLIB_TX] = t0->tx_fib_index;
 
 	      hdr_ip0 = (ip6_header_t *) hdr_b0->data;
+	      new_l0 = clib_net_to_host_u16 (ip0->payload_length) +
+		vec_len (t0->rewrite);
 	      hdr_ip0->payload_length =
-		clib_host_to_net_u16 (hdr_mb0->data_len);
+		clib_host_to_net_u16 (new_l0);
 	      hdr_sr0 = (ip6_sr_header_t *) ((u8 *) hdr_ip0 + len_bytes);
+	      /* $$$ tune */
+	      clib_memcpy (hdr_sr0, t0->rewrite, vec_len (t0->rewrite));
 	      hdr_sr0->protocol = next_hdr;
 	      hdr_ip0->protocol = ip_next_hdr;
 

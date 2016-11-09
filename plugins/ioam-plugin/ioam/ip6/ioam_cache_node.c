@@ -271,8 +271,9 @@ ip6_add_from_cache_hbh_node_fn (vlib_main_t * vm,
 	      goto TRACE0;
 	    }
 	  tcp0 = (tcp_header_t *)((u8 *)ip0 + tcp_offset0);
-	  if ((tcp0->flags & TCP_FLAG_SYN) == TCP_FLAG_SYN &&
-	      (tcp0->flags & TCP_FLAG_ACK) == TCP_FLAG_ACK)
+	  if (((tcp0->flags & TCP_FLAG_SYN) == TCP_FLAG_SYN &&
+	       (tcp0->flags & TCP_FLAG_ACK) == TCP_FLAG_ACK) ||
+	      (tcp0->flags & TCP_FLAG_RST) == TCP_FLAG_RST)
 	    {
 	      if (0 != (entry = ioam_cache_lookup (ip0,
 						   clib_net_to_host_u16(tcp0->ports.src),

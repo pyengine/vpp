@@ -71,6 +71,7 @@ static uword
 ip6_ioam_cache_ts_node_fn (vlib_main_t * vm,
 		    vlib_node_runtime_t * node, vlib_frame_t * frame)
 {
+  ioam_cache_main_t *cm = &ioam_cache_main;
   u32 n_left_from, *from, *to_next;
   cache_ts_next_t next_index;
   u32 recorded = 0;
@@ -78,7 +79,8 @@ ip6_ioam_cache_ts_node_fn (vlib_main_t * vm,
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
-
+  while (__sync_lock_test_and_set (cm->lockp_ts, 1)) 
+    ;
   while (n_left_from > 0)
     {
       u32 n_left_to_next;
@@ -151,6 +153,25 @@ ip6_ioam_cache_ts_node_fn (vlib_main_t * vm,
 		      next0 = IOAM_CACHE_TS_ERROR_NEXT_DROP;
 		    }
 		}
+	      else if ((tcp0->flags & TCP_FLAG_RST) == TCP_FLAG_RST)
+		{
+		  /* Look up and compare*/
+		  hbh0 = (ip6_hop_by_hop_header_t *) (ip0 + 1);
+		  if (0 == ioam_cache_ts_lookup (ip0,
+						 hbh0->protocol,
+						 clib_net_to_host_u16(tcp0->ports.src),
+						 clib_net_to_host_u16(tcp0->ports.dst),
+						 clib_net_to_host_u32(tcp0->ack_number),
+						 &hbh_cmp,
+                                                 &cache_ts_index,
+                                                 1))//response seen
+		    {
+		      next0 = IOAM_CACHE_TS_ERROR_NEXT_DROP;
+		      if (hbh_cmp)
+                        ioam_cache_ts_check_and_send (cache_ts_index);		  
+		    }
+		   
+		}
 	    }
 	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
 	    {
@@ -178,7 +199,7 @@ ip6_ioam_cache_ts_node_fn (vlib_main_t * vm,
 
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
-
+  *cm->lockp_ts = 0;
   vlib_node_increment_counter (vm, ioam_cache_ts_node.index,
 			       CACHE_TS_ERROR_RECORDED, recorded);
   return frame->n_vectors;
@@ -264,6 +285,7 @@ static uword
 ip6_reset_ts_hbh_node_fn (vlib_main_t * vm,
 			    vlib_node_runtime_t * node, vlib_frame_t * frame)
 {
+  ioam_cache_main_t *cm = &ioam_cache_main;
   u32 n_left_from, *from, *to_next;
   ip_lookup_next_t next_index;
   u32 processed = 0, cache_ts_added = 0, cache_ts_deleted = 0;
@@ -271,6 +293,8 @@ ip6_reset_ts_hbh_node_fn (vlib_main_t * vm,
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
+  while (__sync_lock_test_and_set (cm->lockp_ts, 1)) 
+    ;
 
   while (n_left_from > 0)
     {
@@ -356,7 +380,7 @@ ip6_reset_ts_hbh_node_fn (vlib_main_t * vm,
 
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
-
+  *cm->lockp_ts = 0;
   vlib_node_increment_counter (vm, ip6_reset_ts_hbh_node.index,
 			       IP6_RESET_TS_HBH_ERROR_PROCESSED, processed);
   vlib_node_increment_counter (vm, ip6_reset_ts_hbh_node.index,

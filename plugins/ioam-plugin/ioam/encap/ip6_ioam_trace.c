@@ -203,7 +203,7 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 {
   ip6_main_t *im = &ip6_main;
   ip_lookup_main_t *lm = &im->lookup_main;
-  ip6_hop_by_hop_ioam_main_t *hm = &ip6_hop_by_hop_ioam_main;
+  //ip6_hop_by_hop_ioam_main_t *hm = &ip6_hop_by_hop_ioam_main;
   u8 elt_index = 0;
   ioam_trace_option_t *trace = (ioam_trace_option_t *) opt;
   u32 adj_index = vnet_buffer (b)->ip.adj_index[VLIB_TX];
@@ -254,10 +254,11 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
       if (trace->ioam_trace_type & BIT_TIMESTAMP)
 	{
 	  /* Send least significant 32 bits */
-	  f64 time_f64 =
+	  /* f64 time_f64 =
 	    (f64) (((f64) hm->unix_time_0) +
 		   (vlib_time_now (hm->vlib_main) - hm->vlib_time_0));
-
+          */
+          f64 time_f64 = unix_time_now();
 	  time_u64.as_u64 = time_f64 * trace_tsp_mul[profile->trace_tsp];
 	  *elt = clib_host_to_net_u32 (time_u64.as_u32[0]);
 	  elt++;

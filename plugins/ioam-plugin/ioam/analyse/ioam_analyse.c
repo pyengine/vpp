@@ -27,13 +27,11 @@ set_ioam_analyse_command_fn (vlib_main_t *vm, unformat_input_t *input,
   //int rv;
   int is_export = 0;
   int is_add = 1;
-  ip4_address_t collector, src;
   int remote_listen = 0;
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
-      if (unformat(input, "export-ipfix-collector %U src %U",
-                    unformat_ip4_address, &collector, unformat_ip4_address, &src))
+      if (unformat(input, "export-ipfix-collector"))
         is_export = 1;
       else if (unformat(input, "disable"))
         is_add = 0;
@@ -46,7 +44,7 @@ set_ioam_analyse_command_fn (vlib_main_t *vm, unformat_input_t *input,
   if (is_add)
     {
       if (is_export)
-        (void) ioam_flow_create (collector, src, 0);
+        (void) ioam_flow_create (0);
 
       ioam_export_set_next_node((u8 *) "ip6-hbh-analyse");
       ip6_ioam_analyse_register_handlers();
@@ -56,7 +54,7 @@ set_ioam_analyse_command_fn (vlib_main_t *vm, unformat_input_t *input,
     }
   else
     {
-      (void) ioam_flow_create (collector, src, 1);
+      (void) ioam_flow_create (1);
 
       //memset((void *) &ioam_analyser_main, 0, sizeof(ioam_analyser_main));
       ioam_export_reset_next_node();
@@ -82,9 +80,9 @@ show_ioam_analyse_cmd_fn (vlib_main_t * vm, unformat_input_t * input,
 
   vec_reset_length(s);
   s = format (0, "iOAM Analyse Information: \n");
-  vec_foreach_index(i, am->data)
+  vec_foreach_index(i, am->aggregated_data)
   {
-    record = am->data + i;
+    record = am->aggregated_data + i;
     if (record->is_free)
       continue;
 
@@ -121,13 +119,12 @@ ioam_analyse_init (vlib_main_t *vm)
   if (error)
     return error;
 
-  vec_validate_aligned(am->data,
+  vec_validate_aligned(am->aggregated_data,
                        200,
                        CLIB_CACHE_LINE_BYTES);
-
-  vec_foreach_index(i, am->data)
+  vec_foreach_index(i, am->aggregated_data)
   {
-    ioam_analyse_init_data(am->data + i);
+    ioam_analyse_init_data(am->aggregated_data + i);
   }
 
   return 0;

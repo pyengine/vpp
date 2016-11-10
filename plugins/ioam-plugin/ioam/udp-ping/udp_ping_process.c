@@ -402,12 +402,12 @@ udp_ping_process (vlib_main_t * vm,
 }
 
 void udp_ping_analyse_hbh (vlib_buffer_t *b0,
-                                         u32 flow_id,
-                                         u16 src_port,
-                                         u16 dst_port,
-                                         ip6_hop_by_hop_option_t *opt0,
-                                         ip6_hop_by_hop_option_t *limit0,
-                                         u16 len)
+                           u32 flow_id,
+                           u16 src_port,
+                           u16 dst_port,
+                           ip6_hop_by_hop_option_t *opt0,
+                           ip6_hop_by_hop_option_t *limit0,
+                           u16 len)
 {
   u8 type0;
   ip46_udp_ping_flow *ip46_flow;

@@ -20,25 +20,26 @@
 #include <vnet/ip/ip6_packet.h>
 #include <ioam/analyse/ip6_ioam_analyse_node.h>
 
-static u8 *
+u8 *
 ioam_template_rewrite (flow_report_main_t * frm, flow_report_t * fr,
                        ip4_address_t * collector_address,
                        ip4_address_t * src_address,
                        u16 collector_port)
 {
-#if 0
-  ip6_ioam_analyser_main_t *am = &ioam_analyser_main;
   ip4_header_t * ip;
   udp_header_t * udp;
-  ipfix_message_header_t * h;
-  ipfix_set_header_t * s;
-  ipfix_template_header_t * t;
-  ipfix_field_specifier_t * f;
-  ipfix_field_specifier_t * first_field;
-  u8 * rewrite = 0;
-  ip4_ipfix_template_packet_t * tp;
+  ipfix_message_header_t *h;
+  ipfix_set_header_t *s;
+  ipfix_template_header_t *t;
+  ipfix_field_specifier_t *f;
+  ipfix_field_specifier_t *first_field;
+  u8 *rewrite = 0;
+  ip4_ipfix_template_packet_t *tp;
   u32 field_count = 0;
   u32 field_index = 0;
+  flow_report_stream_t * stream;
+
+  stream = &frm->streams[fr->stream_index];
 
   /* Determine field count */
 #define _(field,mask,item,length)                                   \
@@ -80,7 +81,7 @@ ioam_template_rewrite (flow_report_main_t * frm, flow_report_t * fr,
   udp->dst_port = clib_host_to_net_u16 (UDP_DST_PORT_ipfix);
   udp->length = clib_host_to_net_u16 (vec_len(rewrite) - sizeof(*ip));
 
-  h->domain_id = clib_host_to_net_u32 (fr->domain_id);
+  h->domain_id = clib_host_to_net_u32 (stream->domain_id); //fr->domain_id);
 
   /* Add Src address, dest address, src port, dest port
      * path map,  number of paths manually */
@@ -109,13 +110,15 @@ ioam_template_rewrite (flow_report_main_t * frm, flow_report_t * fr,
   foreach_ioam_ipfix_field;
 #undef _
 
-  f->e_id_length = ipfix_e_id_length (0 /* enterprise */,
-                                      ioamNumberOfPaths, 2);
+  /* Add ioamPathMap manually */
+  f->e_id_length = ipfix_e_id_length(
+                                  0 /* enterprise */,
+                                  ioamPathMap,
+                                  (IOAM_MAX_PATHS_PER_FLOW * sizeof(ioam_path)));
   f++;
 
-  /* Add ioamPathMap manually */
-  f->e_id_length = ipfix_e_id_length (
-      0 /* enterprise */, ioamPathMap, (IOAM_MAX_PATHS_PER_FLOW * sizeof(ioam_path));
+  f->e_id_length = ipfix_e_id_length (0 /* enterprise */,
+                                        ioamNumberOfPaths, 2);
   f++;
 
   /* Back to the template packet... */
@@ -136,213 +139,245 @@ ioam_template_rewrite (flow_report_main_t * frm, flow_report_t * fr,
   ip->checksum = ip4_header_checksum (ip);
 
   return rewrite;
-#endif
-  return 0;
 }
 
-static vlib_frame_t *
-ioam_send_flows (flow_report_main_t * frm, flow_report_t * fr,
-                 vlib_frame_t * f, u32 * to_next, u32 node_index)
+u16 ioam_analyse_add_ipfix_record (flow_report_t *fr,
+                                   ioam_analyser_data_t *record,
+                                   vlib_buffer_t *b0, u16 offset,
+                                   ip6_address_t *src, ip6_address_t *dst,
+                                   u16 src_port, u16 dst_port)
 {
-#if 0
-  ip6_hop_by_hop_ioam_main_t * hm = &ip6_hop_by_hop_ioam_main;
-  ioam_ipfix_elts_t *ipfix;
-  vlib_buffer_t *b0 = 0;
-  u32 next_offset = 0;
-  u32 bi0 = ~0;
-  int i;
-  ip4_ipfix_template_packet_t * tp;
-  ipfix_message_header_t * h;
-  ipfix_set_header_t * s = 0;
-  ip4_header_t * ip;
-  udp_header_t * udp;
-  int field_index;
-  u32 records_this_buffer;
-  u16 new_l0, old_l0;
-  ip_csum_t sum0;
-  vlib_main_t * vm = frm->vlib_main;
-
-  while (__sync_lock_test_and_set (am->writer_lock, 1))
+  while (__sync_lock_test_and_set (record->writer_lock, 1))
     ;
 
-  for (i = 0; i < vec_len(hm->ioam_flows); i++)
-    {
-      if (pool_is_free_index(hm->ioam_flows, i))
-        continue;
+  int field_index = 0;
+  u16 tmp;
+  int i, j;
+  u16 num_paths = 0;
 
-      ipfix = pool_elt_at_index(hm->ioam_flows, i);
 
-      if (ip6_address_is_zero (&ipfix->dst_addr))
-        continue;
+  /* Add IPv6 source address manually */
+  memcpy (b0->data + offset, &src->as_u64[0], sizeof(u64));
+  offset += sizeof(u64);
+  memcpy (b0->data + offset, &src->as_u64[1], sizeof(u64));
+  offset += sizeof(u64);
 
-      /* OK, we have something to send... */
-      if (PREDICT_FALSE(b0 == 0))
-        {
-          if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
-            goto flush;
-          b0 = vlib_get_buffer (vm, bi0);
+  /* Add IPv6 destination address manually */
+  memcpy (b0->data + offset, &dst->as_u64[0], sizeof(u64));
+  offset += sizeof(u64);
+  memcpy (b0->data + offset, &dst->as_u64[1], sizeof(u64));
+  offset += sizeof(u64);
 
-          memcpy (b0->data, fr->rewrite, vec_len(fr->rewrite));
-          b0->current_data = 0;
-          b0->current_length = vec_len(fr->rewrite);
-          b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
-          vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
-          /* $$$ for now, look up in fib-0. Later: arbitrary TX fib */
-          vnet_buffer (b0)->sw_if_index[VLIB_TX] = ~0;
+  /* Add source port manually */
+  tmp = clib_host_to_net_u32(src_port);
+  memcpy (b0->data + offset, &tmp, sizeof(u16));
+  offset += sizeof(u16);
 
-          tp = vlib_buffer_get_current (b0);
-          ip = (ip4_header_t *) &tp->ip4;
-          udp = (udp_header_t *) (ip + 1);
-          h = (ipfix_message_header_t *) (udp + 1);
-          s = (ipfix_set_header_t *) (h + 1);
-          /* FIXUP: message header export_time */
-          h->export_time = (u32) (
-              ((f64) hm->unix_time_0)
-              + (vlib_time_now (hm->vlib_main) - hm->vlib_time_0));
-          h->export_time = clib_host_to_net_u32 (h->export_time);
-
-          /* FIXUP: message header sequence_number */
-          h->sequence_number = fr->sequence_number++;
-          h->sequence_number = clib_host_to_net_u32 (h->sequence_number);
-          next_offset = (u32) (((u8 *) (s + 1)) - (u8 *) tp);
-          records_this_buffer = 0;
-        }
-
-      ipfix->start_timestamp = ipfix->end_timestamp;
-      ipfix->end_timestamp = vlib_time_now (vm);
-
-      field_index = 0;
+  /* Add dest port manually */
+  tmp = clib_host_to_net_u32(dst_port);
+  memcpy (b0->data + offset, &tmp, sizeof(u16));
+  offset += sizeof(u16);
 
 #define _(field,mask,item,length)                            \
     if (clib_bitmap_get (fr->fields_to_send, field_index))   \
     {                                                        \
-        if (length == 2)                                       \
-        {                                                      \
-            u16 tmp;                                             \
-            tmp = clib_host_to_net_u16(field);                   \
-            memcpy (b0->data + next_offset, &tmp, length);       \
-        }                                                      \
-        else                                                   \
-        {   /* Expect only 4 bytes or 2 bytes */               \
-        u32 tmp;                                             \
-        tmp = clib_host_to_net_u32(field);                   \
-        memcpy (b0->data + next_offset, &tmp, length);       \
-    }                                                      \
-    next_offset += length;                                 \
-}
+      /* Expect only 4 bytes */               \
+      u32 tmp;                                             \
+      tmp = clib_host_to_net_u32(record->field - record->chached_data_list->field);\
+      memcpy (b0->data + offset, &tmp, length);       \
+      offset += length;                                 \
+    }
 field_index++;
 foreach_ioam_ipfix_field;
 #undef _
 
-/* Add ioamPathMap manually */
-{
-  u16 n;
-  u16 t16;
-  u32 t32;
-  ioam_path_map_t *pm = (ioam_path_map_t *) ipfix->path;
-
-  for (n = 0; n < hm->trace_option_elts; n++, pm++)
+  /* Add ioamPathMap manually */
+  for (i = 0; i < IOAM_MAX_PATHS_PER_FLOW; i++)
     {
-      /* node id */
-      t32 = clib_host_to_net_u32 (pm->node_id);
-      memcpy (b0->data + next_offset, &t32, 4);
-      next_offset += 4;
+      ioam_analyse_trace_record *trace = record->trace_data.path_data + i;
+      ioam_analyse_trace_record *trace_cached =
+          record->chached_data_list->trace_data.path_data + i;
+      ioam_path *path = (ioam_path *) b0->data;
 
-      /* ingress_if */
-      t16 = clib_host_to_net_u16 (pm->ingress_if);
-      memcpy (b0->data + next_offset, &t16, 2);
-      next_offset += 2;
+      path->num_nodes = trace->num_nodes;
 
-      /* egress_if */
-      t16 = clib_host_to_net_u16 (pm->egress_if);
-      memcpy (b0->data + next_offset, &t16, 2);
-      next_offset += 2;
+      path->trace_type = trace->trace_type;
+
+      path->bytes_counter =
+          trace->bytes_counter - trace_cached->bytes_counter;
+      path->bytes_counter = clib_host_to_net_u32(path->bytes_counter);
+
+      path->pkt_counter =
+          trace->pkt_counter - trace_cached->pkt_counter;
+      path->pkt_counter = clib_host_to_net_u32(path->pkt_counter);
+
+      for (j = 0; j < IOAM_TRACE_MAX_NODES; j++)
+        {
+          path->path[j].node_id = clib_host_to_net_u32(trace->path[j].node_id);
+          path->path[j].ingress_if = clib_host_to_net_u16(trace->path[j].ingress_if);
+          path->path[j].egress_if = clib_host_to_net_u16(trace->path[j].egress_if);
+        }
+
+      offset += sizeof(ioam_path);
+
+      if (!trace->is_free)
+        num_paths++;
     }
+
+  memcpy (b0->data + offset, &num_paths, sizeof(u16));
+  offset += sizeof(u16);
+
+  /* Update cache */
+  *(record->chached_data_list) = *record;
+  record->chached_data_list->chached_data_list = NULL;
+
+  *(record->writer_lock) = 0;
+  return offset;
 }
-records_this_buffer++;
 
-if (next_offset > 1450)
+static vlib_frame_t *
+ioam_send_flows (flow_report_main_t *frm, flow_report_t *fr,
+                 vlib_frame_t * f, u32 * to_next, u32 node_index)
+{
+  vlib_buffer_t *b0 = NULL;
+  u32 next_offset = 0;
+  u32 bi0 = ~0;
+  int i;
+  ip4_ipfix_template_packet_t *tp;
+  ipfix_message_header_t *h;
+  ipfix_set_header_t *s = NULL;
+  ip4_header_t *ip;
+  udp_header_t *udp;
+  u32 records_this_buffer;
+  u16 new_l0, old_l0;
+  ip_csum_t sum0;
+  vlib_main_t * vm = frm->vlib_main;
+  ip6_address_t temp;
+  ip6_ioam_analyser_main_t *am = &ioam_analyser_main;
+  ioam_analyser_data_t *record = NULL;
+  flow_report_stream_t * stream;
+
+  stream = &frm->streams[fr->stream_index];
+
+  memset(&temp, 0, sizeof(ip6_address_t));
+
+  vec_foreach_index(i, am->aggregated_data)
   {
-    s->set_id_length = ipfix_set_id_length (
-        IOAM_FLOW_TEMPLATE_ID,
-        next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
-    b0->current_length = next_offset;
-    b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
-    tp = vlib_buffer_get_current (b0);
-    ip = (ip4_header_t *) &tp->ip4;
-    udp = (udp_header_t *) (ip + 1);
+    record = am->aggregated_data + i;
+    if (record->is_free)
+      continue;
 
-    sum0 = ip->checksum;
-    old_l0 = clib_net_to_host_u16 (ip->length);
-    new_l0 = clib_host_to_net_u16 ((u16) next_offset);
-    sum0 = ip_csum_update(sum0, old_l0, new_l0, ip4_header_t,
-                          length /* changed member */);
-
-    ip->checksum = ip_csum_fold (sum0);
-    ip->length = new_l0;
-    udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(ip));
-
-    to_next[0] = bi0;
-    f->n_vectors++;
-    to_next++;
-
-    if (f->n_vectors == VLIB_FRAME_SIZE)
+    if (PREDICT_FALSE(b0 == NULL))
       {
-        vlib_put_frame_to_node (vm, node_index, f);
-        f = vlib_get_frame_to_node (vm, node_index);
-        f->n_vectors = 0;
-        to_next = vlib_frame_vector_args (f);
+        if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
+          goto flush;
+
+
+        b0 = vlib_get_buffer (vm, bi0);
+        memcpy (b0->data, fr->rewrite, vec_len(fr->rewrite));
+        b0->current_data = 0;
+        b0->current_length = vec_len(fr->rewrite);
+        b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+        vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
+        vnet_buffer (b0)->sw_if_index[VLIB_TX] = ~0;
+
+        tp = vlib_buffer_get_current (b0);
+        ip = &tp->ip4;
+        udp = &tp->udp;
+        h = &tp->ipfix.h;
+        s = &tp->ipfix.s;
+
+        /* FIXUP: message header export_time */
+        h->export_time =  clib_host_to_net_u32(((u32) time (NULL)));
+
+        /* FIXUP: message header sequence_number */
+        h->sequence_number = stream->sequence_number++;
+        h->sequence_number = clib_host_to_net_u32 (h->sequence_number);
+        next_offset = (u32) (((u8 *) (s + 1)) - (u8 *) tp);
+        records_this_buffer = 0;
       }
-    b0 = 0;
-    bi0 = ~0;
+
+    next_offset = ioam_analyse_add_ipfix_record(fr, record,
+                                                b0, next_offset,
+                                                &temp, &temp,
+                                                0, 0);
+    records_this_buffer++;
+
+    if (next_offset > 1450)
+      {
+        s->set_id_length = ipfix_set_id_length (
+            IOAM_FLOW_TEMPLATE_ID,
+            next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
+        b0->current_length = next_offset;
+        b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+        tp = vlib_buffer_get_current (b0);
+        ip = (ip4_header_t *) &tp->ip4;
+        udp = (udp_header_t *) (ip + 1);
+
+        sum0 = ip->checksum;
+        old_l0 = clib_net_to_host_u16 (ip->length);
+        new_l0 = clib_host_to_net_u16 ((u16) next_offset);
+        sum0 = ip_csum_update(sum0, old_l0, new_l0, ip4_header_t,
+                              length /* changed member */);
+
+        ip->checksum = ip_csum_fold (sum0);
+        ip->length = new_l0;
+        udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(ip));
+
+        to_next[0] = bi0;
+        f->n_vectors++;
+        to_next++;
+
+        if (f->n_vectors == VLIB_FRAME_SIZE)
+          {
+            vlib_put_frame_to_node (vm, node_index, f);
+            f = vlib_get_frame_to_node (vm, node_index);
+            f->n_vectors = 0;
+            to_next = vlib_frame_vector_args (f);
+          }
+        b0 = 0;
+        bi0 = ~0;
+      }
   }
-/* Reset counters */
-ipfix->pkt_counter = 0;
-ipfix->bytes_counter = 0;
-ipfix->sfc_validated_count = 0;
-ipfix->sfc_invalidated_count = 0;
-}
-flush: if (b0)
-  {
-    s->set_id_length = ipfix_set_id_length (
-        IOAM_FLOW_TEMPLATE_ID,
-        next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
-    b0->current_length = next_offset;
-    b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
 
-    tp = vlib_buffer_get_current (b0);
-    ip = (ip4_header_t *) &tp->ip4;
-    udp = (udp_header_t *) (ip + 1);
+flush:
+  if (b0)
+    {
+      s->set_id_length = ipfix_set_id_length (
+          IOAM_FLOW_TEMPLATE_ID,
+          next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
+      b0->current_length = next_offset;
+      b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
 
-    sum0 = ip->checksum;
-    old_l0 = ip->length;
-    new_l0 = clib_host_to_net_u16 ((u16) next_offset);
+      tp = vlib_buffer_get_current (b0);
+      ip = (ip4_header_t *) &tp->ip4;
+      udp = (udp_header_t *) (ip + 1);
 
-    sum0 = ip_csum_update(sum0, old_l0, new_l0, ip4_header_t,
-                          length /* changed member */);
+      sum0 = ip->checksum;
+      old_l0 = ip->length;
+      new_l0 = clib_host_to_net_u16 ((u16) next_offset);
 
-    ip->checksum = ip_csum_fold (sum0);
-    ip->length = new_l0;
-    udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(*ip));
+      sum0 = ip_csum_update(sum0, old_l0, new_l0, ip4_header_t,
+                            length /* changed member */);
 
-    ASSERT(ip->checksum == ip4_header_checksum (ip));
+      ip->checksum = ip_csum_fold (sum0);
+      ip->length = new_l0;
+      udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(*ip));
 
-    to_next[0] = bi0;
-    f->n_vectors++;
+      ASSERT(ip->checksum == ip4_header_checksum (ip));
 
-    b0 = 0;
-    bi0 = ~0;
-  }
+      to_next[0] = bi0;
+      f->n_vectors++;
 
-*(hm->writer_lock) = 0;
-return f;
-#endif
+      b0 = 0;
+      bi0 = ~0;
+    }
 
-  return NULL;
+  return f;
 }
 
 clib_error_t *
-ioam_flow_create (ip4_address_t collector, ip4_address_t src, u8 del)
+ioam_flow_create (u8 del)
 {
   vnet_flow_report_add_del_args_t args;
   int rv;

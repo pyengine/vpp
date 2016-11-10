@@ -74,7 +74,7 @@ typedef struct {
   u32 sfc_invalidated_count;
 } ioam_analyse_pot_data;
 
-typedef  struct {
+typedef  struct ioam_analyser_data_t_ {
   u8 is_free;
   u8 pad[7];
 
@@ -93,6 +93,11 @@ typedef  struct {
   /* Analysed iOAM seqno data */
   seqno_rx_info seqno_data;
 
+  /* Cache of previously analysed data, useful for export */
+  struct ioam_analyser_data_t_ *chached_data_list;
+
+  /* Lock to since we use this to export the data in other thread */
+  volatile u32 *writer_lock;
 } ioam_analyser_data_t;
 
 always_inline
@@ -217,18 +222,15 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
 
       if (j >= num_nodes)
         {
-          printf("\nFound match - %d", i);
           goto found_match;
         }
     }
 
   for(i = 0; i < IOAM_MAX_PATHS_PER_FLOW; i++)
     {
-      printf("\nNo match  found");
       trace_record = trace_data->path_data + i;
       if (trace_record->is_free)
         {
-          printf("\nalloc new - %d", i);
           trace_record->is_free = 0;
           trace_record->num_nodes = num_nodes;
           trace_record->trace_type = trace->ioam_trace_type;
@@ -246,7 +248,6 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
     {
       ptr = (u8 *) ((u8*)trace->elts + (size_of_traceopt_per_node * j));
 
-      printf("\n path %p, j %d", path, j);
       path[j].node_id = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
       ptr += 4;
 
@@ -361,8 +362,18 @@ always_inline void ioam_analyse_init_data(ioam_analyser_data_t *data)
   ioam_analyse_trace_data *trace_data;
 
   data->is_free = 1;
-  trace_data = &(data->trace_data);
 
+  /* We maintain data corresponding to last IP-Fix export, this may
+   * get extended in future to maintain history of data */
+  vec_validate_aligned(data->chached_data_list,
+                       0,
+                       CLIB_CACHE_LINE_BYTES);
+
+  data->writer_lock = clib_mem_alloc_aligned (CLIB_CACHE_LINE_BYTES,
+                                              CLIB_CACHE_LINE_BYTES);
+  *(data->writer_lock) = 0;
+
+  trace_data = &(data->trace_data);
   for(j = 0; j < IOAM_MAX_PATHS_PER_FLOW; j++)
     trace_data->path_data[j].is_free = 1;
 }

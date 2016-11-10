@@ -214,11 +214,18 @@ ip6_analyse_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
                   data0 = ioam_analyse_get_data_from_flow_id(flow_id0);
                   data1 = ioam_analyse_get_data_from_flow_id(flow_id1);
 
+                  while (__sync_lock_test_and_set (data0->writer_lock, 1))
+                              ;
+                  while (__sync_lock_test_and_set (data1->writer_lock, 1))
+                                                ;
                   data0->pkt_counter++;
                   data1->pkt_counter++;
 
                   data0->bytes_counter += p_len0;
                   data1->bytes_counter += p_len1;
+
+                  *(data0->writer_lock) = 0;
+                  *(data1->writer_lock) = 0;
                 }
               else if (error0 == 0)
                 {
@@ -226,8 +233,11 @@ ip6_analyse_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
                   pkts_failed++;
 
                   data0 = ioam_analyse_get_data_from_flow_id(flow_id0);
+                  while (__sync_lock_test_and_set (data0->writer_lock, 1))
+                                                ;
                   data0->pkt_counter++;
                   data0->bytes_counter += p_len0;
+                  *(data0->writer_lock) = 0;
                 }
               else if (error1 == 0)
                 {
@@ -235,8 +245,11 @@ ip6_analyse_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
                   pkts_failed++;
 
                   data1 = ioam_analyse_get_data_from_flow_id(flow_id1);
+                  while (__sync_lock_test_and_set (data1->writer_lock, 1))
+                                                ;
                   data1->pkt_counter++;
                   data1->bytes_counter += p_len1;
+                  *(data1->writer_lock) = 0;
                 }
               else
                 pkts_failed += 2;
@@ -268,8 +281,11 @@ ip6_analyse_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
               {
                 pkts_analysed ++;
                 data0 = ioam_analyse_get_data_from_flow_id(flow_id0);
+                while (__sync_lock_test_and_set (data0->writer_lock, 1))
+                                              ;
                 data0->pkt_counter++;
                 data0->bytes_counter += clib_net_to_host_u16(ip60->payload_length);
+                *(data0->writer_lock) = 0;
               }
             else
               pkts_failed++;
@@ -299,12 +315,11 @@ int ip6_ioam_analyse_hbh_trace_internal (u32 flow_id, ip6_hop_by_hop_option_t *o
 
   data = ioam_analyse_get_data_from_flow_id(flow_id);
   ASSERT(data != NULL);
-  while (__sync_lock_test_and_set (ioam_analyser_main.writer_lock, 1))
+  while (__sync_lock_test_and_set (data->writer_lock, 1))
         ;
 
   (void) ip6_ioam_analyse_hbh_trace(data, opt, len);
-  *(ioam_analyser_main.writer_lock) = 0;
-
+  *(data->writer_lock) = 0;
   return 0;
 }
 
@@ -326,13 +341,13 @@ int ip6_ioam_analyse_hbh_pot (u32 flow_id, ip6_hop_by_hop_option_t *opt0, u16 le
   pot_profile = pot_profile_get_active();
   ret = pot_validate(pot_profile, cumulative, random);
 
-  while (__sync_lock_test_and_set (ioam_analyser_main.writer_lock, 1))
+  while (__sync_lock_test_and_set (data->writer_lock, 1))
     ;
 
    (0 == ret) ? (data->pot_data.sfc_validated_count++) :
        (data->pot_data.sfc_invalidated_count++);
 
-  *(ioam_analyser_main.writer_lock) = 0;
+  *(data->writer_lock) = 0;
    return 0;
 }
 
@@ -341,10 +356,10 @@ int ip6_ioam_analyse_hbh_e2e_internal (u32 flow_id, ip6_hop_by_hop_option_t *opt
   ioam_analyser_data_t *data;
 
   data = ioam_analyse_get_data_from_flow_id(flow_id);
-  while (__sync_lock_test_and_set (ioam_analyser_main.writer_lock, 1))
+  while (__sync_lock_test_and_set (data->writer_lock, 1))
       ;
   ip6_ioam_analyse_hbh_e2e(data, opt, len);
-  *(ioam_analyser_main.writer_lock) = 0;
+  *(data->writer_lock) = 0;
   return 0;
 }
 
@@ -438,10 +453,6 @@ ip6_ioam_analyse_init (vlib_main_t *vm)
 
   next_node = vlib_get_node_by_name (vm, (u8 *) "ip4-lookup");
   ioam_analyser_main.next_node_index = next_node->index;
-
-  ioam_analyser_main.writer_lock = clib_mem_alloc_aligned (CLIB_CACHE_LINE_BYTES,
-                                                           CLIB_CACHE_LINE_BYTES);
-  *(ioam_analyser_main.writer_lock) = 0;
 
   return 0;
 }

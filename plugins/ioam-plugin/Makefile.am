@@ -158,7 +158,8 @@ vppplugins_LTLIBRARIES += libioam_analyse_plugin.la
 
 libudp_ping_plugin_la_SOURCES =                \
 	ioam/udp-ping/udp_ping_process.c        \
-	ioam/udp-ping/udp_ping_util.c
+	ioam/udp-ping/udp_ping_util.c			\
+	ioam/udp-ping/udp_ping_export.c
 
 noinst_HEADERS +=                    \
 	ioam/udp-ping/udp_ping_packet.h  \

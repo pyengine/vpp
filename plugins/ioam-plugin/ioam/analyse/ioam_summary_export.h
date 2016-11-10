@@ -15,12 +15,13 @@
 #ifndef __included_ip6_ioam_flow_report_h__
 #define __included_ip6_ioam_flow_report_h__
 
+#include <ioam/analyse/ioam_analyse.h>
+#include <vnet/flow/flow_report.h>
 
 #define foreach_ioam_ipfix_info_element           \
 _(ioamPacketCount, 5237, u32)                     \
 _(ioamByteCount, 5238, u32)                       \
 _(ioamPathMap, 5262, u32)                         \
-_(ioamNumberOfNodes, 5263, u16)                   \
 _(ioamNumberOfPaths, 5264, u16)                   \
 _(ioamSfcValidatedCount, 5278, u32)               \
 _(ioamSfcInValidatedCount, 5279, u32)                                  
@@ -32,16 +33,20 @@ typedef enum {
 } ioam_ipfix_info_element_id_t;
 
 #define foreach_ioam_ipfix_field                                          \
-_(ipfix->pkt_counter, 0xffffffff, ioamPacketCount, 4)                      \
-_(ipfix->bytes_counter, 0xffffffff, ioamByteCount, 4)                      \
-_(ipfix->pot_data.sfc_validated_count, 0xffffffff, ioamSfcValidatedCount, 4)        \
-_(ipfix->pot_data.sfc_invalidated_count, 0xffffffff, ioamSfcInValidatedCount, 4)
+_(pkt_counter, 0xffffffff, ioamPacketCount, 4)                      \
+_(bytes_counter, 0xffffffff, ioamByteCount, 4)                      \
+_(pot_data.sfc_validated_count, 0xffffffff, ioamSfcValidatedCount, 4)     \
+_(pot_data.sfc_invalidated_count, 0xffffffff, ioamSfcInValidatedCount, 4) \
+_(seqno_data.rx_packets, 0xffffffff, ioamPacketCount, 4) \
+_(seqno_data.lost_packets, 0xffffffff, ioamPacketCount, 4) \
+_(seqno_data.reordered_packets, 0xffffffff, ioamPacketCount, 4) \
+_(seqno_data.dup_packets, 0xffffffff, ioamPacketCount, 4)
+
 /* Following are sent manually: Src address, dest address, src port, dest port
  * path map,  number of paths */
 
 clib_error_t *ioam_flow_report_init(vlib_main_t *vm);
 
-#if 0
 typedef  struct {
   u8 num_nodes;
   u8 trace_type;
@@ -50,9 +55,20 @@ typedef  struct {
   u32 bytes_counter;
   ioam_path_map_t path[IOAM_TRACE_MAX_NODES];
 } ioam_path;
-#endif
 
 clib_error_t *
-ioam_flow_create(ip4_address_t collector, ip4_address_t src, u8 del);
+ioam_flow_create(u8 del);
+
+u8 *
+ioam_template_rewrite(flow_report_main_t * frm, flow_report_t * fr,
+                       ip4_address_t * collector_address,
+                       ip4_address_t * src_address,
+                       u16 collector_port);
+
+u16 ioam_analyse_add_ipfix_record(flow_report_t *fr,
+                                  ioam_analyser_data_t *record,
+                                  vlib_buffer_t *b0, u16 offset,
+                                  ip6_address_t *src, ip6_address_t *dst,
+                                  u16 src_port, u16 dst_port);
 
 #endif /* __included_ip6_ioam_flow_report_h__ */

@@ -91,4 +91,6 @@ typedef struct {
   ethernet_main_t * ethernet_main;
 } udp_ping_main_t;
 
+extern udp_ping_main_t udp_ping_main;
+
 #endif /* PLUGINS_IOAM_PLUGIN_IOAM_UDP_PING_UDP_PING_H_ */

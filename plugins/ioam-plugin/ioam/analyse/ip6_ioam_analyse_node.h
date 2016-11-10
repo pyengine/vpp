@@ -28,10 +28,9 @@ typedef  struct {
   int (*analyse_hbh_handler[MAX_IP6_HBH_OPTION]) (u32 flow_id,
       ip6_hop_by_hop_option_t *opt, u16 len);
 
-  ioam_analyser_data_t  *data;
+  /* This contains the aggregated data from the time VPP started analysing */
+  ioam_analyser_data_t  *aggregated_data;
 
-  /* Lock to since we use this to export the data in other thread */
-  volatile u32 * writer_lock;
 } ip6_ioam_analyser_main_t;
 
 extern ip6_ioam_analyser_main_t ioam_analyser_main;
@@ -49,13 +48,13 @@ ip6_ioam_analyse_init(vlib_main_t *vm);
 inline static
 ioam_analyser_data_t *ioam_analyse_get_data_from_flow_id (u32 flow_id)
 {
-  if (flow_id >= vec_len(ioam_analyser_main.data))
+  if (flow_id >= vec_len(ioam_analyser_main.aggregated_data))
     return NULL;
 
-  if (ioam_analyser_main.data[flow_id].is_free)
-    ioam_analyser_main.data[flow_id].is_free = 0;
+  if (ioam_analyser_main.aggregated_data[flow_id].is_free)
+    ioam_analyser_main.aggregated_data[flow_id].is_free = 0;
 
-  return (ioam_analyser_main.data + flow_id);
+  return (ioam_analyser_main.aggregated_data + flow_id);
 }
 
 #endif /* PLUGINS_IOAM_PLUGIN_IOAM_ANALYSE_IP6_IOAM_ANALYSE_NODE_H_ */

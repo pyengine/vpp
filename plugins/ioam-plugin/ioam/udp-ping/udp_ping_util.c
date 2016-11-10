@@ -253,6 +253,7 @@ udp_ping_send_ip6_pak (vlib_main_t *vm, ip46_udp_ping_flow *flow)
 
       stats->retry++;
       vnet_buffer(b0)->sw_if_index[VLIB_RX] = 0;
+      vnet_buffer(b0)->sw_if_index[VLIB_TX] = ~0;
       vnet_buffer(b0)->l2_classify.opaque_index = stats->flow_ctx;
 
       if (nf->n_vectors == VLIB_FRAME_SIZE)

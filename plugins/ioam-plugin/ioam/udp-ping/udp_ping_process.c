@@ -27,8 +27,13 @@
 
 typedef enum
 {
+  UDP_PING_NEXT_DROP,
+  UDP_PING_NEXT_PUNT,
+  UDP_PING_NEXT_UDP_LOOKUP,
+  UDP_PING_NEXT_ICMP,
   UDP_PING_NEXT_IP6_LOOKUP,
-  UDP_PING_NEXT_IP6_DROP,
+  UDP_PING_NEXT_IP6_DROP,  
+  UDP_PING_NEXT_SR_LOCAL,
   UDP_PING_N_NEXT,
 } udp_ping_next_t;
 
@@ -505,7 +510,10 @@ udp_ping_local_analyse (vlib_buffer_t *b0,
    * afterall
    */
   if (PREDICT_FALSE(hbh0->protocol == IPPROTO_IPV6_ROUTE))
-    goto end;
+    {
+      *next0 = UDP_PING_NEXT_SR_LOCAL;
+      return;
+    }
 
   /* Other case remove hbh-ioam headers */
   u64 *copy_dst0, *copy_src0;
@@ -527,9 +535,8 @@ udp_ping_local_analyse (vlib_buffer_t *b0,
   copy_dst0[2] = copy_src0[2];
   copy_dst0[1] = copy_src0[1];
   copy_dst0[0] = copy_src0[0];
-
-  end:
   *next0 = lm->local_next_by_ip_protocol[hbh0->protocol];
+
   return;
 }
 
@@ -697,8 +704,13 @@ VLIB_REGISTER_NODE (udp_ping_local, static) =
   .n_next_nodes = UDP_PING_N_NEXT,
   .next_nodes =
     {
-      [UDP_PING_NEXT_IP6_LOOKUP] = "ip6-lookup",
-      [UDP_PING_NEXT_IP6_DROP] = "ip6-drop",
+    [UDP_PING_NEXT_DROP] = "error-drop",
+    [UDP_PING_NEXT_PUNT] = "error-punt",
+    [UDP_PING_NEXT_UDP_LOOKUP] = "ip6-udp-lookup",
+    [UDP_PING_NEXT_ICMP] = "ip6-icmp-input",
+    [UDP_PING_NEXT_IP6_LOOKUP] = "ip6-lookup",
+    [UDP_PING_NEXT_IP6_DROP] = "ip6-drop",
+    [UDP_PING_NEXT_SR_LOCAL] = "sr-local"
     },
 };
 

@@ -126,9 +126,6 @@ void * ip6_ioam_find_hbh_option (ip6_hop_by_hop_header_t *hbh0, u8 option)
   return NULL;
 }
 
-int ip6_ioam_analyse_compare_path_delay(ip6_hop_by_hop_header_t *hdr1,
-                                ip6_hop_by_hop_header_t *hdr2);
-
 always_inline i32
 ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
 {
@@ -160,6 +157,31 @@ ip6_ioam_analyse_calc_delay (ioam_trace_option_t *trace)
   end_time = clib_net_to_host_u32 (*end_elt);
 
   return (end_time - start_time);
+}
+
+always_inline int
+ ip6_ioam_analyse_compare_path_delay (ip6_hop_by_hop_header_t *hbh0,
+                                         ip6_hop_by_hop_header_t *hbh1)
+{
+  ioam_trace_option_t *trace0 = NULL, *trace1 = NULL;
+  f64 delay0, delay1;
+
+  trace0 = ip6_ioam_find_hbh_option(hbh0, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
+  trace1 = ip6_ioam_find_hbh_option(hbh1, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
+
+  if (PREDICT_FALSE((trace0 == NULL) && (trace1 == NULL)))
+    return 0;
+
+  if (PREDICT_FALSE(trace1 == NULL))
+    return 1;
+
+  if (PREDICT_FALSE(trace0 == NULL))
+    return -1;
+
+  delay0 = ip6_ioam_analyse_calc_delay(trace0);
+  delay1 = ip6_ioam_analyse_calc_delay(trace1);
+
+  return (delay0 - delay1);
 }
 
 always_inline int

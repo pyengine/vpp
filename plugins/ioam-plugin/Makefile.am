@@ -191,9 +191,6 @@ noinst_HEADERS +=                       \
   ioam/ip6/ioam_cache_msg_enum.h    \
   ioam/ip6/ioam_cache.api.h
 
-libioam_ip6_cache_plugin_la_LIBADD =	\
-	libioam_analyse_plugin.la
-
 vppplugins_LTLIBRARIES += libioam_ip6_cache_plugin.la
 
 

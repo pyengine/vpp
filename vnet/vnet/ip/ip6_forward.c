@@ -1286,7 +1286,7 @@ ip6_local (vlib_main_t * vm,
 	  good_l4_checksum1 = (flags1 & IP_BUFFER_L4_CHECKSUM_CORRECT) != 0;
 	  len_diff0 = 0;
 	  len_diff1 = 0;
-
+#if 0
 	  /* Skip HBH local processing */
           if (PREDICT_FALSE (ip0->protocol == IP_PROTOCOL_IP6_HOP_BY_HOP_OPTIONS))
 	    {
@@ -1300,6 +1300,7 @@ ip6_local (vlib_main_t * vm,
 	      next1 = lm->local_next_by_ip_protocol[ext_hdr->next_hdr];
 	      type1 = lm->builtin_protocol_by_ip_protocol[ext_hdr->next_hdr];
 	    }
+#endif
 	  if (PREDICT_TRUE(IP_PROTOCOL_UDP == ip6_find_hdr(p0, ip0,
 							   IP_PROTOCOL_UDP, &udp_offset0)))
 	    {
@@ -1419,7 +1420,7 @@ ip6_local (vlib_main_t * vm,
 
 	  good_l4_checksum0 = (flags0 & IP_BUFFER_L4_CHECKSUM_CORRECT) != 0;
 	  len_diff0 = 0;
-
+#if 0
 	  /* Skip HBH local processing */
           if (PREDICT_FALSE (ip0->protocol == IP_PROTOCOL_IP6_HOP_BY_HOP_OPTIONS))
 	    {
@@ -1427,6 +1428,7 @@ ip6_local (vlib_main_t * vm,
 	      next0 = lm->local_next_by_ip_protocol[ext_hdr->next_hdr];
 	      type0 = lm->builtin_protocol_by_ip_protocol[ext_hdr->next_hdr];
 	    }
+#endif
 	  if (PREDICT_TRUE(IP_PROTOCOL_UDP == ip6_find_hdr(p0, ip0,
 							   IP_PROTOCOL_UDP, &udp_offset0)))
 	    {

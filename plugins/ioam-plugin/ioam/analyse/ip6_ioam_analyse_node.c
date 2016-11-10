@@ -363,30 +363,6 @@ int ip6_ioam_analyse_hbh_e2e_internal (u32 flow_id, ip6_hop_by_hop_option_t *opt
   return 0;
 }
 
-int ip6_ioam_analyse_compare_path_delay (ip6_hop_by_hop_header_t *hbh0,
-                                         ip6_hop_by_hop_header_t *hbh1)
-{
-  ioam_trace_option_t *trace0 = NULL, *trace1 = NULL;
-  f64 delay0, delay1;
-
-  trace0 = ip6_ioam_find_hbh_option(hbh0, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
-  trace1 = ip6_ioam_find_hbh_option(hbh1, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
-
-  if (PREDICT_FALSE((trace0 == NULL) && (trace1 == NULL)))
-    return 0;
-
-  if (PREDICT_FALSE(trace1 == NULL))
-    return 1;
-
-  if (PREDICT_FALSE(trace0 == NULL))
-    return -1;
-
-  delay0 = ip6_ioam_analyse_calc_delay(trace0);
-  delay1 = ip6_ioam_analyse_calc_delay(trace1);
-
-  return (delay0 - delay1);
-}
-
 int
 ip6_ioam_analyse_register_hbh_handler (u8 option,
                              int options(u32 flow_id,

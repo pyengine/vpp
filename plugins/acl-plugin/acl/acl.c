@@ -139,6 +139,7 @@ bad_sw_if_index:                                \
 _(ACL_ADD, acl_add)				\
 _(ACL_DEL, acl_del)				\
 _(ACL_INTERFACE_ADD_DEL, acl_interface_add_del)	\
+_(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list)	\
 _(ACL_DUMP, acl_dump)
 
 /*
@@ -510,6 +511,18 @@ acl_interface_del_inout_acl (u32 sw_if_index, u8 is_input, u32 acl_list_index)
   return rv;
 }
 
+static void
+acl_interface_reset_inout_acls(u32 sw_if_index, u8 is_input) {
+  acl_main_t *am = &acl_main;
+  if (is_input) {
+    vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
+    vec_reset_length(am->input_acl_vec_by_sw_if_index[sw_if_index]);
+  } else {
+    vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
+    vec_reset_length(am->output_acl_vec_by_sw_if_index[sw_if_index]);
+  }
+}
+
 static int
 acl_interface_add_del_inout_acl(u32 sw_if_index, u8 is_add, u8 is_input, u32 acl_list_index)
 {
@@ -739,6 +752,28 @@ vl_api_acl_interface_add_del_t_handler (vl_api_acl_interface_add_del_t * mp)
   BAD_SW_IF_INDEX_LABEL;
 
   REPLY_MACRO(VL_API_ACL_INTERFACE_ADD_DEL_REPLY);
+}
+
+static void
+vl_api_acl_interface_set_acl_list_t_handler (vl_api_acl_interface_set_acl_list_t * mp)
+{
+  acl_main_t * sm = &acl_main;
+  vl_api_acl_interface_set_acl_list_reply_t * rmp;
+  int rv = 0;
+  int i;
+  VALIDATE_SW_IF_INDEX (mp);
+  u32 sw_if_index = ntohl(mp->sw_if_index);
+
+  acl_interface_reset_inout_acls(sw_if_index, 0);
+  acl_interface_reset_inout_acls(sw_if_index, 1);
+
+  for(i=0; i<mp->count; i++) {
+    acl_interface_add_del_inout_acl(sw_if_index, 1, (i < mp->n_input), ntohl(mp->acls[i]));
+  }
+
+  BAD_SW_IF_INDEX_LABEL;
+
+  REPLY_MACRO(VL_API_ACL_INTERFACE_SET_ACL_LIST_REPLY);
 }
 
 static void

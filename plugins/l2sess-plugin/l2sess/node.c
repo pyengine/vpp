@@ -240,23 +240,79 @@ session_store_ip6_l3l4_info(vlib_buffer_t * b0, l2s_session_t *sess, int node_is
 }
 
 static void
-delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_idx)
+build_match_from_session(l2sess_main_t * sm, u8 *match, l2s_session_t *sess, int is_out)
 {
-  /* FIXME: delete the session and its associated classifier entries */
+  if (sess->is_ip6) {
+    match[20] = sess->l4_proto;
+    clib_memcpy(&match[22], &sess->side[1-is_out].addr.ip6, 16);
+    clib_memcpy(&match[38], &sess->side[is_out].addr.ip4, 16);
+    *(u16 *)&match[54] = htons(sess->side[1-is_out].port);
+    *(u16 *)&match[56] = htons(sess->side[is_out].port);
+  } else {
+    match[23] = sess->l4_proto;
+    clib_memcpy(&match[26], &sess->side[1-is_out].addr.ip6, 4);
+    clib_memcpy(&match[30], &sess->side[is_out].addr.ip4, 4);
+    *(u16 *)&match[34] = htons(sess->side[1-is_out].port);
+    *(u16 *)&match[36] = htons(sess->side[is_out].port);
+  }
+}
+
+static void
+delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_index)
+{
+  vnet_classify_main_t * cm = &vnet_classify_main;
+  u8 match[5*16]; /* For building the mock of the packet to delete the classifier session */
+  u32 session_tables[2] = { ~0, ~0 };
+  l2s_session_t *sess = sm->sessions_by_sw_if_index[sw_if_index] + session_index;
+  if (pool_is_free(sm->sessions_by_sw_if_index[sw_if_index], sess)) {
+    clib_warning("Attempt to delete a free session %lu", session_index);
+    return;
+  }
+  l2sess_get_session_tables(sm, sw_if_index, 0, sess->is_ip6, sess->l4_proto, session_tables);
+  if (session_tables[1] != ~0) {
+    build_match_from_session(sm, match, sess, 1);
+    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0);
+  }
+  if (session_tables[1] != ~0) {
+    build_match_from_session(sm, match, sess, 1);
+    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0);
+  }
+  pool_put(sm->sessions_by_sw_if_index[sw_if_index], sess);
 }
 
 static int
 session_is_alive(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
 {
   u64 last_active = sess->side[0].active_time > sess->side[1].active_time ? sess->side[0].active_time : sess->side[1].active_time;
-
   u64 idle_timeout = 0;
+  int is_alive;
+
   switch (sess->l4_proto) {
     case  6: idle_timeout = sm->tcp_session_idle_timeout; break;
     case 17: idle_timeout = sm->udp_session_idle_timeout; break;
     default: idle_timeout = 0;
   }
-  return ((now - last_active) < idle_timeout);
+  is_alive = ((now - last_active) < idle_timeout);
+  return is_alive;
+}
+
+void
+check_idle_sessions(l2sess_main_t * sm, u32 sw_if_index, u64 now)
+{
+  vec_validate(sm->check_index_by_sw_if_index, sw_if_index);
+  u32 session_index = sm->check_index_by_sw_if_index[sw_if_index]++;
+  clib_warning("Checking session %lu", session_index);
+  if (session_index < pool_len(sm->sessions_by_sw_if_index[sw_if_index])) {
+    l2s_session_t *sess =  sm->sessions_by_sw_if_index[sw_if_index] + session_index;
+    if (!pool_is_free_index(sm->sessions_by_sw_if_index[sw_if_index], session_index)) {
+      if (!session_is_alive(sm, sess, now)) {
+        clib_warning("Deleting session %lu on sw_if_index %lu", session_index, sw_if_index);
+        delete_session(sm, sw_if_index, session_index);
+      }
+    }
+  } else {
+    sm->check_index_by_sw_if_index[sw_if_index] = 0;
+  }
 }
 
 static uword
@@ -392,6 +448,10 @@ foreach_l2sess_node
       l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[0], session_nexts[0], sess_index);
     }
   }
+
+  check_idle_sessions(sm, sw_if_index0, now);
+  check_idle_sessions(sm, sw_if_index0, now);
+
   if (node_is_out) {
               if(feature_bitmap0) {
                 trace_flags0 |= 0x10;

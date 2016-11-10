@@ -370,6 +370,10 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
   clib_error_t * error = 0;
   u8 * name;
 
+  clib_time_t *ct = &vm->clib_time;
+  sm->udp_session_idle_timeout = (u64)(((f64)UDP_SESSION_IDLE_TIMEOUT_SEC)/ct->seconds_per_clock);
+  sm->tcp_session_idle_timeout = (u64)(((f64)TCP_SESSION_IDLE_TIMEOUT_SEC)/ct->seconds_per_clock);
+
   name = format (0, "l2sess_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */

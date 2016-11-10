@@ -65,8 +65,13 @@ typedef struct {
 } l2s_session_t;
 
 
+#ifdef PROD
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
 #define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*24)
+#else
+#define UDP_SESSION_IDLE_TIMEOUT_SEC 15
+#define TCP_SESSION_IDLE_TIMEOUT_SEC 15
+#endif
 
 typedef struct {
     /* API message ID base */
@@ -103,6 +108,10 @@ foreach_l2sess_node
     /* The session timeouts */
     u64 tcp_session_idle_timeout;
     u64 udp_session_idle_timeout;
+
+
+    /* A vector of the current index to check */
+    u32 *check_index_by_sw_if_index;
 
     /* convenience */
     vlib_main_t * vlib_main;

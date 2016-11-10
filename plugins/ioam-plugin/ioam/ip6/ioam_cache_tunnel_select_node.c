@@ -412,5 +412,5 @@ VLIB_REGISTER_NODE (ip6_reset_ts_hbh_node) =
 };
 /* *INDENT-ON* */
 
-VLIB_NODE_FUNCTION_MULTIARCH (ip6_reset_cache_ts_hbh_node,
-			      ip6_reset_cache_ts_hbh_node_fn)
+VLIB_NODE_FUNCTION_MULTIARCH (ip6_reset_ts_hbh_node,
+			      ip6_reset_ts_hbh_node_fn)

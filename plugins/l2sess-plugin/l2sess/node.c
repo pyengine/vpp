@@ -91,11 +91,11 @@ l4_tcp_or_udp(u8 proto)
 }
 
 void
-l2sess_get_session_tables(l2sess_main_t * sm, u32 sw_if_index, vlib_buffer_t * b0, int node_is_out, int node_is_ip6, u8 l4_proto, u32 *session_tables, u32 *trace_flags)
+l2sess_get_session_tables(l2sess_main_t * sm, u32 sw_if_index, int node_is_out, int node_is_ip6, u8 l4_proto, u32 *session_tables)
 {
 /*
- * Based on vnet_buffer (b0)->l2_classify.opaque_index, the direction, l3 and l4 protocol, fill a u32[2] array:
- * [0] is the index for the "direct match" path, [1] is for "mirrored match".
+ * Based on the direction, l3 and l4 protocol, fill a u32[2] array:
+ * [0] is index for the "direct match" path, [1] is for "mirrored match".
  * Store the indices of the tables to add the session to in session_tables[]
  */
   l2_output_classify_main_t *l2om = &l2_output_classify_main;
@@ -130,10 +130,10 @@ l2sess_get_session_tables(l2sess_main_t * sm, u32 sw_if_index, vlib_buffer_t * b
 }
 
 void
-l2sess_get_session_nexts(l2sess_main_t * sm, u32 sw_if_index, vlib_buffer_t * b0, int node_is_out, int node_is_ip6, u8 l4_proto, u32 *session_nexts, u32 *trace_flags)
+l2sess_get_session_nexts(l2sess_main_t * sm, u32 sw_if_index, int node_is_out, int node_is_ip6, u8 l4_proto, u32 *session_nexts)
 {
 /*
- * Based on vnet_buffer (b0)->l2_classify.opaque_index, the direction, l3 and l4 protocol, fill a u32[2] array:
+ * Based on the direction, l3 and l4 protocol, fill a u32[2] array:
  * [0] is the index for the "direct match" path, [1] is for "mirrored match".
  * Store the match_next_index in session_nexts[] for a new session entry which is being added to session tables.
  */
@@ -381,8 +381,8 @@ foreach_l2sess_node
       session_store_ip4_l3l4_info(b0, sess, node_is_out);
     }
 
-    l2sess_get_session_tables(sm, sw_if_index0, b0, node_is_out, node_is_ip6, l4_proto, session_tables, &trace_flags0);
-    l2sess_get_session_nexts(sm, sw_if_index0, b0, node_is_out, node_is_ip6, l4_proto, session_nexts, &trace_flags0);
+    l2sess_get_session_tables(sm, sw_if_index0, node_is_out, node_is_ip6, l4_proto, session_tables);
+    l2sess_get_session_nexts(sm, sw_if_index0, node_is_out, node_is_ip6, l4_proto, session_nexts);
     l2sess_flip_l3l4_fields(b0, node_is_ip6, l4_proto);
     if (session_tables[1] != ~0) {
       l2sess_add_session(b0, node_is_out, node_is_ip6, session_tables[1], session_nexts[1], sess_index);

@@ -57,8 +57,8 @@ noop_handler (void *notused)
 {
 }
 
-#define vl_api_acl_add_t_endian noop_handler
-#define vl_api_acl_add_t_print noop_handler
+#define vl_api_acl_add_replace_t_endian noop_handler
+#define vl_api_acl_add_replace_t_print noop_handler
 
 /*
  * A handy macro to set up a message reply.
@@ -136,7 +136,7 @@ bad_sw_if_index:                                \
 /* List of message types that this plugin understands */
 
 #define foreach_acl_plugin_api_msg		\
-_(ACL_ADD, acl_add)				\
+_(ACL_ADD_REPLACE, acl_add_replace)				\
 _(ACL_DEL, acl_del)				\
 _(ACL_INTERFACE_ADD_DEL, acl_interface_add_del)	\
 _(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list)	\
@@ -170,23 +170,26 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
   acl_main_t *am = &acl_main;
   acl_list_t  * a;
   acl_rule_t  * r;
+  acl_rule_t  * acl_new_rules;
   int i;
 
-  /* Get ACL index */
-  pool_get_aligned (am->acls, a, CLIB_CACHE_LINE_BYTES);
-  memset (a, 0, sizeof (*a));
+  if (~0 != *acl_list_index) {
+    if(pool_is_free_index(am->acls, *acl_list_index)) {
+      /* tried to replace a non-existent ACL, no point doing anything */
+      return -1;
+    }
+  }
 
-  /* Init ACL struct */
-  a->count = count;
-  a->rules = clib_mem_alloc_aligned (sizeof(acl_rule_t) * count,
+  /* Create and populate the rules */
+  acl_new_rules = clib_mem_alloc_aligned (sizeof(acl_rule_t) * count,
 				     CLIB_CACHE_LINE_BYTES);
-  if (!a->rules) {
-    pool_put(am->acls, a);
+  if (!acl_new_rules) {
+    /* Could not allocate rules. New or existing ACL - bail out regardless */
     return -1;
   }
-  clib_memcpy (a->rules, rules, sizeof(acl_rule_t) * count);
+
   for(i=0; i<count; i++) {
-    r = &a->rules[i];
+    r = &acl_new_rules[i];
     r->is_permit = rules[i].is_permit;
     r->is_ipv6 = rules[i].is_ipv6;
     memcpy(&r->src, rules[i].src_ip_addr, sizeof(r->src));
@@ -197,7 +200,20 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
     r->src_port = rules[i].src_port;
     r->dst_port = rules[i].dst_port;
   }
-  *acl_list_index = a - am->acls;
+
+  if (~0 == *acl_list_index) {
+    /* Get ACL index */
+    pool_get_aligned (am->acls, a, CLIB_CACHE_LINE_BYTES);
+    memset (a, 0, sizeof (*a));
+    /* Will return the newly allocated ACL index */
+    *acl_list_index = a - am->acls;
+  } else {
+    a = am->acls + *acl_list_index;
+    /* Get rid of the old rules */
+    clib_mem_free(a->rules);
+  }
+  a->rules = acl_new_rules;
+  a->count = count;
 
   return 0;
 }
@@ -716,17 +732,17 @@ void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u3
 
 /* API message handler */
 static void
-vl_api_acl_add_t_handler (vl_api_acl_add_t * mp)
+vl_api_acl_add_replace_t_handler (vl_api_acl_add_replace_t * mp)
 {
-  vl_api_acl_add_reply_t * rmp;
+  vl_api_acl_add_replace_reply_t * rmp;
   acl_main_t *am = &acl_main;
   int rv;
-  u32 acl_list_index = ~0;
+  u32 acl_list_index = ntohl(mp->acl_index);
 
   rv = acl_add_list(ntohl(mp->count), mp->r, &acl_list_index);
 
   /* *INDENT-OFF* */
-  REPLY_MACRO2(VL_API_ACL_ADD_REPLY,
+  REPLY_MACRO2(VL_API_ACL_ADD_REPLACE_REPLY,
   ({
     rmp->acl_index = htonl(acl_list_index);
   }));

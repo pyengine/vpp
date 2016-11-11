@@ -635,6 +635,12 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
     src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
     dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
   }
+  if (pool_is_free_index(am->acls, acl_index)) {
+    if (r_acl_match_p) *r_acl_match_p = acl_index;
+    if (r_rule_match_p) *r_rule_match_p = -1;
+    /* the ACL does not exist but is used for policy. Block traffic. */
+    return 0;
+  }
   a = am->acls + acl_index;
   for(i=0; i<a->count; i++) {
     r = a->rules + i;

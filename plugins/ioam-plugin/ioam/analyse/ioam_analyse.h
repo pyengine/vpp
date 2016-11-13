@@ -53,11 +53,11 @@ typedef struct {
   /* Num of bytes in the flow going over path */
   u64 bytes_counter;
 
-  f64 min_delay;
+  u32 min_delay;
 
-  f64 max_delay;
+  u32 max_delay;
 
-  f64 mean_delay;
+  u32 mean_delay;
 } ioam_analyse_trace_record;
 
 typedef struct {
@@ -206,7 +206,7 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   ioam_trace_option_t *trace = (ioam_trace_option_t *)(opt);
   u16 size_of_traceopt_per_node;
   u16 size_of_all_traceopts;
-  u8 i, j, num_nodes;
+  u8 i, j, num_nodes, path_i;
   u8 *ptr;
   u32 nodeid;
   u16 ingress_if, egress_if;
@@ -218,8 +218,8 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   size_of_traceopt_per_node = fetch_trace_data_size(trace->ioam_trace_type);
   size_of_all_traceopts = trace->hdr.length - 2; /*ioam_trace_type,data_list_elts_left*/
 
-  ptr = (u8 *)trace->elts;
-  num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
+  ptr = (u8 *)(trace->elts) + (trace->data_list_elts_left * size_of_traceopt_per_node);
+  num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node) - trace->data_list_elts_left;
 
   for(i = 0; i < IOAM_MAX_PATHS_PER_FLOW; i++)
     {
@@ -232,14 +232,15 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
 
       path = trace_record->path;
 
-      for (j = 0; j < num_nodes; j++)
+      path_i = num_nodes - 1;
+      for (j = trace->data_list_elts_left; j < trace->data_list_elts_left + num_nodes; j++)
         {
           ptr = (u8 *) ((u8 *)trace->elts + (size_of_traceopt_per_node * j));
 
           nodeid = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
           ptr += 4;
 
-          if (nodeid != path[j].node_id)
+          if (nodeid != path[path_i].node_id)
             break;
 
           if ((trace->ioam_trace_type == TRACE_TYPE_IF_TS_APP) ||
@@ -248,12 +249,13 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
               ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
               ptr += 2;
               egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
-              if ((ingress_if != path[j].ingress_if) ||
-                  (egress_if != path[j].egress_if))
+              if ((ingress_if != path[path_i].ingress_if) ||
+                  (egress_if != path[path_i].egress_if))
                 {
                   break;
                 }
             }
+	  path_i--;
         }
 
       if (j >= num_nodes)
@@ -280,20 +282,22 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
         }
     }
 
-  for (j = 0; j < num_nodes; j++)
+  path_i = num_nodes - 1;
+  for (j = trace->data_list_elts_left; j < trace->data_list_elts_left + num_nodes; j++)
     {
       ptr = (u8 *) ((u8*)trace->elts + (size_of_traceopt_per_node * j));
 
-      path[j].node_id = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
+      path[path_i].node_id = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
       ptr += 4;
 
       if ((trace->ioam_trace_type == TRACE_TYPE_IF_TS_APP) ||
           (trace->ioam_trace_type == TRACE_TYPE_IF))
         {
-          path[j].ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
+          path[path_i].ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
           ptr += 2;
-          path[j].egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
+          path[path_i].egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
         }
+      path_i--;
     }
 
   found_match:
@@ -306,10 +310,12 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
       i32 delay = ip6_ioam_analyse_calc_delay(trace,0);
       if (delay < trace_record->min_delay)
         trace_record->min_delay = delay;
-      else if (delay > trace_record->max_delay)
+     if (delay > trace_record->max_delay)
         trace_record->max_delay = delay;
 
-      trace_record->mean_delay = (trace_record->mean_delay + delay) / 2;
+      trace_record->mean_delay =
+	((trace_record->mean_delay * data->seqno_data.rx_packets) + delay) /
+             (data->seqno_data.rx_packets + 1);
     }
   return 0;
 }

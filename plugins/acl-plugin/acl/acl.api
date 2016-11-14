@@ -174,7 +174,7 @@ define macip_acl_interface_add_del_reply
 
 define macip_acl_dump
 {
-  u32 client_context;
+  u32 client_index;
   u32 context;
   u32 sw_if_index; /* ~0 for all tunnels */
 };

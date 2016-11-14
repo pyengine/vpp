@@ -60,10 +60,12 @@ typedef struct
 typedef struct
 {
   u8 is_permit;
-  u16 type;
-  u8 src[6];
-  u8 dst[6];
-} l2_acl_rule_t;
+  u8 is_ipv6;
+  u8 src_mac[6];
+  u8 src_mac_mask[6];
+  ip46_address_t src_ip_addr;
+  u8 src_prefixlen;
+} macip_acl_rule_t;
 
 /*
  * ACL
@@ -77,19 +79,26 @@ typedef struct
 typedef struct
 {
   u32 count;
-  l2_acl_rule_t *rules;
-} l2_acl_list_t;
+  macip_acl_rule_t *rules;
+  /* References to the classifier tables that will enforce the rules */
+  u32 ip4_classify_table_index;
+  u32 ip6_classify_table_index;
+  u32 other_table_index;
+} macip_acl_list_t;
 
 typedef struct {
   /* API message ID base */
   u16 msg_id_base;
 
   acl_list_t *acls;	/* Pool of ACLs */
-  l2_acl_list_t *l2_acls;	/* Pool of L2 ACLs */
+  macip_acl_list_t *macip_acls;	/* Pool of MAC-IP ACLs */
 
   /* ACLs associated with interfaces */
   u32 **input_acl_vec_by_sw_if_index;
   u32 **output_acl_vec_by_sw_if_index;
+
+  /* MACIP (input) ACLs associated with the interfaces */
+  u32 *macip_acl_by_sw_if_index;
 
   /* next indices for our nodes in the l2-classify tables */
   u32 l2_input_classify_next_acl;

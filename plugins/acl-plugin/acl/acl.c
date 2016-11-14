@@ -60,6 +60,9 @@ noop_handler (void *notused)
 #define vl_api_acl_add_replace_t_endian noop_handler
 #define vl_api_acl_add_replace_t_print noop_handler
 
+#define vl_api_macip_acl_add_t_endian noop_handler
+#define vl_api_macip_acl_add_t_print noop_handler
+
 /*
  * A handy macro to set up a message reply.
  * Assumes that the following variables are available:
@@ -140,7 +143,11 @@ _(ACL_ADD_REPLACE, acl_add_replace)				\
 _(ACL_DEL, acl_del)				\
 _(ACL_INTERFACE_ADD_DEL, acl_interface_add_del)	\
 _(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list)	\
-_(ACL_DUMP, acl_dump)
+_(ACL_DUMP, acl_dump)  \
+_(MACIP_ACL_ADD, macip_acl_add) \
+_(MACIP_ACL_DEL, macip_acl_del) \
+_(MACIP_ACL_INTERFACE_ADD_DEL, macip_acl_interface_add_del) \
+_(MACIP_ACL_DUMP, macip_acl_dump)
 
 /*
  * This routine exists to convince the vlib plugin framework that
@@ -730,6 +737,114 @@ void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u3
   }
 }
 
+
+static int
+macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
+	      u32 * acl_list_index)
+{
+  acl_main_t *am = &acl_main;
+  macip_acl_list_t  * a;
+  macip_acl_rule_t  * r;
+  macip_acl_rule_t  * acl_new_rules;
+  int i;
+
+  /* Create and populate the rules */
+  acl_new_rules = clib_mem_alloc_aligned (sizeof(macip_acl_rule_t) * count,
+				     CLIB_CACHE_LINE_BYTES);
+  if (!acl_new_rules) {
+    /* Could not allocate rules. New or existing ACL - bail out regardless */
+    return -1;
+  }
+
+  for(i=0; i<count; i++) {
+    r = &acl_new_rules[i];
+    r->is_permit = rules[i].is_permit;
+    r->is_ipv6 = rules[i].is_ipv6;
+    memcpy(&r->src_mac, rules[i].src_mac, 6);
+    memcpy(&r->src_mac_mask, rules[i].src_mac_mask, 6);
+
+    memcpy(&r->src_ip_addr, rules[i].src_ip_addr, sizeof(r->src_ip_addr));
+    r->src_prefixlen = rules[i].src_ip_prefix_len;
+  }
+
+  /* Get ACL index */
+  pool_get_aligned (am->macip_acls, a, CLIB_CACHE_LINE_BYTES);
+  memset (a, 0, sizeof (*a));
+  /* Will return the newly allocated ACL index */
+  *acl_list_index = a - am->macip_acls;
+
+  a->rules = acl_new_rules;
+  a->count = count;
+
+  /* FIXME: create and populate the classifer tables here */
+
+  return 0;
+}
+
+
+/* No check for validity of sw_if_index - the callers were supposed to validate */
+
+static int
+macip_acl_interface_add_acl(acl_main_t *am, u32 sw_if_index, u32 macip_acl_index)
+{
+  if (pool_is_free_index(am->macip_acls, macip_acl_index)) {
+    return -1;
+  }
+  /* FIXME: apply the classifier tables for L2 ACLs */
+
+  vec_validate_init_empty(am->macip_acl_by_sw_if_index, sw_if_index, ~0);
+  am->macip_acl_by_sw_if_index[sw_if_index] = macip_acl_index;
+  return 0;
+}
+
+static int
+macip_acl_interface_del_acl(acl_main_t *am, u32 sw_if_index)
+{
+  /* FIXME: remove the classifier tables off the interface L2 ACL */
+  am->macip_acl_by_sw_if_index[sw_if_index] = ~0;
+  return 0;
+}
+
+static int
+macip_acl_del_list(u32 acl_list_index)
+{
+  acl_main_t *am = &acl_main;
+  macip_acl_list_t  * a;
+  int i;
+  if (pool_is_free_index(am->macip_acls, acl_list_index)) {
+    return -1;
+  }
+
+  /* delete any references to the ACL */
+  for(i = 0; i<vec_len(am->macip_acl_by_sw_if_index); i++) {
+    if (am->macip_acl_by_sw_if_index[i] == acl_list_index) {
+      macip_acl_interface_del_acl(am, i);
+    }
+  }
+
+  /* now we can delete the ACL itself */
+  a = &am->macip_acls[acl_list_index];
+  if (a->rules) {
+    clib_mem_free(a->rules);
+  }
+  pool_put(am->macip_acls, a);
+  return 0;
+}
+
+
+static int
+macip_acl_interface_add_del_acl(u32 sw_if_index, u8 is_add, u32 acl_list_index)
+{
+  acl_main_t *am = &acl_main;
+  int rv = -1;
+  if (is_add) {
+    rv = macip_acl_interface_add_acl(am, sw_if_index, acl_list_index);
+  } else {
+    rv = macip_acl_interface_del_acl(am, sw_if_index);
+  }
+  return rv;
+}
+
 /* API message handler */
 static void
 vl_api_acl_add_replace_t_handler (vl_api_acl_add_replace_t * mp)
@@ -893,6 +1008,136 @@ vl_api_acl_dump_t_handler (vl_api_acl_dump_t * mp)
     return;
   }
 }
+
+/* MACIP ACL API handlers */
+
+static void
+vl_api_macip_acl_add_t_handler (vl_api_macip_acl_add_t * mp)
+{
+  vl_api_macip_acl_add_reply_t * rmp;
+  acl_main_t *am = &acl_main;
+  int rv;
+  u32 acl_list_index = ~0;
+
+  rv = macip_acl_add_list(ntohl(mp->count), mp->r, &acl_list_index);
+
+  /* *INDENT-OFF* */
+  REPLY_MACRO2(VL_API_MACIP_ACL_ADD_REPLY,
+  ({
+    rmp->acl_index = htonl(acl_list_index);
+  }));
+  /* *INDENT-ON* */
+}
+
+static void
+vl_api_macip_acl_del_t_handler (vl_api_macip_acl_del_t * mp)
+{
+  acl_main_t * sm = &acl_main;
+  vl_api_macip_acl_del_reply_t * rmp;
+  int rv;
+
+  rv = macip_acl_del_list(ntohl(mp->acl_index));
+
+  REPLY_MACRO(VL_API_MACIP_ACL_DEL_REPLY);
+}
+
+static void
+vl_api_macip_acl_interface_add_del_t_handler (vl_api_macip_acl_interface_add_del_t * mp)
+{
+  acl_main_t * sm = &acl_main;
+  vl_api_macip_acl_interface_add_del_reply_t * rmp;
+  int rv = -1;
+  VALIDATE_SW_IF_INDEX (mp);
+
+  rv = macip_acl_interface_add_del_acl(ntohl(mp->sw_if_index), mp->is_add, ntohl(mp->acl_index));
+
+  BAD_SW_IF_INDEX_LABEL;
+
+  REPLY_MACRO(VL_API_MACIP_ACL_INTERFACE_ADD_DEL_REPLY);
+}
+
+static void
+send_macip_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
+                         u32 sw_if_index, macip_acl_list_t *acl, u32 context)
+{
+  vl_api_macip_acl_details_t *mp;
+  vl_api_macip_acl_rule_t *rules;
+  macip_acl_rule_t  * r;
+  int i;
+  int msg_size = sizeof (*mp) + (acl ? sizeof(mp->r[0])*acl->count : 0);g
+
+  mp = vl_msg_api_alloc (msg_size);
+  memset (mp, 0, msg_size);
+  mp->_vl_msg_id = ntohs (VL_API_MACIP_ACL_DETAILS+am->msg_id_base);
+
+  /* fill in the message */
+  mp->context = context;
+  mp->sw_if_index = htonl(sw_if_index);
+  if(acl) {
+    mp->count = htonl(acl->count);
+    mp->acl_index = htonl(acl - am->macip_acls);
+    rules = mp->r;
+    for(i=0; i<acl->count; i++) {
+      r = &acl->rules[i];
+      rules[i].is_permit = r->is_permit;
+      rules[i].is_ipv6 = r->is_ipv6;
+      memcpy(rules[i].src_mac, &r->src_mac, sizeof(r->src_mac));
+      memcpy(rules[i].src_mac_mask, &r->src_mac_mask, sizeof(r->src_mac_mask));
+
+      memcpy(rules[i].src_ip_addr, &r->src_ip_addr, sizeof(r->src_ip_addr));
+      rules[i].src_ip_prefix_len = r->src_prefixlen;
+    }
+  } else {
+    /* No martini, no party - no ACL applied to this interface. */
+    mp->acl_index = ~0;
+    mp->count = 0;
+  }
+
+  vl_msg_api_send_shmem (q, (u8 *) & mp);
+}
+
+
+static void
+vl_api_macip_acl_dump_t_handler (vl_api_macip_acl_dump_t * mp)
+{
+  acl_main_t * am = &acl_main;
+  macip_acl_list_t  * acl;
+
+  int rv = -1;
+  u32 sw_if_index;
+  unix_shared_memory_queue_t *q;
+
+  q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (q == 0) {
+    return;
+  }
+
+  if (mp->sw_if_index == ~0) {
+    /* Just dump all ACLs for now, with sw_if_index = ~0 */
+    pool_foreach (acl, am->macip_acls,
+    ({
+      send_macip_acl_details(am, q, ~0, acl, mp->context);
+    }));
+    /* *INDENT-ON* */
+  } else {
+    VALIDATE_SW_IF_INDEX (mp);
+    sw_if_index = ntohl (mp->sw_if_index);
+    vec_validate_init_empty(am->macip_acl_by_sw_if_index, sw_if_index, ~0);
+    u32 acl_idx = am->macip_acl_by_sw_if_index[sw_if_index];
+    acl = (~0 == acl_idx) ? 0 : &am->macip_acls[acl_idx];
+    send_macip_acl_details(am, q, sw_if_index, acl, mp->context);
+  }
+  return;
+
+  BAD_SW_IF_INDEX_LABEL;
+  if (rv == -1) {
+    /* FIXME API: should we signal an error here at all ? */
+    return;
+  }
+}
+
+
+
 
 /* Set up the API message handling tables */
 static clib_error_t *

@@ -18,6 +18,7 @@
 #include <acl/acl.h>
 
 #include <vnet/l2/l2_classify.h>
+#include <vnet/classify/input_acl.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
@@ -737,6 +738,109 @@ void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u3
   }
 }
 
+typedef struct {
+  u8 is_ipv6;
+  u8 mac_mask[6];
+  u8 prefix_len;
+  u32 count;
+  u32 table_index;
+} macip_match_type_t;
+
+static u32
+macip_find_match_type(macip_match_type_t *mv, u8 *mac_mask, u8 prefix_len, u8 is_ipv6)
+{
+  u32 i;
+  if (mv) {
+    for(i=0; i<vec_len(mv); i++) {
+      if ((mv[i].prefix_len == prefix_len) && (mv[i].is_ipv6 == is_ipv6) && (0 == memcmp(mv[i].mac_mask, mac_mask, 6))) {
+        return i;
+      }
+    }
+  }
+  return ~0;
+}
+
+
+/* Get metric used to sort match types.
+   The more specific and the more often seen - the bigger the metric */
+static int
+match_type_metric(macip_match_type_t *m)
+{
+  /* FIXME: count the ones in the MAC mask as well, check how well this heuristic works in real life */
+  return m->prefix_len + m->is_ipv6 + 10*m->count;
+}
+static int
+match_type_compare(macip_match_type_t *m1, macip_match_type_t *m2)
+{
+  /* Ascending sort based on the metric values */
+  return match_type_metric(m1)-match_type_metric(m2);
+}
+
+static int
+macip_create_classify_tables(acl_main_t *am, u32 macip_acl_index)
+{
+  macip_match_type_t *mvec = NULL;
+  macip_match_type_t *mt;
+  macip_acl_list_t  *a = &am->macip_acls[macip_acl_index];
+  int i;
+  u32 match_type_index;
+  u32 last_table;
+  u8 mask[5*16];
+  vnet_classify_main_t *cm = &vnet_classify_main;
+
+  /* Count the number of different types of rules */
+  for(i=0; i<a->count; i++) {
+    if (~0 == (match_type_index = macip_find_match_type(mvec, a->rules[i].src_mac_mask, a->rules[i].src_prefixlen, a->rules[i].is_ipv6))) {
+      match_type_index = vec_len(mvec);
+      vec_validate(mvec, match_type_index);
+      memcpy(mvec[match_type_index].mac_mask, a->rules[match_type_index].src_mac_mask, 6);
+      mvec[match_type_index].prefix_len = a->rules[i].src_prefixlen;
+      mvec[match_type_index].is_ipv6 = a->rules[i].is_ipv6;
+      mvec[match_type_index].table_index = ~0;
+    }
+    mvec[match_type_index].count++;
+  }
+  /* Put the most frequently used tables last in the list so we can create classifier tables in reverse order */
+  vec_sort_with_function(mvec, match_type_compare);
+  /* Create the classifier tables */
+  last_table = ~0;
+  vec_foreach(mt, mvec) {
+    int mask_len;
+    int is6 = a->rules[i].is_ipv6;
+    int l3_src_offs = is6 ? 22 : 26; /* See the ascii art packet format above to verify these */
+    memset(mask, 0, sizeof(mask));
+    memcpy(&mask[6], mt->mac_mask, 6);
+    for(i=0; i < (mt->prefix_len/8); i++) {
+      mask[l3_src_offs + i] = 0xff;
+    }
+    if (mt->prefix_len%8) {
+      mask[l3_src_offs +(mt->prefix_len/8)] = 0xff - ((1 << (8 - mt->prefix_len%8)) - 1);
+    }
+    mask_len = ((l3_src_offs + (mt->prefix_len/8))/16 + 1) * 16;
+    acl_classify_add_del_table(cm, mask, mask_len, last_table, (~0 == last_table) ? 0 : ~0, &mt->table_index, 1);
+    last_table = mt->table_index;
+  }
+  a->ip4_table_index = ~0;
+  a->ip6_table_index = ~0;
+  a->l2_table_index = last_table;
+  /* Populate the classifier tables with rules from the MACIP ACL */
+  for(i=0; i<a->count; i++) {
+    int is6 = a->rules[i].is_ipv6;
+    int l3_src_offs = is6 ? 22 : 26; /* See the ascii art packet format above to verify these */
+    memset(mask, 0, sizeof(mask));
+    memcpy(&mask[6],  a->rules[i].src_mac, 6);
+    if (is6) {
+      memcpy(&mask[l3_src_offs], &a->rules[i].src_ip_addr.ip6, 16);
+    } else {
+      memcpy(&mask[l3_src_offs], &a->rules[i].src_ip_addr.ip4, 4);
+    }
+    match_type_index = macip_find_match_type(mvec, a->rules[i].src_mac_mask, a->rules[i].src_prefixlen, a->rules[i].is_ipv6);
+    /* add session to table mvec[match_type_index].table_index; */
+    vnet_classify_add_del_session(cm,  mvec[match_type_index].table_index, mask, a->rules[i].is_permit ? ~0 : 0, i, 0, 1);
+  }
+  return 0;
+}
+
 
 static int
 macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
@@ -776,7 +880,8 @@ macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
   a->rules = acl_new_rules;
   a->count = count;
 
-  /* FIXME: create and populate the classifer tables here */
+  /* Create and populate the classifer tables */
+  macip_create_classify_tables(am, *acl_list_index);
 
   return 0;
 }
@@ -787,22 +892,27 @@ macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
 static int
 macip_acl_interface_add_acl(acl_main_t *am, u32 sw_if_index, u32 macip_acl_index)
 {
+  macip_acl_list_t  * a;
+  int rv;
   if (pool_is_free_index(am->macip_acls, macip_acl_index)) {
     return -1;
   }
-  /* FIXME: apply the classifier tables for L2 ACLs */
-
+  a = &am->macip_acls[macip_acl_index];
   vec_validate_init_empty(am->macip_acl_by_sw_if_index, sw_if_index, ~0);
   am->macip_acl_by_sw_if_index[sw_if_index] = macip_acl_index;
-  return 0;
+  /* Apply the classifier tables for L2 ACLs */
+  rv = vnet_set_input_acl_intfc (am->vlib_main, sw_if_index, a->ip4_table_index, a->ip6_table_index, a->l2_table_index, 1);
+  return rv;
 }
 
 static int
 macip_acl_interface_del_acl(acl_main_t *am, u32 sw_if_index)
 {
-  /* FIXME: remove the classifier tables off the interface L2 ACL */
+  int rv;
   am->macip_acl_by_sw_if_index[sw_if_index] = ~0;
-  return 0;
+  /* remove the classifier tables off the interface L2 ACL */
+  rv = vnet_set_input_acl_intfc (am->vlib_main, sw_if_index, ~0, ~0, ~0, 0);
+  return rv;
 }
 
 static int
@@ -1064,7 +1174,7 @@ send_macip_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
   vl_api_macip_acl_rule_t *rules;
   macip_acl_rule_t  * r;
   int i;
-  int msg_size = sizeof (*mp) + (acl ? sizeof(mp->r[0])*acl->count : 0);g
+  int msg_size = sizeof (*mp) + (acl ? sizeof(mp->r[0])*acl->count : 0);
 
   mp = vl_msg_api_alloc (msg_size);
   memset (mp, 0, msg_size);

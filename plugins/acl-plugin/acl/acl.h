@@ -81,9 +81,9 @@ typedef struct
   u32 count;
   macip_acl_rule_t *rules;
   /* References to the classifier tables that will enforce the rules */
-  u32 ip4_classify_table_index;
-  u32 ip6_classify_table_index;
-  u32 other_table_index;
+  u32 ip4_table_index;
+  u32 ip6_table_index;
+  u32 l2_table_index;
 } macip_acl_list_t;
 
 typedef struct {

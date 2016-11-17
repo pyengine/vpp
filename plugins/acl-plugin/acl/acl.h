@@ -53,8 +53,10 @@ typedef struct
   ip46_address_t dst;
   u8 dst_prefixlen;
   u8 proto;
-  u16 src_port;
-  u16 dst_port;
+  u16 src_port_or_type_first;
+  u16 src_port_or_type_last;
+  u16 dst_port_or_code_first;
+  u16 dst_port_or_code_last;
 } acl_rule_t;
 
 typedef struct

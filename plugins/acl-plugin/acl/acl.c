@@ -205,8 +205,10 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
     memcpy(&r->dst, rules[i].dst_ip_addr, sizeof(r->dst));
     r->dst_prefixlen = rules[i].dst_ip_prefix_len;
     r->proto = rules[i].proto;
-    r->src_port = rules[i].src_port;
-    r->dst_port = rules[i].dst_port;
+    r->src_port_or_type_first = rules[i].srcport_or_icmptype_first;
+    r->src_port_or_type_last = rules[i].srcport_or_icmptype_last;
+    r->dst_port_or_code_first = rules[i].dstport_or_icmpcode_first;
+    r->dst_port_or_code_last = rules[i].dstport_or_icmpcode_last;
   }
 
   if (~0 == *acl_list_index) {
@@ -611,11 +613,9 @@ acl_match_addr(ip46_address_t *addr1, ip46_address_t *addr2, int prefixlen, int 
 }
 
 static int
-acl_match_port(u16 port1, u16 port2, int is_ip6)
+acl_match_port(u16 port, u16 port_first, u16 port_last, int is_ip6)
 {
-  if(port2 == 0)
-    return 1;
-  return (port1 == port2);
+  return ((port >= port_first) && (port <= port_last));
 }
 
 static int
@@ -677,9 +677,9 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       continue;
     if (r->proto && (proto != r->proto))
       continue;
-    if (!acl_match_port(dst_port, r->dst_port, is_ip6))
+    if (!acl_match_port(src_port, r->src_port_or_type_first, r->src_port_or_type_last, is_ip6))
       continue;
-    if (!acl_match_port(src_port, r->src_port, is_ip6))
+    if (!acl_match_port(dst_port, r->dst_port_or_code_first, r->dst_port_or_code_last, is_ip6))
       continue;
     /* everything matches! */
     *r_action = r->is_permit;
@@ -1053,8 +1053,10 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
     memcpy(rules[i].dst_ip_addr, &r->dst, sizeof(r->dst));
     rules[i].dst_ip_prefix_len = r->dst_prefixlen;
     rules[i].proto = r->proto;
-    rules[i].src_port = r->src_port;
-    rules[i].dst_port = r->dst_port;
+    rules[i].srcport_or_icmptype_first = r->src_port_or_type_first;
+    rules[i].srcport_or_icmptype_last = r->src_port_or_type_last;
+    rules[i].dstport_or_icmpcode_first = r->dst_port_or_code_first;
+    rules[i].dstport_or_icmpcode_last = r->dst_port_or_code_last;
   }
 
   vl_msg_api_send_shmem (q, (u8 *) & mp);

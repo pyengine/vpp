@@ -35,8 +35,10 @@ typeonly manual_print manual_endian define acl_rule
   u8 dst_ip_addr[16];
   u8 dst_ip_prefix_len;
   u8 proto;
-  u16 src_port;
-  u16 dst_port;
+  u16 srcport_or_icmptype_first;
+  u16 srcport_or_icmptype_last;
+  u16 dstport_or_icmpcode_first;
+  u16 dstport_or_icmpcode_last;
 };
 
 typeonly manual_print manual_endian define macip_acl_rule

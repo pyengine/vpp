@@ -620,7 +620,7 @@ acl_match_port(u16 port, u16 port_first, u16 port_last, int is_ip6)
 
 static int
 acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
-                 u8 *r_action, int *r_is_ip6, u32 *r_acl_match_p, u32 *r_rule_match_p)
+                 u8 *r_action, int *r_is_ip6, u32 *r_acl_match_p, u32 *r_rule_match_p, u32 *trace_bitmap)
 {
   ethernet_header_t *h0;
   u16 type0;
@@ -691,7 +691,7 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
   return 0;
 }
 
-void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p, u32 *trace_bitmap)
 {
   acl_main_t *am = &acl_main;
   uint8_t action = 0;
@@ -699,7 +699,7 @@ void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32
   int i;
   vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
   for (i=0; i<vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index]); i++) {
-    if(acl_packet_match(am, am->input_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p)) {
+    if(acl_packet_match(am, am->input_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p, trace_bitmap)) {
       if (is_ip6) {
         *nextp = am->acl_in_ip6_match_next[action];
       } else {
@@ -715,7 +715,7 @@ void input_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32
 
 }
 
-void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p)
+void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u32 *acl_match_p, u32 *rule_match_p, u32 *trace_bitmap)
 {
   acl_main_t *am = &acl_main;
   uint8_t action = 0;
@@ -723,7 +723,7 @@ void output_acl_packet_match(u32 sw_if_index, vlib_buffer_t * b0, u32 *nextp, u3
   int i;
   vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
   for (i=0; i<vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]); i++) {
-    if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p)) {
+    if(acl_packet_match(am, am->output_acl_vec_by_sw_if_index[sw_if_index][i], b0, &action, &is_ip6, acl_match_p, rule_match_p, trace_bitmap)) {
       if (is_ip6) {
         *nextp = am->acl_out_ip6_match_next[action];
       } else {

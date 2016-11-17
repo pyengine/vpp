@@ -649,15 +649,33 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
     clib_memcpy(&src.ip4, get_ptr_to_offset(b0, 26), 4);
     clib_memcpy(&dst.ip4, get_ptr_to_offset(b0, 30), 4);
     proto = acl_get_l4_proto(b0, 0);
-    src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
-    dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+    if (1 == proto) {
+      *trace_bitmap |= 0x00000001;
+      /* type */
+      src_port = *(u8 *)get_ptr_to_offset(b0, 34);
+      /* code */
+      dst_port = *(u8 *)get_ptr_to_offset(b0, 35);
+    } else {
+      /* assume TCP/UDP */
+      src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
+      dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+    }
   }
   if (is_ip6) {
     clib_memcpy(&src, get_ptr_to_offset(b0, 22), 16);
     clib_memcpy(&dst, get_ptr_to_offset(b0, 38), 16);
     proto = acl_get_l4_proto(b0, 1);
-    src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
-    dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+    if (58 == proto) {
+      *trace_bitmap |= 0x00000002;
+      /* type */
+      src_port = *(u8 *)get_ptr_to_offset(b0, 54);
+      /* code */
+      dst_port = *(u8 *)get_ptr_to_offset(b0, 55);
+    } else {
+      /* assume TCP/UDP */
+      src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
+      dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+    }
   }
   if (pool_is_free_index(am->acls, acl_index)) {
     if (r_acl_match_p) *r_acl_match_p = acl_index;
@@ -675,12 +693,14 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       continue;
     if (!acl_match_addr(&src, &r->src, r->src_prefixlen, is_ip6))
       continue;
-    if (r->proto && (proto != r->proto))
-      continue;
-    if (!acl_match_port(src_port, r->src_port_or_type_first, r->src_port_or_type_last, is_ip6))
-      continue;
-    if (!acl_match_port(dst_port, r->dst_port_or_code_first, r->dst_port_or_code_last, is_ip6))
-      continue;
+    if (r->proto) {
+      if (proto != r->proto)
+        continue;
+      if (!acl_match_port(src_port, r->src_port_or_type_first, r->src_port_or_type_last, is_ip6))
+        continue;
+      if (!acl_match_port(dst_port, r->dst_port_or_code_first, r->dst_port_or_code_last, is_ip6))
+        continue;
+    }
     /* everything matches! */
     *r_action = r->is_permit;
     *r_is_ip6 = is_ip6;

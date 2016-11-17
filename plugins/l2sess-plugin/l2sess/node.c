@@ -84,6 +84,21 @@ l2sess_get_l4_proto(vlib_buffer_t * b0, int node_is_ip6)
   return proto;
 }
 
+
+u8
+l2sess_get_tcp_flags(vlib_buffer_t * b0, int node_is_ip6)
+{
+  u8 flags;
+  int flags_offset;
+  if (node_is_ip6) {
+    flags_offset = 14+40+13; /* FIXME: no extension headers assumed */
+  } else {
+    flags_offset = 14+20+13;
+  }
+  flags = *( (u8 *)vlib_buffer_get_current (b0) + flags_offset);
+  return flags;
+}
+
 static inline int
 l4_tcp_or_udp(u8 proto)
 {
@@ -199,14 +214,6 @@ l2sess_add_session(vlib_buffer_t * b0,  int node_is_out, int node_is_ip6, u32 se
 }
 
 
-static void
-session_side_account_buffer(vlib_buffer_t * b0, l2s_session_side_t *ss, u64 now)
-{
-  ss->active_time = now;
-  ss->n_packets++;
-  ss->n_bytes += b0->current_data + b0->current_length;
-}
-
 
 static void *
 get_ptr_to_offset(vlib_buffer_t * b0, int offset)
@@ -280,6 +287,51 @@ delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_index)
   pool_put(sm->sessions_by_sw_if_index[sw_if_index], sess);
 }
 
+static void
+udp_session_account_buffer(vlib_buffer_t * b0, l2s_session_t *s, int which_side, u64 now)
+{
+  l2s_session_side_t *ss = &s->side[which_side];
+  ss->active_time = now;
+  ss->n_packets++;
+  ss->n_bytes += b0->current_data + b0->current_length;
+}
+
+static inline u64
+udp_session_get_timeout(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
+{
+  return (sm->udp_session_idle_timeout);
+}
+
+static void
+tcp_session_account_buffer(vlib_buffer_t * b0, l2s_session_t *s, int which_side, u64 now)
+{
+  l2s_session_side_t *ss = &s->side[which_side];
+  ss->active_time = now;
+  ss->n_packets++;
+  ss->n_bytes += b0->current_data + b0->current_length;
+  /* Very very lightweight TCP state tracking: just record which flags were seen */
+  s->tcp_flags_seen |= l2sess_get_tcp_flags(b0, s->is_ip6) << (8*which_side);
+}
+
+/*
+ * Since we are tracking for the purposes of timing the sessions out,
+ * we mostly care about two states: established (maximize the idle timeouts)
+ * and transient (halfopen/halfclosed/reset) - we need to have a reasonably short timeout to
+ * quickly get rid of sessions but not short enough to violate the TCP specs.
+ */
+
+static inline u64
+tcp_session_get_timeout(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
+{
+  /* seen both SYNs and ACKs but not FINs means we are in establshed state */
+  u16 masked_flags = sess->tcp_flags_seen & ((TCP_FLAGS_RSTFINACKSYN << 8) + TCP_FLAGS_RSTFINACKSYN);
+  if (((TCP_FLAGS_ACKSYN << 8) + TCP_FLAGS_ACKSYN) == masked_flags) {
+    return (sm->tcp_session_idle_timeout);
+  } else {
+    return (sm->tcp_session_transient_timeout);
+  }
+}
+
 static int
 session_is_alive(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
 {
@@ -288,8 +340,8 @@ session_is_alive(l2sess_main_t * sm, l2s_session_t *sess, u64 now)
   int is_alive;
 
   switch (sess->l4_proto) {
-    case  6: idle_timeout = sm->tcp_session_idle_timeout; break;
-    case 17: idle_timeout = sm->udp_session_idle_timeout; break;
+    case  6: idle_timeout = tcp_session_get_timeout(sm, sess, now); break;
+    case 17: idle_timeout = udp_session_get_timeout(sm, sess, now); break;
     default: idle_timeout = 0;
   }
   is_alive = ((now - last_active) < idle_timeout);
@@ -404,8 +456,11 @@ foreach_l2sess_node
     u32 sess_index =  vnet_buffer (b0)->l2_classify.opaque_index;
     l2s_session_t *sess = sm->sessions_by_sw_if_index[sw_if_index0] + sess_index;
     if (session_is_alive(sm, sess, now)) {
-      /* lightweight TCP state tracking goes here */
-      session_side_account_buffer(b0, &sess->side[node_is_out], now);
+      if (6 == sess->l4_proto) {
+        tcp_session_account_buffer(b0, sess, node_is_out, now);
+      } else {
+        udp_session_account_buffer(b0, sess, node_is_out, now);
+      }
     } else {
       delete_session(sm, sw_if_index0, sess_index);
       /* FIXME: drop the packet that hit the obsolete node, for now. We really ought to recycle it. */

@@ -43,6 +43,17 @@
 foreach_l2sess_node
 #undef _
 
+#define TCP_FLAG_FIN    0x01
+#define TCP_FLAG_SYN    0x02
+#define TCP_FLAG_RST    0x04
+#define TCP_FLAG_PUSH   0x08
+#define TCP_FLAG_ACK    0x10
+#define TCP_FLAG_URG    0x20
+#define TCP_FLAG_ECE    0x40
+#define TCP_FLAG_CWR    0x80
+#define TCP_FLAGS_RSTFINACKSYN (TCP_FLAG_RST + TCP_FLAG_FIN + TCP_FLAG_SYN + TCP_FLAG_ACK)
+#define TCP_FLAGS_ACKSYN (TCP_FLAG_SYN + TCP_FLAG_ACK)
+
 typedef struct {
   ip46_address_t addr;
   u64 active_time;
@@ -62,15 +73,17 @@ typedef struct {
   l2s_session_side_t side[L2S_N_SESSION_SIDES];
   u8 l4_proto;
   u8 is_ip6;
+  u16 tcp_flags_seen; /* u16 because of two sides */
 } l2s_session_t;
-
 
 #ifdef PROD
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
 #define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*24)
+#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC 120
 #else
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 15
 #define TCP_SESSION_IDLE_TIMEOUT_SEC 15
+#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC 5
 #endif
 
 typedef struct {
@@ -106,6 +119,7 @@ foreach_l2sess_node
     l2s_session_t **sessions_by_sw_if_index;
 
     /* The session timeouts */
+    u64 tcp_session_transient_timeout;
     u64 tcp_session_idle_timeout;
     u64 udp_session_idle_timeout;
 

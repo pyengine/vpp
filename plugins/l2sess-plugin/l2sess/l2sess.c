@@ -364,6 +364,12 @@ l2sess_plugin_api_hookup (vlib_main_t *vm)
     return 0;
 }
 
+static inline u64
+time_sec_to_clock( clib_time_t *ct, f64 sec)
+{
+  return (u64)(((f64)sec)/ct->seconds_per_clock);
+}
+
 static clib_error_t * l2sess_init (vlib_main_t * vm)
 {
   l2sess_main_t * sm = &l2sess_main;
@@ -371,8 +377,9 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
   u8 * name;
 
   clib_time_t *ct = &vm->clib_time;
-  sm->udp_session_idle_timeout = (u64)(((f64)UDP_SESSION_IDLE_TIMEOUT_SEC)/ct->seconds_per_clock);
-  sm->tcp_session_idle_timeout = (u64)(((f64)TCP_SESSION_IDLE_TIMEOUT_SEC)/ct->seconds_per_clock);
+  sm->udp_session_idle_timeout = time_sec_to_clock(ct, UDP_SESSION_IDLE_TIMEOUT_SEC);
+  sm->tcp_session_idle_timeout = time_sec_to_clock(ct, TCP_SESSION_IDLE_TIMEOUT_SEC);
+  sm->tcp_session_transient_timeout = time_sec_to_clock(ct, TCP_SESSION_TRANSIENT_TIMEOUT_SEC);
 
   name = format (0, "l2sess_%08x%c", api_version, 0);
 

@@ -57,6 +57,8 @@ typedef struct
   u16 src_port_or_type_last;
   u16 dst_port_or_code_first;
   u16 dst_port_or_code_last;
+  u8 tcp_flags_value;
+  u8 tcp_flags_mask;
 } acl_rule_t;
 
 typedef struct

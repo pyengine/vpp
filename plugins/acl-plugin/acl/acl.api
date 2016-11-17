@@ -39,6 +39,8 @@ typeonly manual_print manual_endian define acl_rule
   u16 srcport_or_icmptype_last;
   u16 dstport_or_icmpcode_first;
   u16 dstport_or_icmpcode_last;
+  u8 tcp_flags_mask;
+  u8 tcp_flags_value;
 };
 
 typeonly manual_print manual_endian define macip_acl_rule

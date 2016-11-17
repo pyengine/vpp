@@ -209,6 +209,8 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
     r->src_port_or_type_last = rules[i].srcport_or_icmptype_last;
     r->dst_port_or_code_first = rules[i].dstport_or_icmpcode_first;
     r->dst_port_or_code_last = rules[i].dstport_or_icmpcode_last;
+    r->tcp_flags_value = rules[i].tcp_flags_value;
+    r->tcp_flags_mask = rules[i].tcp_flags_mask;
   }
 
   if (~0 == *acl_list_index) {
@@ -631,6 +633,7 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
   u8 proto;
   u16 src_port;
   u16 dst_port;
+  u8 tcp_flags = 0;
   int i;
   acl_list_t  * a;
   acl_rule_t * r;
@@ -659,6 +662,8 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       /* assume TCP/UDP */
       src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
       dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+      /* UDP gets ability to check on an oddball data byte as a bonus */
+      tcp_flags = *(u8 *)get_ptr_to_offset(b0, 14+20+13);
     }
   }
   if (is_ip6) {
@@ -675,6 +680,7 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       /* assume TCP/UDP */
       src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
       dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+      tcp_flags = *(u8 *)get_ptr_to_offset(b0, 14+40+13);
     }
   }
   if (pool_is_free_index(am->acls, acl_index)) {
@@ -699,6 +705,9 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       if (!acl_match_port(src_port, r->src_port_or_type_first, r->src_port_or_type_last, is_ip6))
         continue;
       if (!acl_match_port(dst_port, r->dst_port_or_code_first, r->dst_port_or_code_last, is_ip6))
+        continue;
+      /* No need for check of proto == TCP, since in other rules both fields should be zero, so this match will succeed */
+      if ((tcp_flags & r->tcp_flags_mask) != r->tcp_flags_value)
         continue;
     }
     /* everything matches! */
@@ -1077,6 +1086,8 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
     rules[i].srcport_or_icmptype_last = r->src_port_or_type_last;
     rules[i].dstport_or_icmpcode_first = r->dst_port_or_code_first;
     rules[i].dstport_or_icmpcode_last = r->dst_port_or_code_last;
+    rules[i].tcp_flags_mask = r->tcp_flags_mask;
+    rules[i].tcp_flags_value = r->tcp_flags_value;
   }
 
   vl_msg_api_send_shmem (q, (u8 *) & mp);

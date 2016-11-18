@@ -25,6 +25,7 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
+#include <vppinfra/timing_wheel.h>
 
 #include <vnet/l2/l2_output.h>
 #include <vnet/l2/l2_input.h>
@@ -95,6 +96,7 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 {
   l2sess_main_t * sm = &l2sess_main;
   clib_error_t * error = 0;
+  memset(sm, 0, sizeof(*sm));
 
   sm->vlib_main = vm;
   sm->vnet_main = h->vnet_main;
@@ -289,6 +291,8 @@ l2sess_show_command_fn(vlib_main_t * vm,
   l2s_session_t *s;
   u64 now = clib_cpu_time_now ();
 
+  vlib_cli_output(vm, "Timing wheel info: \n%U", format_timing_wheel, &sm->timing_wheel, 255);
+
   pool_foreach(s, sm->sessions,
   ({
     f64 ctime = (now - s->create_time) * ct->seconds_per_clock;
@@ -369,6 +373,8 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
   l2sess_main_t * sm = &l2sess_main;
   clib_error_t * error = 0;
   u8 * name;
+  u64 cpu_time_now = clib_cpu_time_now();
+
 
   clib_time_t *ct = &vm->clib_time;
   sm->udp_session_idle_timeout = time_sec_to_clock(ct, UDP_SESSION_IDLE_TIMEOUT_SEC);
@@ -383,6 +389,13 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
 
   error = l2sess_plugin_api_hookup (vm);
 
+  /* The min sched time of 10e-1 causes erroneous behavior... */
+  sm->timing_wheel.min_sched_time = 10e-2;
+  sm->timing_wheel.max_sched_time = 3600.0*48.0;
+  timing_wheel_init (&sm->timing_wheel, cpu_time_now, vm->clib_time.clocks_per_second);
+  sm->timer_wheel_next_expiring_time = 0;
+  /* Pre-allocate expired nodes. */
+  vec_alloc (sm->data_from_advancing_timing_wheel, 32);
 
   l2sess_setup_nodes();
   l2output_init_output_node_vec (&sm->output_next_nodes.output_node_index_vec);

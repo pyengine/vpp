@@ -22,6 +22,7 @@
 #include <vppinfra/hash.h>
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
+#include <vppinfra/timing_wheel.h>
 
 #include <vnet/l2/l2_output.h>
 #include <vnet/l2/l2_input.h>
@@ -123,8 +124,10 @@ foreach_l2sess_node
     u64 tcp_session_idle_timeout;
     u64 udp_session_idle_timeout;
 
-    /* Currently being checked index for timeout */
-    u32 check_index;
+    /* Timing wheel to time out the idle sessions */
+    timing_wheel_t timing_wheel;
+    u32 *data_from_advancing_timing_wheel;
+    u64 timer_wheel_next_expiring_time;
 
     /* convenience */
     vlib_main_t * vlib_main;

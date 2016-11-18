@@ -116,16 +116,15 @@ foreach_l2sess_node
      * The vector of per-interface session pools
      */
 
-    l2s_session_t **sessions_by_sw_if_index;
+    l2s_session_t *sessions;
 
     /* The session timeouts */
     u64 tcp_session_transient_timeout;
     u64 tcp_session_idle_timeout;
     u64 udp_session_idle_timeout;
 
-
-    /* A vector of the current index to check */
-    u32 *check_index_by_sw_if_index;
+    /* Currently being checked index for timeout */
+    u32 check_index;
 
     /* convenience */
     vlib_main_t * vlib_main;

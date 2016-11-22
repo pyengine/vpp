@@ -145,6 +145,7 @@ _(ACL_DEL, acl_del)				\
 _(ACL_INTERFACE_ADD_DEL, acl_interface_add_del)	\
 _(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list)	\
 _(ACL_DUMP, acl_dump)  \
+_(ACL_INTERFACE_LIST_DUMP, acl_interface_list_dump) \
 _(MACIP_ACL_ADD, macip_acl_add) \
 _(MACIP_ACL_DEL, macip_acl_del) \
 _(MACIP_ACL_INTERFACE_ADD_DEL, macip_acl_interface_add_del) \
@@ -1053,12 +1054,29 @@ vl_api_acl_interface_set_acl_list_t_handler (vl_api_acl_interface_set_acl_list_t
 }
 
 static void
+copy_acl_rule_to_api_rule(vl_api_acl_rule_t *api_rule, acl_rule_t  *r)
+{
+    api_rule->is_permit = r->is_permit;
+    api_rule->is_ipv6 = r->is_ipv6;
+    memcpy(api_rule->src_ip_addr, &r->src, sizeof(r->src));
+    api_rule->src_ip_prefix_len = r->src_prefixlen;
+    memcpy(api_rule->dst_ip_addr, &r->dst, sizeof(r->dst));
+    api_rule->dst_ip_prefix_len = r->dst_prefixlen;
+    api_rule->proto = r->proto;
+    api_rule->srcport_or_icmptype_first = r->src_port_or_type_first;
+    api_rule->srcport_or_icmptype_last = r->src_port_or_type_last;
+    api_rule->dstport_or_icmpcode_first = r->dst_port_or_code_first;
+    api_rule->dstport_or_icmpcode_last = r->dst_port_or_code_last;
+    api_rule->tcp_flags_mask = r->tcp_flags_mask;
+    api_rule->tcp_flags_value = r->tcp_flags_value;
+}
+
+static void
 send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
-                         u32 sw_if_index, acl_list_t *acl, u32 context)
+                         acl_list_t *acl, u32 context)
 {
   vl_api_acl_details_t *mp;
   vl_api_acl_rule_t *rules;
-  acl_rule_t  * r;
   int i;
   int msg_size = sizeof (*mp) + sizeof(mp->r[0])*acl->count;
 
@@ -1068,44 +1086,15 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
 
   /* fill in the message */
   mp->context = context;
-  mp->sw_if_index = htonl(sw_if_index);
   mp->count = htonl(acl->count);
   mp->acl_index = htonl(acl - am->acls);
   // clib_memcpy (mp->r, acl->rules, acl->count * sizeof(acl->rules[0]));
   rules = mp->r;
   for(i=0; i<acl->count; i++) {
-    r = &acl->rules[i];
-    rules[i].is_permit = r->is_permit;
-    rules[i].is_ipv6 = r->is_ipv6;
-    memcpy(rules[i].src_ip_addr, &r->src, sizeof(r->src));
-    rules[i].src_ip_prefix_len = r->src_prefixlen;
-    memcpy(rules[i].dst_ip_addr, &r->dst, sizeof(r->dst));
-    rules[i].dst_ip_prefix_len = r->dst_prefixlen;
-    rules[i].proto = r->proto;
-    rules[i].srcport_or_icmptype_first = r->src_port_or_type_first;
-    rules[i].srcport_or_icmptype_last = r->src_port_or_type_last;
-    rules[i].dstport_or_icmpcode_first = r->dst_port_or_code_first;
-    rules[i].dstport_or_icmpcode_last = r->dst_port_or_code_last;
-    rules[i].tcp_flags_mask = r->tcp_flags_mask;
-    rules[i].tcp_flags_value = r->tcp_flags_value;
+    copy_acl_rule_to_api_rule(&rules[i], &acl->rules[i]);
   }
 
   vl_msg_api_send_shmem (q, (u8 *) & mp);
-}
-
-static void
-send_all_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q, u32 sw_if_index, u32 context)
-{
-  u32 *p_acl_index;
-  vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
-  vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
-  /* FIXME API: no way to tell to the caller which is input ACL and which one is output ACL */
-  vec_foreach (p_acl_index, am->input_acl_vec_by_sw_if_index[sw_if_index]) {
-    send_acl_details(am, q, sw_if_index, &am->acls[*p_acl_index], context);
-  }
-  vec_foreach (p_acl_index, am->output_acl_vec_by_sw_if_index[sw_if_index]) {
-    send_acl_details(am, q, sw_if_index, &am->acls[*p_acl_index], context);
-  }
 }
 
 
@@ -1113,9 +1102,84 @@ static void
 vl_api_acl_dump_t_handler (vl_api_acl_dump_t * mp)
 {
   acl_main_t * am = &acl_main;
+  u32 acl_index;
+  acl_list_t  * acl;
+
+  int rv = -1;
+  unix_shared_memory_queue_t *q;
+
+  q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (q == 0) {
+    return;
+  }
+
+  if (mp->acl_index == ~0) {
+    /* *INDENT-OFF* */
+    /* Just dump all ACLs */
+    pool_foreach (acl, am->acls,
+    ({
+      send_acl_details(am, q, acl, mp->context);
+    }));
+    /* *INDENT-ON* */
+  } else {
+    acl_index = ntohl(mp->acl_index);
+    if(!pool_is_free_index(am->acls, acl_index)) {
+      acl = &am->acls[acl_index];
+      send_acl_details(am, q, acl, mp->context);
+    }
+  }
+
+  if (rv == -1) {
+    /* FIXME API: should we signal an error here at all ? */
+    return;
+  }
+}
+
+static void
+send_acl_interface_list_details(acl_main_t * am, unix_shared_memory_queue_t * q, u32 sw_if_index, u32 context)
+{
+  vl_api_acl_interface_list_details_t *mp;
+  int msg_size;
+  int n_input;
+  int n_output;
+  int count;
+  int i = 0;
+
+  vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
+  vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
+
+  n_input = vec_len(am->input_acl_vec_by_sw_if_index[sw_if_index]);
+  n_output = vec_len(am->output_acl_vec_by_sw_if_index[sw_if_index]);
+  count = n_input + n_output;
+
+  msg_size = sizeof (*mp);
+  msg_size += sizeof(mp->acls[0])*count;
+
+  mp = vl_msg_api_alloc (msg_size);
+  memset (mp, 0, msg_size);
+  mp->_vl_msg_id = ntohs (VL_API_ACL_INTERFACE_LIST_DETAILS+am->msg_id_base);
+
+  /* fill in the message */
+  mp->context = context;
+  mp->sw_if_index = htonl(sw_if_index);
+  mp->count = count;
+  mp->n_input = n_input;
+  for(i = 0; i < n_input; i++) {
+    mp->acls[i] = htonl(am->input_acl_vec_by_sw_if_index[sw_if_index][i]);
+  }
+  for(i = 0; i < n_output; i++) {
+    mp->acls[n_input + i] = htonl(am->output_acl_vec_by_sw_if_index[sw_if_index][i]);
+  }
+
+  vl_msg_api_send_shmem (q, (u8 *) & mp);
+}
+
+static void
+vl_api_acl_interface_list_dump_t_handler (vl_api_acl_interface_list_dump_t * mp)
+{
+  acl_main_t * am = &acl_main;
   vnet_sw_interface_t *swif;
   vnet_interface_main_t *im = &am->vnet_main->interface_main;
-  acl_list_t  * acl;
 
   int rv = -1;
   u32 sw_if_index;
@@ -1130,18 +1194,13 @@ vl_api_acl_dump_t_handler (vl_api_acl_dump_t * mp)
     /* *INDENT-OFF* */
     pool_foreach (swif, im->sw_interfaces,
     ({
-      send_all_acl_details(am, q, swif->sw_if_index, mp->context);
-    }));
-    /* Just dump all ACLs for now, with sw_if_index = ~0 */
-    pool_foreach (acl, am->acls,
-    ({
-      send_acl_details(am, q, ~0, acl, mp->context);
+      send_acl_interface_list_details(am, q, swif->sw_if_index, mp->context);
     }));
     /* *INDENT-ON* */
   } else {
     VALIDATE_SW_IF_INDEX (mp);
     sw_if_index = ntohl (mp->sw_if_index);
-    send_all_acl_details(am, q, sw_if_index, mp->context);
+    send_acl_interface_list_details(am, q, sw_if_index, mp->context);
   }
   return;
 

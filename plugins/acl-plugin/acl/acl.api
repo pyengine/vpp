@@ -120,16 +120,31 @@ define acl_dump
 {
   u32 client_index;
   u32 context;
-  u32 sw_if_index; /* ~0 for all tunnels */
+  u32 acl_index; /* ~0 for all ACLs */
 };
 
 manual_print manual_endian define acl_details
 {
   u32 context;
-  u32 sw_if_index;
   u32 acl_index;
   u32 count;
   vl_api_acl_rule_t r[count];
+};
+
+define acl_interface_list_dump
+{
+  u32 client_index;
+  u32 context;
+  u32 sw_if_index; /* ~0 for all interfaces */
+};
+
+manual_print manual_endian define acl_interface_list_details
+{
+  u32 context;
+  u32 sw_if_index;
+  u8 count;
+  u8 n_input;
+  u32 acls[count];
 };
 
 manual_print manual_endian define macip_acl_add

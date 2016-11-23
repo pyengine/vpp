@@ -195,14 +195,27 @@ define macip_acl_dump
 {
   u32 client_index;
   u32 context;
-  u32 sw_if_index; /* ~0 for all tunnels */
+  u32 acl_index; /* ~0 for all ACLs */
 };
 
 manual_print manual_endian define macip_acl_details
 {
   u32 context;
-  u32 sw_if_index;
   u32 acl_index;
   u32 count;
   vl_api_macip_acl_rule_t r[count];
 };
+
+define macip_acl_interface_get
+{
+  u32 client_index;
+  u32 context;
+};
+
+define macip_acl_interface_get_reply
+{
+  u32 context;
+  u32 count;
+  u32 acls[count];
+};
+

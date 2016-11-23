@@ -149,7 +149,8 @@ _(ACL_INTERFACE_LIST_DUMP, acl_interface_list_dump) \
 _(MACIP_ACL_ADD, macip_acl_add) \
 _(MACIP_ACL_DEL, macip_acl_del) \
 _(MACIP_ACL_INTERFACE_ADD_DEL, macip_acl_interface_add_del) \
-_(MACIP_ACL_DUMP, macip_acl_dump)
+_(MACIP_ACL_DUMP, macip_acl_dump) \
+_(MACIP_ACL_INTERFACE_GET, macip_acl_interface_get)
 
 /*
  * This routine exists to convince the vlib plugin framework that
@@ -1260,7 +1261,7 @@ vl_api_macip_acl_interface_add_del_t_handler (vl_api_macip_acl_interface_add_del
 
 static void
 send_macip_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
-                         u32 sw_if_index, macip_acl_list_t *acl, u32 context)
+                         macip_acl_list_t *acl, u32 context)
 {
   vl_api_macip_acl_details_t *mp;
   vl_api_macip_acl_rule_t *rules;
@@ -1274,7 +1275,6 @@ send_macip_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
 
   /* fill in the message */
   mp->context = context;
-  mp->sw_if_index = htonl(sw_if_index);
   if(acl) {
     mp->count = htonl(acl->count);
     mp->acl_index = htonl(acl - am->macip_acls);
@@ -1305,8 +1305,6 @@ vl_api_macip_acl_dump_t_handler (vl_api_macip_acl_dump_t * mp)
   acl_main_t * am = &acl_main;
   macip_acl_list_t  * acl;
 
-  int rv = -1;
-  u32 sw_if_index;
   unix_shared_memory_queue_t *q;
 
   q = vl_api_client_index_to_input_queue (mp->client_index);
@@ -1314,30 +1312,48 @@ vl_api_macip_acl_dump_t_handler (vl_api_macip_acl_dump_t * mp)
     return;
   }
 
-  if (mp->sw_if_index == ~0) {
+  if (mp->acl_index == ~0) {
     /* Just dump all ACLs for now, with sw_if_index = ~0 */
     pool_foreach (acl, am->macip_acls,
     ({
-      send_macip_acl_details(am, q, ~0, acl, mp->context);
+      send_macip_acl_details(am, q, acl, mp->context);
     }));
     /* *INDENT-ON* */
   } else {
-    VALIDATE_SW_IF_INDEX (mp);
-    sw_if_index = ntohl (mp->sw_if_index);
-    vec_validate_init_empty(am->macip_acl_by_sw_if_index, sw_if_index, ~0);
-    u32 acl_idx = am->macip_acl_by_sw_if_index[sw_if_index];
-    acl = (~0 == acl_idx) ? 0 : &am->macip_acls[acl_idx];
-    send_macip_acl_details(am, q, sw_if_index, acl, mp->context);
-  }
-  return;
-
-  BAD_SW_IF_INDEX_LABEL;
-  if (rv == -1) {
-    /* FIXME API: should we signal an error here at all ? */
-    return;
+    u32 acl_index = ntohl(mp->acl_index);
+    if(!pool_is_free_index(am->macip_acls, acl_index)) {
+      acl = &am->macip_acls[acl_index];
+      send_macip_acl_details(am, q, acl, mp->context);
+    }
   }
 }
 
+static void
+vl_api_macip_acl_interface_get_t_handler (vl_api_macip_acl_interface_get_t * mp)
+{
+  acl_main_t * am = &acl_main;
+  vl_api_macip_acl_interface_get_reply_t *rmp;
+  u32 count = vec_len(am->macip_acl_by_sw_if_index);
+  int msg_size = sizeof (*rmp) + sizeof(rmp->acls[0])*count;
+  unix_shared_memory_queue_t *q;
+  int i;
+
+  q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (q == 0) {
+    return;
+  }
+
+  rmp = vl_msg_api_alloc (msg_size);
+  memset (rmp, 0, msg_size);
+  rmp->_vl_msg_id = ntohs (VL_API_MACIP_ACL_INTERFACE_GET_REPLY + am->msg_id_base);
+  rmp->context = mp->context;
+  rmp->count = htonl(count);
+  for(i=0; i<count; i++) {
+    rmp->acls[i] = htonl(am->macip_acl_by_sw_if_index[i]);
+  }
+
+  vl_msg_api_send_shmem (q, (u8 *) & rmp);
+}
 
 
 

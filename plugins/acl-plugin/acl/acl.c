@@ -183,7 +183,8 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
   acl_rule_t  * acl_new_rules;
   int i;
 
-  if (~0 != *acl_list_index) {
+  if (*acl_list_index != ~0) {
+    /* They supplied some number, let's see if this ACL exists */
     if(pool_is_free_index(am->acls, *acl_list_index)) {
       /* tried to replace a non-existent ACL, no point doing anything */
       return -1;

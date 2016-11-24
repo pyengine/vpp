@@ -386,8 +386,8 @@ count_skip(u8 *p, u32 size)
 static int
 acl_classify_add_del_table(vnet_classify_main_t * cm, u8 * mask, u32 mask_len, u32 next_table_index, u32 miss_next_index, u32 *table_index, int is_add)
 {
-  u32 nbuckets = 64;
-  u32 memory_size = 32768;
+  u32 nbuckets = 65536;
+  u32 memory_size = 2<<30;
   u32 skip = count_skip(mask, mask_len);
   u32 match = (mask_len/16) - skip;
   u8 *skip_mask_ptr = mask + 16*skip;

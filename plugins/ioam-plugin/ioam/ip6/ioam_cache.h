@@ -75,7 +75,7 @@ typedef struct {
   ioam_cache_ts_entry_t *ioam_ts_pool;
   clib_bihash_8_8_t ioam_ts_cache_table;
   volatile u32 *lockp_ts;
-
+  bool criteria_oneway;
 
   /* convenience */
   vlib_main_t * vlib_main;

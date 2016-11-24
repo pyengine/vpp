@@ -145,6 +145,7 @@ ioam_cache_ip6_enable_disable (ioam_cache_main_t * em,
 /* Action function shared between message handler and debug CLI */
 int
 ioam_tunnel_select_ip6_enable_disable (ioam_cache_main_t * em,
+				       u8 criteria,
 			       u8 is_disable)
 {
   vlib_main_t *vm = em->vlib_main;
@@ -152,6 +153,7 @@ ioam_tunnel_select_ip6_enable_disable (ioam_cache_main_t * em,
   if (is_disable == 0)
     {
       ioam_cache_ts_table_init(vm);
+      em->criteria_oneway = criteria;
       ip6_hbh_set_next_override (em->ts_hbh_slot);
       ip6_hbh_register_option(HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE_ID,
 			      0,
@@ -244,11 +246,15 @@ set_ioam_tunnel_select_command_fn (vlib_main_t * vm,
 {
   ioam_cache_main_t *em = &ioam_cache_main;
   u8 is_disable = 0;
-
+  u8 one_way = 0;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
       if (unformat (input, "disable"))
 	is_disable = 1;
+      else if (unformat(input, "rtt"))
+	one_way = 0;
+      else if (unformat(input, "oneway"))
+	one_way = 1;
       else
 	break;
     }
@@ -256,7 +262,7 @@ set_ioam_tunnel_select_command_fn (vlib_main_t * vm,
   /* Turn on the ip6 timer process */
   // vlib_process_signal_event (vm, flow_report_process_node.index,
   //1, 0);
-  ioam_tunnel_select_ip6_enable_disable (em, is_disable);
+  ioam_tunnel_select_ip6_enable_disable (em, one_way, is_disable);
 
   return 0;
 }

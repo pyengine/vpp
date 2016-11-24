@@ -126,7 +126,8 @@ ip6_ioam_cache_ts_node_fn (vlib_main_t * vm,
 		    {
 		      result = -1;
 		      if (hbh_cmp)
-		        result = ip6_ioam_analyse_compare_path_delay(hbh0, hbh_cmp);
+		        result = ip6_ioam_analyse_compare_path_delay(hbh0, hbh_cmp, 
+                                                               cm->criteria_oneway);
 		      if (result >=0 )
 			{
 			  /* current syn/ack is worse than the earlier: Drop */

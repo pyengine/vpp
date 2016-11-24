@@ -71,6 +71,9 @@ vlib_buffer_pull (vlib_buffer_t * b, u8 size)
   return data;
 }
 
+u16
+udp_ip6_checksum(ip6_header_t * ip6, udp_header_t * up, u32 len);
+
 /* *INDENT-ON* */
 
 /*

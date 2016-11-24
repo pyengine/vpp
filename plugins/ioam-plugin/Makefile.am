@@ -157,14 +157,27 @@ vppplugins_LTLIBRARIES += libioam_analyse_plugin.la
 ########################################
 
 libudp_ping_plugin_la_SOURCES =                \
-	ioam/udp-ping/udp_ping_process.c        \
-	ioam/udp-ping/udp_ping_util.c			\
-	ioam/udp-ping/udp_ping_export.c
+	ioam/udp-ping/udp_ping_process.c       \
+	ioam/udp-ping/udp_ping_util.c          \
+	ioam/udp-ping/udp_ping_export.c        \
+        ioam/udp-ping/udp_ping_api.c
 
-noinst_HEADERS +=                    \
-	ioam/udp-ping/udp_ping_packet.h  \
-	ioam/udp-ping/udp_ping.h		 \
-	ioam/udp-ping/udp_ping_util.h
+BUILT_SOURCES +=                               \
+        ioam/udp-ping/udp_ping.api.h ioam/udp-ping/udp_ping.py
+
+pyapi_DATA += ioam/udp-ping/udp_ping.py
+
+noinst_HEADERS +=                              \
+  ioam/udp-ping/udp_ping_all_api_h.h           \
+  ioam/udp-ping/udp_ping_msg_enum.h            \
+  ioam/udp-ping/udp_ping.api.h                 \
+  ioam/udp-ping/udp_ping_packet.h              \
+  ioam/udp-ping/udp_ping.h                     \
+  ioam/udp-ping/udp_ping_util.h
+
+libioam_udp_ping_test_plugin_la_SOURCES =          \
+        ioam/udp-ping/udp_ping_test.c             \
+        ioam/udp-ping/udp_ping_plugin.api.h
 
 libudp_ping_plugin_la_LIBADD =	\
 	libioam_analyse_plugin.la	\
@@ -172,6 +185,7 @@ libudp_ping_plugin_la_LIBADD =	\
 	libioam_trace_plugin.la
 
 vppplugins_LTLIBRARIES += libudp_ping_plugin.la
+vppapitestplugins_LTLIBRARIES += libioam_udp_ping_test_plugin.la
 
 ########################################
 # iOAM record cache and rewrite

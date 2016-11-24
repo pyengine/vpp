@@ -17,6 +17,7 @@
 #include <ioam/lib-trace/trace_util.h>
 #include <ioam/udp-ping/udp_ping.h>
 #include <vnet/ip/ip.h>
+#include <vnet/lisp-cp/packets.h>
 
 u16 udp_ping_fill_udp_data (udp_ping_t *udp_ping,
                             u16 src_port, u16 dst_port,
@@ -252,9 +253,18 @@ udp_ping_send_ip6_pak (vlib_main_t *vm, ip46_udp_ping_flow *flow)
       b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
 
       stats->retry++;
+      stats->analyse_data.pkt_sent++;
+
       vnet_buffer(b0)->sw_if_index[VLIB_RX] = 0;
       vnet_buffer(b0)->sw_if_index[VLIB_TX] = ~0;
       vnet_buffer(b0)->l2_classify.opaque_index = stats->flow_ctx;
+
+      ip6_header_t *ip6 = vlib_buffer_get_current(b0);
+      ip6_hop_by_hop_header_t *hbh = (ip6_hop_by_hop_header_t *) (ip6 + 1);
+      udp_header_t *up = (udp_header_t *) ((u8 *) hbh + ((hbh->length + 1) << 3));
+      up->checksum = udp_ip6_checksum (ip6, up, clib_net_to_host_u16 (up->length));
+      if (up->checksum == 0)
+        up->checksum = 0xffff;
 
       if (nf->n_vectors == VLIB_FRAME_SIZE)
         {

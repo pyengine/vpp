@@ -42,6 +42,9 @@ udp_ping_main_t udp_ping_main;
 uword
 udp_ping_process (vlib_main_t * vm,
                   vlib_node_runtime_t * rt, vlib_frame_t * f);
+extern int
+ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
+                                      ip6_hop_by_hop_option_t * opt);
 
 typedef struct
 {
@@ -438,6 +441,11 @@ void udp_ping_analyse_hbh (vlib_buffer_t *b0,
       switch (type0)
       {
         case HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST:
+          /* Add trace for here as it hasnt been done yet */
+          vnet_buffer(b0)->sw_if_index[VLIB_TX] = ~0;
+          ip6_hbh_ioam_trace_data_list_handler(b0,
+                                               vlib_buffer_get_current(b0),
+                                               opt0);
           (void)ip6_ioam_analyse_hbh_trace(data, opt0, len);
           break;
         case HBH_OPTION_TYPE_IOAM_EDGE_TO_EDGE:

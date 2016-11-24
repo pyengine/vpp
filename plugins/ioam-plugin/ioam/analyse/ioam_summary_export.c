@@ -114,7 +114,7 @@ ioam_template_rewrite (flow_report_main_t * frm, flow_report_t * fr,
   f->e_id_length = ipfix_e_id_length(
                                   0 /* enterprise */,
                                   ioamPathMap,
-                                  (IOAM_MAX_PATHS_PER_FLOW * sizeof(ioam_path)));
+                                  (1 * sizeof(ioam_path)));
   f++;
 
   f->e_id_length = ipfix_e_id_length (0 /* enterprise */,
@@ -169,12 +169,12 @@ u16 ioam_analyse_add_ipfix_record (flow_report_t *fr,
   offset += sizeof(u64);
 
   /* Add source port manually */
-  tmp = clib_host_to_net_u32(src_port);
+  tmp = clib_host_to_net_u16(src_port);
   memcpy (b0->data + offset, &tmp, sizeof(u16));
   offset += sizeof(u16);
 
   /* Add dest port manually */
-  tmp = clib_host_to_net_u32(dst_port);
+  tmp = clib_host_to_net_u16(dst_port);
   memcpy (b0->data + offset, &tmp, sizeof(u16));
   offset += sizeof(u16);
 
@@ -183,7 +183,7 @@ u16 ioam_analyse_add_ipfix_record (flow_report_t *fr,
     {                                                        \
       /* Expect only 4 bytes */               \
       u32 tmp;                                             \
-      tmp = clib_host_to_net_u32(record->field - record->chached_data_list->field);\
+      tmp = clib_host_to_net_u32((u32)record->field - (u32)record->chached_data_list->field);\
       memcpy (b0->data + offset, &tmp, length);       \
       offset += length;                                 \
     }
@@ -192,16 +192,26 @@ foreach_ioam_ipfix_field;
 #undef _
 
   /* Add ioamPathMap manually */
-  for (i = 0; i < IOAM_MAX_PATHS_PER_FLOW; i++)
+  for (i = 0; i < 1 /*IOAM_MAX_PATHS_PER_FLOW*/; i++)
     {
       ioam_analyse_trace_record *trace = record->trace_data.path_data + i;
       ioam_analyse_trace_record *trace_cached =
           record->chached_data_list->trace_data.path_data + i;
-      ioam_path *path = (ioam_path *) b0->data;
+      ioam_path *path = (ioam_path *) (b0->data + offset);
 
       path->num_nodes = trace->num_nodes;
 
       path->trace_type = trace->trace_type;
+      if (0 < (trace->pkt_counter - trace_cached->pkt_counter))
+        {
+          u64 new_sum = trace->mean_delay * record->seqno_data.rx_packets;
+          u64 old_sum = trace_cached->mean_delay * record->chached_data_list->seqno_data.rx_packets;
+          path->mean_delay = (u32) ((new_sum - old_sum) /
+                  (trace->pkt_counter - trace_cached->pkt_counter));
+          path->mean_delay = clib_host_to_net_u32(path->mean_delay);
+        }
+      else
+        path->mean_delay = 0;
 
       path->bytes_counter =
           trace->bytes_counter - trace_cached->bytes_counter;
@@ -224,6 +234,7 @@ foreach_ioam_ipfix_field;
         num_paths++;
     }
 
+  num_paths = clib_host_to_net_u16(num_paths);
   memcpy (b0->data + offset, &num_paths, sizeof(u16));
   offset += sizeof(u16);
 

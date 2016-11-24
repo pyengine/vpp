@@ -35,7 +35,7 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
   vlib_buffer_t *b0 = NULL;
   u32 next_offset = 0;
   u32 bi0 = ~0;
-  int i;
+  int i, j;
   ip4_ipfix_template_packet_t *tp;
   ipfix_message_header_t *h;
   ipfix_set_header_t *s = NULL;
@@ -58,13 +58,14 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
         continue;
 
       ip46_flow = pool_elt_at_index(udp_ping_main.ip46_flow, i);
+      j = 0;
       for (src_port = ip46_flow->udp_data.start_src_port;
           src_port <= ip46_flow->udp_data.end_src_port ; src_port++)
         {
           for (dst_port = ip46_flow->udp_data.start_dst_port;
-              dst_port <= ip46_flow->udp_data.end_dst_port ; dst_port++)
+              dst_port <= ip46_flow->udp_data.end_dst_port ; dst_port++, j++)
             {
-              stats = ip46_flow->udp_data.stats + i;
+              stats = ip46_flow->udp_data.stats + j;
               if (PREDICT_FALSE(b0 == NULL))
                 {
                   if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
@@ -101,13 +102,15 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
                                                           &ip46_flow->src.ip6,
                                                           &ip46_flow->dst.ip6,
                                                           src_port, dst_port);
-              records_this_buffer++;
+	      records_this_buffer++;
 
-              if (next_offset > 1450)
+              if (next_offset > 1100)
                 {
                   s->set_id_length = ipfix_set_id_length (
                       IOAM_FLOW_TEMPLATE_ID,
                       next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
+                  h->version_length = version_length (next_offset -
+                                               (sizeof (*ip) + sizeof (*udp)));
                   b0->current_length = next_offset;
                   b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
                   tp = vlib_buffer_get_current (b0);
@@ -115,14 +118,20 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
                   udp = (udp_header_t *) (ip + 1);
 
                   sum0 = ip->checksum;
-                  old_l0 = clib_net_to_host_u16 (ip->length);
+                  old_l0 = ip->length;
                   new_l0 = clib_host_to_net_u16 ((u16) next_offset);
                   sum0 = ip_csum_update(sum0, old_l0, new_l0, ip4_header_t,
                                         length /* changed member */);
 
                   ip->checksum = ip_csum_fold (sum0);
                   ip->length = new_l0;
-                  udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(ip));
+                  udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(*ip));
+
+                  udp->checksum = ip4_tcp_udp_compute_checksum (vm, b0, ip);
+                  if (udp->checksum == 0)
+                    udp->checksum = 0xffff;
+                  
+                  ASSERT(ip->checksum == ip4_header_checksum (ip));
 
                   to_next[0] = bi0;
                   f->n_vectors++;
@@ -148,6 +157,8 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
       s->set_id_length = ipfix_set_id_length (
           IOAM_FLOW_TEMPLATE_ID,
           next_offset - (sizeof(*ip) + sizeof(*udp) + sizeof(*h)));
+      h->version_length = version_length (next_offset -
+                                          (sizeof (*ip) + sizeof (*udp)));
       b0->current_length = next_offset;
       b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
 
@@ -165,6 +176,10 @@ udp_ping_send_flows (flow_report_main_t *frm, flow_report_t *fr,
       ip->checksum = ip_csum_fold (sum0);
       ip->length = new_l0;
       udp->length = clib_host_to_net_u16 (b0->current_length - sizeof(*ip));
+
+      udp->checksum = ip4_tcp_udp_compute_checksum (vm, b0, ip);
+      if (udp->checksum == 0)
+        udp->checksum = 0xffff;
 
       ASSERT(ip->checksum == ip4_header_checksum (ip));
 
@@ -224,9 +239,9 @@ set_udp_ping_export_command_fn (vlib_main_t *vm, unformat_input_t *input,
     }
 
   if (is_add)
-    (void) ioam_flow_create (0);
+    (void) udp_ping_flow_create (0);
   else
-    (void) ioam_flow_create (1);
+    (void) udp_ping_flow_create (1);
 
   return 0;
 }

@@ -19,12 +19,17 @@
 #include <vnet/flow/flow_report.h>
 
 #define foreach_ioam_ipfix_info_element           \
+_(ioamPacketSent, 5239, u32)                      \
 _(ioamPacketCount, 5237, u32)                     \
 _(ioamByteCount, 5238, u32)                       \
 _(ioamPathMap, 5262, u32)                         \
 _(ioamNumberOfPaths, 5264, u16)                   \
 _(ioamSfcValidatedCount, 5278, u32)               \
-_(ioamSfcInValidatedCount, 5279, u32)                                  
+_(ioamSfcInValidatedCount, 5279, u32)             \
+_(ioamSeqnoRxCount, 5280, u32)                    \
+_(ioamSeqnoLostCount, 5281, u32)                  \
+_(ioamSeqnoReorderedCount, 5282, u32)             \
+_(ioamSeqnoDupCount, 5283, u32)                     
 
 typedef enum {
 #define _(n,v,t) n = v,
@@ -33,14 +38,15 @@ typedef enum {
 } ioam_ipfix_info_element_id_t;
 
 #define foreach_ioam_ipfix_field                                          \
+_(pkt_sent, 0xffffffff, ioamPacketSent, 4)                      \
 _(pkt_counter, 0xffffffff, ioamPacketCount, 4)                      \
 _(bytes_counter, 0xffffffff, ioamByteCount, 4)                      \
 _(pot_data.sfc_validated_count, 0xffffffff, ioamSfcValidatedCount, 4)     \
 _(pot_data.sfc_invalidated_count, 0xffffffff, ioamSfcInValidatedCount, 4) \
-_(seqno_data.rx_packets, 0xffffffff, ioamPacketCount, 4) \
-_(seqno_data.lost_packets, 0xffffffff, ioamPacketCount, 4) \
-_(seqno_data.reordered_packets, 0xffffffff, ioamPacketCount, 4) \
-_(seqno_data.dup_packets, 0xffffffff, ioamPacketCount, 4)
+_(seqno_data.rx_packets, 0xffffffff, ioamSeqnoRxCount, 4) \
+_(seqno_data.lost_packets, 0xffffffff, ioamSeqnoLostCount, 4) \
+_(seqno_data.reordered_packets, 0xffffffff, ioamSeqnoReorderedCount, 4) \
+_(seqno_data.dup_packets, 0xffffffff, ioamSeqnoDupCount, 4)
 
 /* Following are sent manually: Src address, dest address, src port, dest port
  * path map,  number of paths */
@@ -51,6 +57,7 @@ typedef  struct {
   u8 num_nodes;
   u8 trace_type;
   u16 reserve;
+  u32 mean_delay;
   u32 pkt_counter;
   u32 bytes_counter;
   ioam_path_map_t path[IOAM_TRACE_MAX_NODES];

@@ -29,18 +29,21 @@ typedef struct {
   /* Ping packet rewrite string len */
   u16 rewrite_len;
 
+  /* Number of times ping response was dropped
+   * If retry > MAX_PING_RETRIES then declare connectivity as down
+   */
+  u16 retry;
+
+  u16 reserve[2];
+
   /* Analysed data */
   ioam_analyser_data_t analyse_data;
 
   /* This is used by ioam e2e for identifying flow and add seq number */
   u32 flow_ctx;
 
-  /* Number of times ping response was dropped
-   * If retry > MAX_PING_RETRIES then declare connectivity as down
-   */
-  u16 retry;
-
-  u16 reserve[1];
+  /* No of packets sent for this flow */
+  u32 pak_sent;
 } udp_ping_flow_data;
 
 typedef struct {
@@ -89,8 +92,18 @@ typedef struct {
   vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;
   ethernet_main_t * ethernet_main;
+  /* API message ID base */
+  u16 msg_id_base;
 } udp_ping_main_t;
 
 extern udp_ping_main_t udp_ping_main;
+
+void
+ip46_udp_ping_set_flow(ip46_address_t src, ip46_address_t dst,
+                       u16 start_src_port, u16 end_src_port,
+                       u16 start_dst_port, u16 end_dst_port,
+                       u16 interval, u8 is_disable);
+clib_error_t *
+udp_ping_flow_create(u8 del);
 
 #endif /* PLUGINS_IOAM_PLUGIN_IOAM_UDP_PING_UDP_PING_H_ */

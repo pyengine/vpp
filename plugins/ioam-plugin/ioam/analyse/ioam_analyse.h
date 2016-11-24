@@ -24,7 +24,7 @@
 #include <ioam/lib-trace/trace_util.h>
 
 #define IOAM_FLOW_TEMPLATE_ID    260
-#define IOAM_TRACE_MAX_NODES      16
+#define IOAM_TRACE_MAX_NODES      6
 #define IOAM_MAX_PATHS_PER_FLOW   4
 
 typedef  struct {
@@ -48,16 +48,18 @@ typedef struct {
   ioam_path_map_t path[IOAM_TRACE_MAX_NODES];
 
   /* Num of pkts in the flow going over path */
-  u64 pkt_counter;
+  u32 pkt_counter;
 
   /* Num of bytes in the flow going over path */
-  u64 bytes_counter;
+  u32 bytes_counter;
 
-  f64 min_delay;
+  u32 min_delay;
 
-  f64 max_delay;
+  u32 max_delay;
 
-  f64 mean_delay;
+  u32 mean_delay;
+
+  u32 reserve;
 } ioam_analyse_trace_record;
 
 typedef struct {
@@ -76,13 +78,15 @@ typedef struct {
 
 typedef  struct ioam_analyser_data_t_ {
   u8 is_free;
-  u8 pad[7];
+  u8 pad[3];
+
+  u32 pkt_sent;
 
   /* Num of pkts matching this flow */
-  u64 pkt_counter;
+  u32 pkt_counter;
 
   /* Num of bytes matching this flow */
-  u64 bytes_counter;
+  u32 bytes_counter;
 
   /* Analysed iOAM trace data */
   ioam_analyse_trace_data trace_data;
@@ -192,7 +196,7 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   ioam_trace_option_t *trace = (ioam_trace_option_t *)(opt);
   u16 size_of_traceopt_per_node;
   u16 size_of_all_traceopts;
-  u8 i, j, num_nodes;
+  u8 i, j, k, num_nodes, max_nodes;
   u8 *ptr;
   u32 nodeid;
   u16 ingress_if, egress_if;
@@ -205,7 +209,8 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   size_of_all_traceopts = trace->hdr.length - 2; /*ioam_trace_type,data_list_elts_left*/
 
   ptr = (u8 *)trace->elts;
-  num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
+  max_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
+  num_nodes = max_nodes - trace->data_list_elts_left;
 
   for(i = 0; i < IOAM_MAX_PATHS_PER_FLOW; i++)
     {
@@ -218,14 +223,14 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
 
       path = trace_record->path;
 
-      for (j = 0; j < num_nodes; j++)
+      for (j = max_nodes, k =0; k < num_nodes; j--, k++)
         {
-          ptr = (u8 *) ((u8 *)trace->elts + (size_of_traceopt_per_node * j));
+          ptr = (u8 *) ((u8 *)trace->elts + (size_of_traceopt_per_node * (j - 1)));
 
           nodeid = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
           ptr += 4;
 
-          if (nodeid != path[j].node_id)
+          if (nodeid != path[k].node_id)
             break;
 
           if ((trace->ioam_trace_type == TRACE_TYPE_IF_TS_APP) ||
@@ -234,15 +239,15 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
               ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
               ptr += 2;
               egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
-              if ((ingress_if != path[j].ingress_if) ||
-                  (egress_if != path[j].egress_if))
+              if ((ingress_if != path[k].ingress_if) ||
+                  (egress_if != path[k].egress_if))
                 {
                   break;
                 }
             }
         }
 
-      if (j >= num_nodes)
+      if (k == num_nodes)
         {
           goto found_match;
         }
@@ -266,19 +271,19 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
         }
     }
 
-  for (j = 0; j < num_nodes; j++)
+  for (j = max_nodes, k =0; k < num_nodes; j--, k++)
     {
-      ptr = (u8 *) ((u8*)trace->elts + (size_of_traceopt_per_node * j));
+      ptr = (u8 *) ((u8*)trace->elts + (size_of_traceopt_per_node * (j - 1)));
 
-      path[j].node_id = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
+      path[k].node_id = clib_net_to_host_u32 (*((u32 *) ptr)) & 0x00ffffff;
       ptr += 4;
 
       if ((trace->ioam_trace_type == TRACE_TYPE_IF_TS_APP) ||
           (trace->ioam_trace_type == TRACE_TYPE_IF))
         {
-          path[j].ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
+          path[k].ingress_if = clib_net_to_host_u16(*((u16 *) ptr));
           ptr += 2;
-          path[j].egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
+          path[k].egress_if  = clib_net_to_host_u16(*((u16 *) ptr));
         }
     }
 
@@ -289,13 +294,14 @@ ip6_ioam_analyse_hbh_trace (ioam_analyser_data_t *data,
   if (trace->ioam_trace_type & BIT_TIMESTAMP)
     {
       /* Calculate time delay */
-      i32 delay = ip6_ioam_analyse_calc_delay(trace);
+      u32 delay = (u32) ip6_ioam_analyse_calc_delay(trace);
       if (delay < trace_record->min_delay)
         trace_record->min_delay = delay;
       else if (delay > trace_record->max_delay)
         trace_record->max_delay = delay;
 
-      trace_record->mean_delay = (trace_record->mean_delay + delay) / 2;
+      u64 sum = (trace_record->mean_delay * data->seqno_data.rx_packets);
+      trace_record->mean_delay = (u32) ((sum + delay) / (data->seqno_data.rx_packets + 1));
     }
   return 0;
 }
@@ -335,8 +341,9 @@ print_analyse_flow (u8 *s, ioam_analyser_data_t *record)
   int j;
   ioam_analyse_trace_record *trace_record;
 
-  s = format(s, "pkt_counter : %lu\n", record->pkt_counter);
-  s = format(s, "bytes_counter : %lu\n", record->bytes_counter);
+  s = format(s, "pkt_sent : %u\n", record->pkt_sent);
+  s = format(s, "pkt_counter : %u\n", record->pkt_counter);
+  s = format(s, "bytes_counter : %u\n", record->bytes_counter);
 
   s = format(s, "Trace data: \n");
 
@@ -349,18 +356,18 @@ print_analyse_flow (u8 *s, ioam_analyser_data_t *record)
       s = format(s, "path_map:\n%U", format_path_map,
                  trace_record->path,
                  trace_record->num_nodes);
-      s = format(s, "pkt_counter: %lu\n", trace_record->pkt_counter);
-      s = format(s, "bytes_counter: %lu\n", trace_record->bytes_counter);
+      s = format(s, "pkt_counter: %u\n", trace_record->pkt_counter);
+      s = format(s, "bytes_counter: %u\n", trace_record->bytes_counter);
 
-      s = format(s, "min_delay: %lu\n", trace_record->min_delay);
-      s = format(s, "max_delay: %lu\n", trace_record->max_delay);
-      s = format(s, "mean_delay: %lu\n", trace_record->mean_delay);
+      s = format(s, "min_delay: %u\n", trace_record->min_delay);
+      s = format(s, "max_delay: %u\n", trace_record->max_delay);
+      s = format(s, "mean_delay: %u\n", trace_record->mean_delay);
     }
 
   s = format(s, "\nPOT data: \n");
-  s = format(s, "sfc_validated_count : %lu\n",
+  s = format(s, "sfc_validated_count : %u\n",
              record->pot_data.sfc_validated_count);
-  s = format(s, "sfc_invalidated_count : %lu\n",
+  s = format(s, "sfc_invalidated_count : %u\n",
              record->pot_data.sfc_invalidated_count);
 
   s = format(s, "\nSeqno Data:\n");

@@ -323,11 +323,31 @@ l2sess_show_command_fn(vlib_main_t * vm,
   return 0;
 }
 
+static clib_error_t *
+l2sess_show_count_command_fn(vlib_main_t * vm,
+                                   unformat_input_t * input,
+                                   vlib_cli_command_t * cmd)
+{
+  l2sess_main_t * sm = &l2sess_main;
+
+  vlib_cli_output(vm, "Timing wheel info: \n%U", format_timing_wheel, &sm->timing_wheel, 255);
+  vlib_cli_output(vm, "session pool len: %d, pool elts: %d", pool_len(sm->sessions), pool_elts(sm->sessions));
+  vlib_cli_output(vm, "attempted to delete sessions which were already free: %d", sm->counter_attempted_delete_free_session);
+  return 0;
+}
+
+
 
 VLIB_CLI_COMMAND (l2sess_show_command, static) = {
     .path = "show l2sess",
     .short_help = "show l2sess",
     .function = l2sess_show_command_fn,
+};
+
+VLIB_CLI_COMMAND (l2sess_show_count_command, static) = {
+    .path = "show l2sess count",
+    .short_help = "show l2sess count",
+    .function = l2sess_show_count_command_fn,
 };
 
 /* API message handler */

@@ -133,6 +133,9 @@ foreach_l2sess_node
     vlib_main_t * vlib_main;
     vnet_main_t * vnet_main;
     ethernet_main_t * ethernet_main;
+
+    /* Counter(s) */
+    u64 counter_attempted_delete_free_session;
 } l2sess_main_t;
 
 l2sess_main_t l2sess_main;

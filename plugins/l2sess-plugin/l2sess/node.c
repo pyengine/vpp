@@ -274,7 +274,7 @@ delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_index)
   u32 session_tables[2] = { ~0, ~0 };
   l2s_session_t *sess = sm->sessions + session_index;
   if (pool_is_free(sm->sessions, sess)) {
-    clib_warning("Attempt to delete a free session %lu", session_index);
+    sm->counter_attempted_delete_free_session++;
     return;
   }
   l2sess_get_session_tables(sm, sw_if_index, 0, sess->is_ip6, sess->l4_proto, session_tables);

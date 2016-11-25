@@ -422,6 +422,9 @@ void udp_ping_analyse_hbh (vlib_buffer_t *b0,
   u16 flow_index;
   ioam_analyser_data_t *data;
 
+  if (pool_is_free_index(udp_ping_main.ip46_flow, flow_id))
+    return;
+
   ip46_flow = udp_ping_main.ip46_flow + flow_id;
   flow_index = (src_port - ip46_flow->udp_data.start_src_port) *
     (ip46_flow->udp_data.end_dst_port - ip46_flow->udp_data.start_dst_port + 1);

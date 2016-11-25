@@ -272,41 +272,6 @@ acl_del_list(u32 acl_list_index)
   return 0;
 }
 
-int acl_interface_early_in_enable_disable (acl_main_t * am, u32 sw_if_index,
-                                   int enable_disable)
-{
- /*
-  * This function hooks the inbound ACL into the ethernet processing,
-  * effectively making it the very first feature which sees all packets.
-  * This is just for the testing - we will want to hook it from the classifier.
-  */
-
-  vnet_sw_interface_t * sw;
-  int rv;
-  u32 node_index = enable_disable ? acl_in_node.index : ~0;
-
-  /* Utterly wrong? */
-  if (pool_is_free_index (am->vnet_main->interface_main.sw_interfaces,
-                          sw_if_index))
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-
-  /* Not a physical port? */
-  sw = vnet_get_sw_interface (am->vnet_main, sw_if_index);
-  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-
-  /*
-   * Redirect pkts from the driver to the ACL node.
-   * Returns VNET_API_ERROR_UNIMPLEMENTED if the h/w driver
-   * doesn't implement the API.
-   *
-   * Node_index = ~0 => shut off redirection
-   */
-  rv = vnet_hw_interface_rx_redirect_to_node (am->vnet_main, sw_if_index,
-                                              node_index);
-  return rv;
-}
-
 int
 acl_unhook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
 {

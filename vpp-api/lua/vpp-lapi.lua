@@ -273,13 +273,12 @@ end
 function vpp.init(vpp, args)
   local pneum_api = args.pneum_api or [[
  int cough_pneum_attach(char *pneum_path, char *cough_path);
- int pneum_connect(char *name, char *chroot_prefix);
- int pneum_connect_sync(char *name, char *chroot_prefix);
+ int pneum_connect(char *name, char *chroot_prefix, void *cb);
  int pneum_disconnect(void);
  int pneum_read(char **data, int *l);
  int pneum_write(char *data, int len);
 
-void pneum_data_free(char *data);
+void pneum_free(char *data);
 ]]
 
   vpp.pneum_path = args.pneum_path
@@ -544,7 +543,7 @@ function vpp.connect(vpp, client_name)
     if client_name then
       name = client_name
     end
-    local ret = vpp.pneum.pneum_connect_sync(vpp.c_str(client_name), nil)
+    local ret = vpp.pneum.pneum_connect(vpp.c_str(client_name), nil, nil)
     if tonumber(ret) == 0 then
       vpp.is_connected = true
     end
@@ -712,7 +711,7 @@ function vpp.api_read(vpp)
       out["luaapi_message_name"] = reply_msg_name
     end
 
-    vpp.pneum.pneum_data_free(ffi.cast('void *',rep[0]))
+    vpp.pneum.pneum_free(ffi.cast('void *',rep[0]))
 
     return reply_msg_name, out
   end

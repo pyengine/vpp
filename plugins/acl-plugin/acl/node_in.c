@@ -42,7 +42,7 @@ static u8 * format_acl_in_trace (u8 * s, va_list * args)
 vlib_node_registration_t acl_in_node;
 
 #define foreach_acl_in_error \
-_(SWAPPED, "Mac swap packets processed")
+_(ACL_CHECK, "InACL check packets processed")
 
 typedef enum {
 #define _(sym,str) ACL_IN_ERROR_##sym,
@@ -64,7 +64,7 @@ acl_in_node_fn (vlib_main_t * vm,
 {
   u32 n_left_from, * from, * to_next;
   acl_in_next_t next_index;
-  u32 pkts_swapped = 0;
+  u32 pkts_acl_checked = 0;
   u32 feature_bitmap0;
   u32 trace_bitmap = 0;
   u32 *input_feat_next_node_index = acl_main.acl_in_node_input_next_node_index;
@@ -127,7 +127,7 @@ acl_in_node_fn (vlib_main_t * vm,
 
           next0 = next0 < node->n_next_nodes ? next0 : 0;
 
-          pkts_swapped += 1;
+          pkts_acl_checked += 1;
 
           /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
@@ -139,7 +139,7 @@ acl_in_node_fn (vlib_main_t * vm,
     }
 
   vlib_node_increment_counter (vm, acl_in_node.index,
-                               ACL_IN_ERROR_SWAPPED, pkts_swapped);
+                               ACL_IN_ERROR_ACL_CHECK, pkts_acl_checked);
   return frame->n_vectors;
 }
 

@@ -42,7 +42,7 @@ static u8 * format_acl_out_trace (u8 * s, va_list * args)
 vlib_node_registration_t acl_out_node;
 
 #define foreach_acl_out_error \
-_(SWAPPED, "Mac swap packets processed")
+_(ACL_CHECK, "OutACL check packets processed")
 
 typedef enum {
 #define _(sym,str) ACL_OUT_ERROR_##sym,
@@ -66,7 +66,7 @@ acl_out_node_fn (vlib_main_t * vm,
   l2_output_next_nodes_st *next_nodes = &am->acl_out_output_next_nodes;
   u32 n_left_from, * from, * to_next;
   acl_out_next_t next_index;
-  u32 pkts_swapped = 0;
+  u32 pkts_acl_checked = 0;
   u32 feature_bitmap0;
   u32 cached_sw_if_index = (u32) ~ 0;
   u32 cached_next_index = (u32) ~ 0;
@@ -135,7 +135,7 @@ acl_out_node_fn (vlib_main_t * vm,
             t->trace_bitmap = trace_bitmap;
             }
 
-          pkts_swapped += 1;
+          pkts_acl_checked += 1;
 
           /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
@@ -147,7 +147,7 @@ acl_out_node_fn (vlib_main_t * vm,
     }
 
   vlib_node_increment_counter (vm, acl_out_node.index,
-                               ACL_OUT_ERROR_SWAPPED, pkts_swapped);
+                               ACL_OUT_ERROR_ACL_CHECK, pkts_acl_checked);
   return frame->n_vectors;
 }
 

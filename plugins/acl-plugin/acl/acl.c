@@ -398,8 +398,8 @@ static int
 acl_hook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
 {
   vnet_classify_main_t *cm = &vnet_classify_main;
-  u32 ip4_table_index;
-  u32 ip6_table_index;
+  u32 ip4_table_index = ~0;
+  u32 ip6_table_index = ~0;
   int rv;
 
   /* in case there were previous tables attached */
@@ -427,8 +427,8 @@ static int
 acl_hook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
 {
   vnet_classify_main_t *cm = &vnet_classify_main;
-  u32 ip4_table_index;
-  u32 ip6_table_index;
+  u32 ip4_table_index = ~0;
+  u32 ip6_table_index = ~0;
   int rv;
 
   /* in case there were previous tables attached */

@@ -873,6 +873,25 @@ macip_create_classify_tables(acl_main_t *am, u32 macip_acl_index)
   return 0;
 }
 
+static void
+macip_destroy_classify_tables(acl_main_t *am, u32 macip_acl_index)
+{
+  vnet_classify_main_t *cm = &vnet_classify_main;
+  macip_acl_list_t  *a = &am->macip_acls[macip_acl_index];
+
+  if(a->ip4_table_index != ~0) {
+     acl_classify_add_del_table(cm, 0, ~0, ~0, ~0, &a->ip4_table_index, 0);
+     a->ip4_table_index = ~0;
+  }
+  if(a->ip6_table_index != ~0) {
+     acl_classify_add_del_table(cm, 0, ~0, ~0, ~0, &a->ip6_table_index, 0);
+     a->ip6_table_index = ~0;
+  }
+  if(a->l2_table_index != ~0) {
+     acl_classify_add_del_table(cm, 0, ~0, ~0, ~0, &a->l2_table_index, 0);
+     a->l2_table_index = ~0;
+  }
+}
 
 static int
 macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
@@ -963,6 +982,9 @@ macip_acl_del_list(u32 acl_list_index)
       macip_acl_interface_del_acl(am, i);
     }
   }
+
+  /* Now that classifier tables are detached, clean them up */
+  macip_destroy_classify_tables(am, acl_list_index);
 
   /* now we can delete the ACL itself */
   a = &am->macip_acls[acl_list_index];

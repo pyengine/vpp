@@ -97,7 +97,6 @@ static inline u32
 check_adj_port_range_x1 (const protocol_port_range_dpo_t * ppr_dpo,
 			 u16 dst_port, u32 next)
 {
-  const protocol_port_range_t *range;
   u16x8vec_t key;
   u16x8vec_t diff1;
   u16x8vec_t diff2;
@@ -140,7 +139,6 @@ check_adj_port_range_x1 (const protocol_port_range_dpo_t * ppr_dpo,
       winner_mask = sum_nonzero & sum_equal;
       if (winner_mask)
 	return next;
-      range++;
     }
   return IP4_SOURCE_AND_PORT_RANGE_CHECK_NEXT_DROP;
 }
@@ -157,10 +155,6 @@ ip4_source_and_port_range_check_inline (vlib_main_t * vm,
 					vlib_frame_t * frame, int is_tx)
 {
   ip4_main_t *im = &ip4_main;
-  ip_lookup_main_t *lm = &im->lookup_main;
-  ip_config_main_t *rx_cm =
-    &lm->feature_config_mains[VNET_IP_RX_UNICAST_FEAT];
-  ip_config_main_t *tx_cm = &lm->feature_config_mains[VNET_IP_TX_FEAT];
   u32 n_left_from, *from, *to_next;
   u32 next_index;
   vlib_node_runtime_t *error_node = node;
@@ -435,6 +429,7 @@ ip4_source_and_port_range_check_inline (vlib_main_t * vm,
 	  udp_header_t *udp0;
 	  const protocol_port_range_dpo_t *ppr_dpo0 = NULL;
 	  const dpo_id_t *dpo;
+	  u32 sw_if_index0;
 
 	  bi0 = from[0];
 	  to_next[0] = bi0;
@@ -444,28 +439,17 @@ ip4_source_and_port_range_check_inline (vlib_main_t * vm,
 	  n_left_to_next -= 1;
 
 	  b0 = vlib_get_buffer (vm, bi0);
+	  sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 
-	  fib_index0 =
-	    vec_elt (im->fib_index_by_sw_if_index,
-		     vnet_buffer (b0)->sw_if_index[VLIB_RX]);
+	  fib_index0 = vec_elt (im->fib_index_by_sw_if_index, sw_if_index0);
 
 	  if (is_tx)
 	    vlib_buffer_advance (b0, sizeof (ethernet_header_t));
 
 	  ip0 = vlib_buffer_get_current (b0);
 
-	  if (is_tx)
-	    {
-	      c0 = vnet_get_config_data
-		(&tx_cm->config_main, &b0->current_config_index,
-		 &next0, sizeof (c0[0]));
-	    }
-	  else
-	    {
-	      c0 = vnet_get_config_data
-		(&rx_cm->config_main, &b0->current_config_index,
-		 &next0, sizeof (c0[0]));
-	    }
+	  c0 = vnet_feature_next_with_data (sw_if_index0, &next0,
+					    b0, sizeof (c0[0]));
 
 	  /* we can't use the default VRF here... */
 	  for (i = 0; i < IP_SOURCE_AND_PORT_RANGE_CHECK_N_PROTOCOLS; i++)
@@ -571,7 +555,6 @@ ip4_source_and_port_range_check_inline (vlib_main_t * vm,
 				 IP4_SOURCE_AND_PORT_RANGE_CHECK_ERROR_CHECK_OK,
 				 good_packets);
   return frame->n_vectors;
-  return 0;
 }
 
 static uword
@@ -640,14 +623,7 @@ set_ip_source_and_port_range_check (vlib_main_t * vm,
 				    u32 * fib_index,
 				    u32 sw_if_index, u32 is_add)
 {
-  ip4_main_t *im = &ip4_main;
-  ip_lookup_main_t *lm = &im->lookup_main;
-  ip_config_main_t *rx_cm =
-    &lm->feature_config_mains[VNET_IP_RX_UNICAST_FEAT];
-  ip_config_main_t *tx_cm = &lm->feature_config_mains[VNET_IP_TX_FEAT];
-  u32 ci;
   ip_source_and_port_range_check_config_t config;
-  u32 feature_index;
   int rv = 0;
   int i;
 
@@ -660,36 +636,20 @@ set_ip_source_and_port_range_check (vlib_main_t * vm,
   if ((fib_index[IP_SOURCE_AND_PORT_RANGE_CHECK_PROTOCOL_TCP_OUT] != ~0) ||
       (fib_index[IP_SOURCE_AND_PORT_RANGE_CHECK_PROTOCOL_UDP_OUT] != ~0))
     {
-      feature_index = im->ip4_unicast_rx_feature_source_and_port_range_check;
-
-      vec_validate (rx_cm->config_index_by_sw_if_index, sw_if_index);
-
-      ci = rx_cm->config_index_by_sw_if_index[sw_if_index];
-      ci = (is_add
-	    ? vnet_config_add_feature
-	    : vnet_config_del_feature)
-	(vm, &rx_cm->config_main, ci, feature_index, &config,
-	 sizeof (config));
-      rx_cm->config_index_by_sw_if_index[sw_if_index] = ci;
+      vnet_feature_enable_disable ("ip4-unicast",
+				   "ip4-source-and-port-range-check-rx",
+				   sw_if_index, is_add, &config,
+				   sizeof (config));
     }
 
   /* For IN we are in the TX path */
   if ((fib_index[IP_SOURCE_AND_PORT_RANGE_CHECK_PROTOCOL_TCP_IN] != ~0) ||
       (fib_index[IP_SOURCE_AND_PORT_RANGE_CHECK_PROTOCOL_UDP_IN] != ~0))
     {
-      feature_index = im->ip4_unicast_tx_feature_source_and_port_range_check;
-
-      vec_validate (tx_cm->config_index_by_sw_if_index, sw_if_index);
-
-      ci = tx_cm->config_index_by_sw_if_index[sw_if_index];
-      ci = (is_add
-	    ? vnet_config_add_feature
-	    : vnet_config_del_feature)
-	(vm, &tx_cm->config_main, ci, feature_index, &config,
-	 sizeof (config));
-      tx_cm->config_index_by_sw_if_index[sw_if_index] = ci;
-
-      vnet_config_update_tx_feature_count (lm, tx_cm, sw_if_index, is_add);
+      vnet_feature_enable_disable ("ip4-output",
+				   "ip4-source-and-port-range-check-tx",
+				   sw_if_index, is_add, &config,
+				   sizeof (config));
     }
   return rv;
 }
@@ -957,7 +917,7 @@ add_port_range_adjacency (u32 fib_index,
 			  u32 length, u16 * low_ports, u16 * high_ports)
 {
   protocol_port_range_dpo_t *ppr_dpo;
-  dpo_id_t dpop = DPO_NULL;
+  dpo_id_t dpop = DPO_INVALID;
   int i, j, k;
 
   fib_node_index_t fei;
@@ -987,7 +947,7 @@ add_port_range_adjacency (u32 fib_index,
        * the prefix is already there.
        * check it was sourced by us, and if so get the ragne DPO from it.
        */
-      dpo_id_t dpo = DPO_NULL;
+      dpo_id_t dpo = DPO_INVALID;
       const dpo_id_t *bucket;
 
       if (fib_entry_get_dpo_for_source (fei, FIB_SOURCE_SPECIAL, &dpo))
@@ -1047,9 +1007,9 @@ add_port_range_adjacency (u32 fib_index,
     }
   else
     {
-      fib_table_entry_special_dpo_update (fei,
-					  FIB_SOURCE_SPECIAL,
-					  FIB_ENTRY_FLAG_NONE, &dpop);
+      fib_entry_special_update (fei,
+				FIB_SOURCE_SPECIAL,
+				FIB_ENTRY_FLAG_NONE, &dpop);
     }
 
   return 0;
@@ -1090,7 +1050,7 @@ remove_port_range_adjacency (u32 fib_index,
        * the prefix is already there.
        * check it was sourced by us
        */
-      dpo_id_t dpo = DPO_NULL;
+      dpo_id_t dpo = DPO_INVALID;
       const dpo_id_t *bucket;
 
       if (fib_entry_get_dpo_for_source (fei, FIB_SOURCE_SPECIAL, &dpo))
@@ -1363,7 +1323,7 @@ show_source_and_port_range_check_fn (vlib_main_t * vm,
    * find the longest prefix match on the address requested,
    * check it was sourced by us
    */
-  dpo_id_t dpo = DPO_NULL;
+  dpo_id_t dpo = DPO_INVALID;
   const dpo_id_t *bucket;
 
   if (!fib_entry_get_dpo_for_source (fib_table_lookup (fib_index, &pfx),

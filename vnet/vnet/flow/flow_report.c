@@ -78,6 +78,7 @@ int send_template_packet (flow_report_main_t *frm,
   udp_header_t * udp;
   vlib_main_t * vm = frm->vlib_main;
   flow_report_stream_t * stream;
+  vlib_buffer_free_list_t *fl;
 
   ASSERT (buffer_indexp);
 
@@ -109,12 +110,17 @@ int send_template_packet (flow_report_main_t *frm,
   
   b0 = vlib_get_buffer (vm, bi0);
 
+  /* Initialize the buffer */
+  fl = vlib_buffer_get_free_list (vm, VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX);
+  vlib_buffer_init_for_free_list (b0, fl);
+  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b0);
+
   ASSERT (vec_len (fr->rewrite) < VLIB_BUFFER_DEFAULT_FREE_LIST_BYTES);
     
   clib_memcpy (b0->data, fr->rewrite, vec_len (fr->rewrite));
   b0->current_data = 0;
   b0->current_length = vec_len (fr->rewrite);
-  b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+  b0->flags |= (VLIB_BUFFER_TOTAL_LENGTH_VALID | VLIB_BUFFER_FLOW_REPORT);
   vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
   vnet_buffer (b0)->sw_if_index[VLIB_TX] = frm->fib_index;
 

@@ -43,7 +43,7 @@ static BVT(clib_bihash) **adj_nbr_tables[FIB_PROTOCOL_MAX];
 
 static void
 adj_nbr_insert (fib_protocol_t nh_proto,
-		fib_link_t link_type,
+		vnet_link_t link_type,
 		const ip46_address_t *nh_addr,
 		u32 sw_if_index,
 		adj_index_t adj_index)
@@ -76,8 +76,9 @@ adj_nbr_insert (fib_protocol_t nh_proto,
 }
 
 void
-adj_nbr_remove (fib_protocol_t nh_proto,
-		fib_link_t link_type,
+adj_nbr_remove (adj_index_t ai,
+                fib_protocol_t nh_proto,
+		vnet_link_t link_type,
 		const ip46_address_t *nh_addr,
 		u32 sw_if_index)
 {
@@ -87,13 +88,14 @@ adj_nbr_remove (fib_protocol_t nh_proto,
 	return;
 
     ADJ_NBR_SET_KEY(kv, link_type, nh_addr);
+    kv.value = ai;
 
     BV(clib_bihash_add_del) (adj_nbr_tables[nh_proto][sw_if_index], &kv, 0);
 }
 
 static adj_index_t
 adj_nbr_find (fib_protocol_t nh_proto,
-	      fib_link_t link_type,
+	      vnet_link_t link_type,
 	      const ip46_address_t *nh_addr,
 	      u32 sw_if_index)
 {
@@ -132,7 +134,7 @@ adj_get_nd_node (fib_protocol_t proto)
 
 static ip_adjacency_t*
 adj_nbr_alloc (fib_protocol_t nh_proto,
-	       fib_link_t link_type,
+	       vnet_link_t link_type,
 	       const ip46_address_t *nh_addr,
 	       u32 sw_if_index)
 {
@@ -171,7 +173,7 @@ adj_nbr_alloc (fib_protocol_t nh_proto,
  */
 adj_index_t
 adj_nbr_add_or_lock (fib_protocol_t nh_proto,
-		     fib_link_t link_type,
+		     vnet_link_t link_type,
 		     const ip46_address_t *nh_addr,
 		     u32 sw_if_index)
 {
@@ -211,7 +213,7 @@ adj_nbr_add_or_lock (fib_protocol_t nh_proto,
 
 adj_index_t
 adj_nbr_add_or_lock_w_rewrite (fib_protocol_t nh_proto,
-			       fib_link_t link_type,
+			       vnet_link_t link_type,
 			       const ip46_address_t *nh_addr,
 			       u32 sw_if_index,
 			       u8 *rewrite)
@@ -252,12 +254,10 @@ adj_nbr_update_rewrite (adj_index_t adj_index,
 			u8 *rewrite)
 {
     ip_adjacency_t *adj;
-    u32 old_next;
 
     ASSERT(ADJ_INDEX_INVALID != adj_index);
 
     adj = adj_get(adj_index);
-    old_next = adj->lookup_next_index;
 
     if (flags & ADJ_NBR_REWRITE_FLAG_COMPLETE)
     {
@@ -281,34 +281,6 @@ adj_nbr_update_rewrite (adj_index_t adj_index,
 					    adj->rewrite_header.sw_if_index),
 					rewrite);
     }
-
-    if (old_next != adj->lookup_next_index)
-    {
-	/*
-	 * time for walkies fido.
-	 * The link type MPLS Adj never has children. So if it is this adj
-	 * that is updated, we need to walk from its IP sibling.
-	 */
-	if (FIB_LINK_MPLS == adj->ia_link)
-	{
-	    adj_index = adj_nbr_find(adj->ia_nh_proto,
-				     fib_proto_to_link(adj->ia_nh_proto),
-				     &adj->sub_type.nbr.next_hop,
-				     adj->rewrite_header.sw_if_index);
-
-	    ASSERT(ADJ_INDEX_INVALID != adj_index);
-	}
-
-	fib_node_back_walk_ctx_t bw_ctx = {
-	    .fnbw_reason = FIB_NODE_BW_REASON_FLAG_ADJ_UPDATE,
-	    /*
-	     * This walk only needs to go back one level, but there is no control
-	     * here. the first receiving fib_entry_t will quash the walk
-	     */
-	};
-
-	fib_walk_sync(FIB_NODE_TYPE_ADJ, adj_index, &bw_ctx);
-    }
 }
 
 /**
@@ -325,13 +297,32 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
 				 u32 next_node,
 				 u8 *rewrite)
 {
-    vlib_main_t * vm = vlib_get_main();
+    adj_index_t walk_ai;
+    vlib_main_t * vm;
+    u32 old_next;
+
+    vm = vlib_get_main();
+    old_next = adj->lookup_next_index;
+
+    walk_ai = adj_get_index(adj);
+    if (VNET_LINK_MPLS == adj->ia_link)
+    {
+        /*
+         * The link type MPLS has no children in the control plane graph, it only
+         * has children in the data-palne graph. The backwalk is up the former.
+         * So we need to walk from its IP cousin.
+         */
+        walk_ai = adj_nbr_find(adj->ia_nh_proto,
+                               fib_proto_to_link(adj->ia_nh_proto),
+                               &adj->sub_type.nbr.next_hop,
+                               adj->rewrite_header.sw_if_index);
+    }
 
     /*
      * Updating a rewrite string is not atomic;
      *  - the rewrite string is too long to write in one instruction
      *  - when swapping from incomplete to complete, we also need to update
-     *    the VLIB graph next-index.
+     *    the VLIB graph next-index of the adj.
      * ideally we would only want to suspend forwarding via this adj whilst we
      * do this, but we do not have that level of granularity - it's suspend all
      * worker threads or nothing.
@@ -340,9 +331,50 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
      *    from the set.
      *  - update the next_node index of this adj to point to error-drop
      * both of which will mean for MAC change we will drop for this adj
-     * which is not acceptable.
-     * So the pause all threads is preferable. We don't update MAC addresses often
-     * so it's no big deal.
+     * which is not acceptable. However, when the adj changes type (from
+     * complete to incomplete and vice-versa) the child DPOs, which have the
+     * VLIB graph next node index, will be sending packets to the wrong graph
+     * node. So from the options above, updating the next_node of the adj to
+     * be drop will work, but it relies on each graph node v4/v6/mpls, rewrite/
+     * arp/midchain always be valid w.r.t. a mis-match of adj type and node type
+     * (i.e. a rewrite adj in the arp node). This is not enforcable. Getting it
+     * wrong will lead to hard to find bugs since its a race condition. So we
+     * choose the more reliable method of updating the children to use the drop,
+     * then switching adj's type, then updating the children again. Did I mention
+     * that this doesn't happen often...
+     * So we need to distinguish between the two cases:
+     *  1 - mac change
+     *  2 - adj type change
+     */
+    if (old_next != adj_next_index &&
+        ADJ_INDEX_INVALID != walk_ai)
+    {
+        /*
+         * the adj is changing type. we need to fix all children so that they
+         * stack momentarily on a drop, while the adj changes. If we don't do
+         * this  the children will send packets to a VLIB graph node that does
+         * not correspond to the adj's type - and it goes downhill from there.
+         */
+	fib_node_back_walk_ctx_t bw_ctx = {
+	    .fnbw_reason = FIB_NODE_BW_REASON_FLAG_ADJ_DOWN,
+            /*
+             * force this walk to be synchrous. if we don't and a node in the graph
+             * (a heavily shared path-list) chooses to back-ground the walk (make it
+             * async) then it will pause and we will do the adj update below, before
+             * all the children are updated. not good.
+             */
+            .fnbw_flags = FIB_NODE_BW_FLAG_FORCE_SYNC,
+	};
+
+	fib_walk_sync(FIB_NODE_TYPE_ADJ, walk_ai, &bw_ctx);
+    }
+
+    /*
+     * If we are just updating the MAC string of the adj (which we also can't
+     * do atomically), then we need to stop packets switching through the adj.
+     * We can't do that on a per-adj basis, so it's all the packets.
+     * If we are updating the type, and we walked back to the children above,
+     * then this barrier serves to flush the queues/frames.
      */
     vlib_worker_thread_barrier_sync(vm);
 
@@ -358,12 +390,6 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
 				       sizeof(adj->rewrite_data),
 				       rewrite,
 				       vec_len(rewrite));
-
-	adj->rewrite_header.node_index = this_node;
-	adj->rewrite_header.next_index = vlib_node_add_next (vlib_get_main(),
-							     this_node,
-							     next_node);
-
 	vec_free(rewrite);
     }
     else
@@ -371,11 +397,29 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
 	vnet_rewrite_clear_data_internal(&adj->rewrite_header,
 					 sizeof(adj->rewrite_data));
     }
+    adj->rewrite_header.node_index = this_node;
+    adj->rewrite_header.next_index = vlib_node_add_next(vlib_get_main(),
+                                                        this_node,
+                                                        next_node);
 
     /*
      * done with the rewirte update - let the workers loose.
      */
     vlib_worker_thread_barrier_release(vm);
+
+    if (old_next != adj->lookup_next_index &&
+        ADJ_INDEX_INVALID != walk_ai)
+    {
+        /*
+         * backwalk to the children so they can stack on the now updated
+         * adjacency
+         */
+        fib_node_back_walk_ctx_t bw_ctx = {
+	    .fnbw_reason = FIB_NODE_BW_REASON_FLAG_ADJ_UPDATE,
+	};
+
+	fib_walk_sync(FIB_NODE_TYPE_ADJ, walk_ai, &bw_ctx);
+    }
 }
 
 typedef struct adj_db_count_ctx_t_ {
@@ -562,30 +606,47 @@ adj_nbr_walk_nh (u32 sw_if_index,
 }
 
 /**
+ * Flags associated with the interface state walks
+ */
+typedef enum adj_nbr_interface_flags_t_
+{
+    ADJ_NBR_INTERFACE_UP = (1 << 0),
+} adj_nbr_interface_flags_t;
+
+/**
  * Context for the state change walk of the DB
  */
 typedef struct adj_nbr_interface_state_change_ctx_t_
 {
     /**
-     * Flags passed from the vnet notifiy function
+     * Flags on the interface
      */
-    int flags;
+    adj_nbr_interface_flags_t flags;
 } adj_nbr_interface_state_change_ctx_t;
 
 static adj_walk_rc_t
 adj_nbr_interface_state_change_one (adj_index_t ai,
-				    void *arg)
+                                    void *arg)
 {
     /*
      * Back walk the graph to inform the forwarding entries
-     * that this interface state has changed.
+     * that this interface state has changed. Do this synchronously
+     * since this is the walk that provides convergence
      */
     adj_nbr_interface_state_change_ctx_t *ctx = arg;
 
     fib_node_back_walk_ctx_t bw_ctx = {
-	.fnbw_reason = (ctx->flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP ?
-			FIB_NODE_BW_REASON_FLAG_INTERFACE_UP :
-			FIB_NODE_BW_REASON_FLAG_INTERFACE_DOWN),
+	.fnbw_reason = ((ctx->flags & ADJ_NBR_INTERFACE_UP) ?
+                        FIB_NODE_BW_REASON_FLAG_INTERFACE_UP :
+                        FIB_NODE_BW_REASON_FLAG_INTERFACE_DOWN),
+        /*
+         * the force sync applies only as far as the first fib_entry.
+         * And it's the fib_entry's we need to converge away from
+         * the adjacencies on the now down link
+         */
+        .fnbw_flags = (!(ctx->flags & ADJ_NBR_INTERFACE_UP) ?
+                       FIB_NODE_BW_FLAG_FORCE_SYNC :
+                       0),
     };
 
     fib_walk_sync(FIB_NODE_TYPE_ADJ, ai, &bw_ctx);
@@ -593,10 +654,13 @@ adj_nbr_interface_state_change_one (adj_index_t ai,
     return (ADJ_WALK_RC_CONTINUE);
 }
 
+/**
+ * @brief Registered function for SW interface state changes
+ */
 static clib_error_t *
-adj_nbr_interface_state_change (vnet_main_t * vnm,
-				u32 sw_if_index,
-				u32 flags)
+adj_nbr_sw_interface_state_change (vnet_main_t * vnm,
+                                   u32 sw_if_index,
+                                   u32 flags)
 {
     fib_protocol_t proto;
 
@@ -606,7 +670,9 @@ adj_nbr_interface_state_change (vnet_main_t * vnm,
     for (proto = FIB_PROTOCOL_IP4; proto <= FIB_PROTOCOL_IP6; proto++)
     {
 	adj_nbr_interface_state_change_ctx_t ctx = {
-	    .flags = flags,
+	    .flags = ((flags & VNET_SW_INTERFACE_FLAG_ADMIN_UP) ?
+                      ADJ_NBR_INTERFACE_UP :
+                      0),
 	};
 
 	adj_nbr_walk(sw_if_index, proto,
@@ -617,7 +683,60 @@ adj_nbr_interface_state_change (vnet_main_t * vnm,
     return (NULL);
 }
 
-VNET_SW_INTERFACE_ADMIN_UP_DOWN_FUNCTION(adj_nbr_interface_state_change);
+VNET_SW_INTERFACE_ADMIN_UP_DOWN_FUNCTION_PRIO(
+    adj_nbr_sw_interface_state_change,
+    VNET_ITF_FUNC_PRIORITY_HIGH);
+
+/**
+ * @brief Invoked on each SW interface of a HW interface when the
+ * HW interface state changes
+ */
+static void
+adj_nbr_hw_sw_interface_state_change (vnet_main_t * vnm,
+                                      u32 sw_if_index,
+                                      void *arg)
+{
+    adj_nbr_interface_state_change_ctx_t *ctx = arg;
+    fib_protocol_t proto;
+
+    /*
+     * walk each adj on the interface and trigger a walk from that adj
+     */
+    for (proto = FIB_PROTOCOL_IP4; proto <= FIB_PROTOCOL_IP6; proto++)
+    {
+	adj_nbr_walk(sw_if_index, proto,
+		     adj_nbr_interface_state_change_one,
+		     ctx);
+    }
+}
+
+/**
+ * @brief Registered callback for HW interface state changes
+ */
+static clib_error_t *
+adj_nbr_hw_interface_state_change (vnet_main_t * vnm,
+                                   u32 hw_if_index,
+                                   u32 flags)
+{
+    /*
+     * walk SW interface on the HW
+     */
+    adj_nbr_interface_state_change_ctx_t ctx = {
+        .flags = ((flags & VNET_HW_INTERFACE_FLAG_LINK_UP) ?
+                  ADJ_NBR_INTERFACE_UP :
+                  0),
+    };
+
+    vnet_hw_interface_walk_sw(vnm, hw_if_index,
+                              adj_nbr_hw_sw_interface_state_change,
+                              &ctx);
+
+    return (NULL);
+}
+
+VNET_HW_INTERFACE_LINK_UP_DOWN_FUNCTION_PRIO(
+    adj_nbr_hw_interface_state_change,
+    VNET_ITF_FUNC_PRIORITY_HIGH);
 
 static adj_walk_rc_t
 adj_nbr_interface_delete_one (adj_index_t ai,
@@ -787,7 +906,7 @@ format_adj_nbr_incomplete (u8* s, va_list *ap)
     vnet_main_t * vnm = vnet_get_main();
     ip_adjacency_t * adj = adj_get(index);
 
-    s = format (s, "arp-%U", format_fib_link, adj->ia_link);
+    s = format (s, "arp-%U", format_vnet_link, adj->ia_link);
     s = format (s, ": via %U",
                 format_ip46_address, &adj->sub_type.nbr.next_hop,
 		adj_proto_to_46(adj->ia_nh_proto));
@@ -808,7 +927,7 @@ format_adj_nbr (u8* s, va_list *ap)
     vnet_main_t * vnm = vnet_get_main();
     ip_adjacency_t * adj = adj_get(index);
 
-    s = format (s, "%U", format_fib_link, adj->ia_link);
+    s = format (s, "%U", format_vnet_link, adj->ia_link);
     s = format (s, " via %U ",
 		format_ip46_address, &adj->sub_type.nbr.next_hop,
 		adj_proto_to_46(adj->ia_nh_proto));

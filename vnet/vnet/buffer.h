@@ -61,11 +61,14 @@
 #define ETH_BUFFER_VLAN_BITS (ETH_BUFFER_VLAN_1_DEEP | \
                               ETH_BUFFER_VLAN_2_DEEP)
 
-#define LOG2_BUFFER_OUTPUT_FEAT_DONE LOG2_VLIB_BUFFER_FLAG_USER(5)
-#define BUFFER_OUTPUT_FEAT_DONE (1 << LOG2_BUFFER_OUTPUT_FEAT_DONE)
+#define LOG2_VNET_BUFFER_RTE_MBUF_VALID LOG2_VLIB_BUFFER_FLAG_USER(5)
+#define VNET_BUFFER_RTE_MBUF_VALID (1 << LOG2_VNET_BUFFER_RTE_MBUF_VALID)
 
 #define LOG2_BUFFER_HANDOFF_NEXT_VALID LOG2_VLIB_BUFFER_FLAG_USER(6)
 #define BUFFER_HANDOFF_NEXT_VALID (1 << LOG2_BUFFER_HANDOFF_NEXT_VALID)
+
+#define LOG2_VNET_BUFFER_RTE_MBUF_IS_VALID LOG2_VLIB_BUFFER_FLAG_USER(7)
+#define VNET_BUFFER_RTE_MBUF_IS_VALID (1 << LOG2_VNET_BUFFER_RTE_MBUF_IS_VALID)
 
 #define foreach_buffer_opaque_union_subtype     \
 _(ethernet)                                     \
@@ -78,7 +81,7 @@ _(gre)                                          \
 _(l2_classify)                                  \
 _(handoff)                                      \
 _(policer)                                      \
-_(output_features)				\
+_(ipsec)					\
 _(map)						\
 _(map_t)					\
 _(ip_frag)
@@ -182,8 +185,8 @@ typedef struct
     struct
     {
       u64 pad;
-      u32 opaque_index;
       u32 table_index;
+      u32 opaque_index;
       u64 hash;
     } l2_classify;
 
@@ -203,11 +206,9 @@ typedef struct
     /* interface output features */
     struct
     {
-      u32 ipsec_flags;
-      u32 ipsec_sad_index;
-      u32 unused[3];
-      u32 bitmap;
-    } output_features;
+      u32 flags;
+      u32 sad_index;
+    } ipsec;
 
     /* vcgn udp inside input, only valid there */
     struct
@@ -318,6 +319,13 @@ typedef struct
       /* overlay address family */
       u16 overlay_afi;
     } lisp;
+
+    /* Driver rx feature */
+    struct
+    {
+      u32 saved_next_index;		/**< saved by drivers for short-cut */
+      u16 buffer_advance;
+    } device_input_feat;
 
     u32 unused[6];
   };

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2016 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -46,7 +46,6 @@
 #include <vnet/ip/ip6_packet.h>
 #include <vnet/ip/ip6_hop_by_hop_packet.h>
 #include <vnet/ip/lookup.h>
-#include <vnet/ip/feature_registration.h>
 #include <stdbool.h>
 #include <vppinfra/bihash_24_8.h>
 #include <vppinfra/bihash_template.h>
@@ -160,30 +159,6 @@ typedef struct ip6_main_t {
   u32 lookup_table_nbuckets;
   uword lookup_table_size;
 
-  /* feature path configuration lists */
-  vnet_feature_registration_t * next_feature[VNET_N_IP_FEAT];
-
-  /* Built-in unicast feature path indices, see vnet_feature_arc_init(...)  */
-  u32 ip6_unicast_rx_feature_check_access;
-  u32 ip6_unicast_rx_feature_policer_classify;
-  u32 ip6_unicast_rx_feature_flow_classify;
-  u32 ip6_unicast_rx_feature_ipsec;
-  u32 ip6_unicast_rx_feature_l2tp_decap;
-  u32 ip6_unicast_rx_feature_vpath;
-  u32 ip6_unicast_rx_feature_lookup;
-  u32 ip6_unicast_rx_feature_drop;
-
-  /* Built-in multicast feature path indices */
-  u32 ip6_multicast_rx_feature_drop;
-  u32 ip6_multicast_rx_feature_vpath;
-  u32 ip6_multicast_rx_feature_lookup;
-
-  /* Built-in tx feature path index */
-  u32 ip6_tx_feature_interface_output;
-
-  /* Save results for show command */
-  char ** feature_nodes[VNET_N_IP_FEAT];
-
   /* Seed for Jenkins hash used to compute ip6 flow hash. */
   u32 flow_hash_seed;
 
@@ -200,43 +175,6 @@ typedef struct ip6_main_t {
 
 /* Global ip6 main structure. */
 extern ip6_main_t ip6_main;
-
-#define VNET_IP6_UNICAST_FEATURE_INIT(x,...)                    \
-  __VA_ARGS__ vnet_feature_registration_t uc_##x;            \
-static void __vnet_add_feature_registration_uc_##x (void)       \
-  __attribute__((__constructor__)) ;                            \
-static void __vnet_add_feature_registration_uc_##x (void)       \
-{                                                               \
-  ip6_main_t * im = &ip6_main;                                  \
-  uc_##x.next = im->next_feature[VNET_IP_RX_UNICAST_FEAT];      \
-  im->next_feature[VNET_IP_RX_UNICAST_FEAT] = &uc_##x;          \
-}                                                               \
-__VA_ARGS__ vnet_feature_registration_t uc_##x
-
-#define VNET_IP6_MULTICAST_FEATURE_INIT(x,...)                  \
-  __VA_ARGS__ vnet_feature_registration_t mc_##x;            \
-static void __vnet_add_feature_registration_mc_##x (void)       \
-  __attribute__((__constructor__)) ;                            \
-static void __vnet_add_feature_registration_mc_##x (void)       \
-{                                                               \
-  ip6_main_t * im = &ip6_main;                                  \
-  mc_##x.next = im->next_feature[VNET_IP_RX_MULTICAST_FEAT];    \
-  im->next_feature[VNET_IP_RX_MULTICAST_FEAT] = &mc_##x;        \
-}                                                               \
-__VA_ARGS__ vnet_feature_registration_t mc_##x
-
-#define VNET_IP6_TX_FEATURE_INIT(x,...)                         \
-  __VA_ARGS__ vnet_feature_registration_t tx_##x;            \
-static void __vnet_add_feature_registration_tx_##x (void)       \
-  __attribute__((__constructor__)) ;                            \
-static void __vnet_add_feature_registration_tx_##x (void)       \
-{                                                               \
-  ip6_main_t * im = &ip6_main;                                  \
-  tx_##x.next = im->next_feature[VNET_IP_TX_FEAT];              \
-  im->next_feature[VNET_IP_TX_FEAT] = &tx_##x;                  \
-}                                                               \
-__VA_ARGS__ vnet_feature_registration_t tx_##x
-
 
 /* Global ip6 input node.  Errors get attached to ip6 input node. */
 extern vlib_node_registration_t ip6_input_node;
@@ -521,6 +459,6 @@ int ip6_hbh_unregister_option (u8 option);
 void ip6_hbh_set_next_override (uword next);
 
 /* Flag used by IOAM code. Classifier sets it pop-hop-by-hop checks it */
-#define OI_DECAP   100
+#define OI_DECAP   0x80000000
 
 #endif /* included_ip_ip6_h */

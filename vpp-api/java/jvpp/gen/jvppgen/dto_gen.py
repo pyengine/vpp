@@ -150,7 +150,9 @@ def generate_dto_tostring(camel_case_dto_name, func):
     return tostring_template.substitute(cls_name=camel_case_dto_name,
                                         fields_tostring=tostring_fields[:-8])
 
-
+equals_other_template = Template("""
+        final $cls_name other = ($cls_name) o;
+\n""")
 equals_field_template = Template("""        if (!java.util.Objects.equals(this.$field_name, other.$field_name)) {
             return false;
         }\n""")
@@ -165,9 +167,6 @@ equals_template = Template("""    @Override
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-
-        final $cls_name other = ($cls_name) o;
-
 $comparisons
         return true;
     }\n\n""")
@@ -187,8 +186,10 @@ def generate_dto_equals(camel_case_dto_name, func):
         else:
             equals_fields += equals_field_template.substitute(field_name=field_name)
 
-    return equals_template.substitute(cls_name=camel_case_dto_name,
-                                      comparisons=equals_fields)
+    if equals_fields != "":
+        equals_fields = equals_other_template.substitute(cls_name=camel_case_dto_name) + equals_fields
+
+    return equals_template.substitute(comparisons=equals_fields)
 
 
 hash_template = Template("""    @Override
@@ -279,7 +280,7 @@ def generate_dump_reply_dto(request_dto_name, base_package, plugin_package, dto_
     cls_name = camel_case_dto_name + dump_dto_suffix
     # using artificial type for fields, just to bypass the is_array check in base methods generators
     # the type is not really used
-    artificial_type = 'jstring'
+    artificial_type = 'u8'
 
     # In case of already existing artificial reply dump DTO, just update it
     # Used for sub-dump dtos

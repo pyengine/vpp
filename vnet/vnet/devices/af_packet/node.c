@@ -23,6 +23,8 @@
 #include <vlib/unix/unix.h>
 #include <vnet/ip/ip.h>
 #include <vnet/ethernet/ethernet.h>
+#include <vnet/devices/devices.h>
+#include <vnet/feature/feature.h>
 
 #include <vnet/devices/af_packet/af_packet.h>
 
@@ -40,13 +42,6 @@ static char *af_packet_input_error_strings[] = {
 #define _(n,s) s,
   foreach_af_packet_input_error
 #undef _
-};
-
-enum
-{
-  AF_PACKET_INPUT_NEXT_DROP,
-  AF_PACKET_INPUT_NEXT_ETHERNET_INPUT,
-  AF_PACKET_INPUT_N_NEXT,
 };
 
 typedef struct
@@ -109,17 +104,6 @@ buffer_add_to_chain (vlib_main_t * vm, u32 bi, u32 first_bi, u32 prev_bi)
 
   /* update current buffer */
   b->next_buffer = 0;
-
-#if DPDK > 0
-  struct rte_mbuf *mbuf = rte_mbuf_from_vlib_buffer (b);
-  struct rte_mbuf *first_mbuf = rte_mbuf_from_vlib_buffer (first_b);
-  struct rte_mbuf *prev_mbuf = rte_mbuf_from_vlib_buffer (prev_b);
-  first_mbuf->nb_segs++;
-  prev_mbuf->next = mbuf;
-  mbuf->data_len = b->current_length;
-  mbuf->data_off = RTE_PKTMBUF_HEADROOM + b->current_data;
-  mbuf->next = 0;
-#endif
 }
 
 always_inline uword
@@ -129,7 +113,7 @@ af_packet_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
   af_packet_main_t *apm = &af_packet_main;
   af_packet_if_t *apif = pool_elt_at_index (apm->interfaces, device_idx);
   struct tpacket2_hdr *tph;
-  u32 next_index = AF_PACKET_INPUT_NEXT_ETHERNET_INPUT;
+  u32 next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
   u32 block = 0;
   u32 rx_frame;
   u32 n_free_bufs;
@@ -164,7 +148,7 @@ af_packet_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
   tph = (struct tpacket2_hdr *) (block_start + rx_frame * frame_size);
   while ((tph->tp_status & TP_STATUS_USER) && (n_free_bufs > min_bufs))
     {
-      vlib_buffer_t *b0, *first_b0 = 0;
+      vlib_buffer_t *b0 = 0, *first_b0 = 0;
       u32 next0 = next_index;
 
       u32 n_left_to_next;
@@ -199,11 +183,6 @@ af_packet_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	      if (offset == 0)
 		{
-#if DPDK > 0
-		  struct rte_mbuf *mb = rte_mbuf_from_vlib_buffer (b0);
-		  rte_pktmbuf_data_len (mb) = b0->current_length;
-		  rte_pktmbuf_pkt_len (mb) = b0->current_length;
-#endif
 		  b0->total_length_not_including_first_buffer = 0;
 		  b0->flags = VLIB_BUFFER_TOTAL_LENGTH_VALID;
 		  vnet_buffer (b0)->sw_if_index[VLIB_RX] = apif->sw_if_index;
@@ -236,6 +215,11 @@ af_packet_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      tr->hw_if_index = apif->hw_if_index;
 	      clib_memcpy (&tr->tph, tph, sizeof (struct tpacket2_hdr));
 	    }
+
+	  /* redirect if feature path enabled */
+	  vnet_feature_start_device_input_x1 (apif->sw_if_index, &next0, b0,
+					      0);
+
 	  /* enque and take next packet */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
 					   n_left_to_next, first_bi0, next0);
@@ -283,17 +267,12 @@ af_packet_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 VLIB_REGISTER_NODE (af_packet_input_node) = {
   .function = af_packet_input_fn,
   .name = "af-packet-input",
+  .sibling_of = "device-input",
   .format_trace = format_af_packet_input_trace,
   .type = VLIB_NODE_TYPE_INPUT,
   .state = VLIB_NODE_STATE_INTERRUPT,
   .n_errors = AF_PACKET_INPUT_N_ERROR,
   .error_strings = af_packet_input_error_strings,
-
-  .n_next_nodes = AF_PACKET_INPUT_N_NEXT,
-  .next_nodes = {
-    [AF_PACKET_INPUT_NEXT_DROP] = "error-drop",
-    [AF_PACKET_INPUT_NEXT_ETHERNET_INPUT] = "ethernet-input",
-  },
 };
 
 VLIB_NODE_FUNCTION_MULTIARCH (af_packet_input_node, af_packet_input_fn)

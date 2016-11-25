@@ -42,21 +42,6 @@
 
 #include <vppinfra/types.h>
 
-typedef enum
-{
-  VNET_IP_RX_UNICAST_FEAT,
-  VNET_IP_RX_MULTICAST_FEAT,
-  VNET_IP_TX_FEAT,
-  VNET_N_IP_FEAT,
-} vnet_cast_t;
-
-#define VNET_CAST_NAMES {                       \
-  [VNET_IP_RX_UNICAST_FEAT] = "rx-unicast",     \
-  [VNET_IP_RX_MULTICAST_FEAT] = "rx-multicast", \
-  [VNET_IP_TX_FEAT] = "tx",                     \
-}
-
-
 #include <vnet/unix/pcap.h>
 #include <vnet/buffer.h>
 #include <vnet/config.h>
@@ -74,10 +59,14 @@ typedef struct vnet_main_t
   /* set up by constructors */
   vnet_device_class_t *device_class_registrations;
   vnet_hw_interface_class_t *hw_interface_class_registrations;
-  _vnet_interface_function_list_elt_t *hw_interface_add_del_functions;
-  _vnet_interface_function_list_elt_t *hw_interface_link_up_down_functions;
-  _vnet_interface_function_list_elt_t *sw_interface_add_del_functions;
-  _vnet_interface_function_list_elt_t *sw_interface_admin_up_down_functions;
+    _vnet_interface_function_list_elt_t
+    * hw_interface_add_del_functions[VNET_ITF_FUNC_N_PRIO];
+    _vnet_interface_function_list_elt_t
+    * hw_interface_link_up_down_functions[VNET_ITF_FUNC_N_PRIO];
+    _vnet_interface_function_list_elt_t
+    * sw_interface_add_del_functions[VNET_ITF_FUNC_N_PRIO];
+    _vnet_interface_function_list_elt_t
+    * sw_interface_admin_up_down_functions[VNET_ITF_FUNC_N_PRIO];
 
   /*
    * Last "api" error, preserved so we can issue reasonable diagnostics

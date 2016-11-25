@@ -34,6 +34,7 @@ format_struct = {'u8': 'B',
                  'i32' : 'i',
                  'u64' : 'Q',
                  'f64' : 'd',
+                 'vl_api_fib_path_t' : 'IIBBBBBBBBBBBBBBBBBBBBB',
                  'vl_api_ip4_fib_counter_t' : 'IBQQ',
                  'vl_api_ip6_fib_counter_t' : 'QQBQQ',
                  'vl_api_lisp_adjacency_t' : 'B' * 35,
@@ -47,6 +48,7 @@ type_size = {'u8':   1,
              'i32' : 4,
              'u64' : 8,
              'f64' : 8,
+             'vl_api_fib_path_t' : 29,
              'vl_api_ip4_fib_counter_t' : 21,
              'vl_api_ip6_fib_counter_t' : 33,
              'vl_api_lisp_adjacency_t' : 35
@@ -150,7 +152,7 @@ def encode_print(name, id, t):
     # first, deal with all the other fields
     pack = '>' + ''.join([get_pack(f)[0] for f in t[:-1]])
 
-   # named variable-length-array
+    # named variable-length-array
     if len(t[-1]) == 4 and t[-1][2] == '0' and t[-1][3] == t[-2][1]:
         print(u"    vpp_api.write(pack('" + pack + "', base + "
               + id + ", 0, context, " + ', '.join(args[3:-2] + ["len(" + args[-1] + ")"])
@@ -161,6 +163,7 @@ def encode_print(name, id, t):
         print(u"    vpp_api.write(pack('" + pack + "', base + " +
               id + ", 0, context, " + ', '.join(args[3:-1]) + ") + "
               + args[-1] + ")")
+
 
     # not a variable-length-array
     else:

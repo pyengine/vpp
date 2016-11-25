@@ -501,7 +501,7 @@ fib_path_last_lock_gone (fib_node_t *node)
 
 static const adj_index_t
 fib_path_attached_next_hop_get_adj (fib_path_t *path,
-				    fib_link_t link)
+				    vnet_link_t link)
 {
     if (vnet_sw_interface_is_p2p(vnet_get_main(),
 				 path->attached_next_hop.fp_interface))
@@ -563,7 +563,7 @@ fib_path_recursive_adj_update (fib_path_t *path,
 			       fib_forward_chain_type_t fct,
 			       dpo_id_t *dpo)
 {
-    dpo_id_t via_dpo = DPO_NULL;
+    dpo_id_t via_dpo = DPO_INVALID;
 
     /*
      * get the DPO to resolve through from the via-entry
@@ -757,7 +757,8 @@ fib_path_back_walk_notify (fib_node_t *node,
 		fib_path_proto_to_chain_type(path->fp_nh_proto),
 		&path->fp_dpo);
 	}
-	if (FIB_NODE_BW_REASON_FLAG_ADJ_UPDATE & ctx->fnbw_reason)
+	if ((FIB_NODE_BW_REASON_FLAG_ADJ_UPDATE & ctx->fnbw_reason) ||
+            (FIB_NODE_BW_REASON_FLAG_ADJ_DOWN   & ctx->fnbw_reason))
 	{
 	    /*
 	     * ADJ updates (complete<->incomplete) do not need to propagate to
@@ -786,10 +787,24 @@ FIXME comment
 	 */
 	if (FIB_NODE_BW_REASON_FLAG_INTERFACE_UP & ctx->fnbw_reason)
 	{
+            if (path->fp_oper_flags & FIB_PATH_OPER_FLAG_RESOLVED)
+            {
+                /*
+                 * alreday resolved. no need to walk back again
+                 */
+                return (FIB_NODE_BACK_WALK_CONTINUE);
+            }
 	    path->fp_oper_flags |= FIB_PATH_OPER_FLAG_RESOLVED;
 	}
 	if (FIB_NODE_BW_REASON_FLAG_INTERFACE_DOWN & ctx->fnbw_reason)
 	{
+            if (!(path->fp_oper_flags & FIB_PATH_OPER_FLAG_RESOLVED))
+            {
+                /*
+                 * alreday unresolved. no need to walk back again
+                 */
+                return (FIB_NODE_BACK_WALK_CONTINUE);
+            }
 	    path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
 	}
 	if (FIB_NODE_BW_REASON_FLAG_INTERFACE_DELETE & ctx->fnbw_reason)
@@ -808,7 +823,17 @@ FIXME comment
             /*
              * restack the DPO to pick up the correct DPO sub-type
              */
+            uword if_is_up;
             adj_index_t ai;
+
+            if_is_up = vnet_sw_interface_is_admin_up(
+                           vnet_get_main(),
+                           path->attached_next_hop.fp_interface);
+
+            if (if_is_up)
+            {
+                path->fp_oper_flags |= FIB_PATH_OPER_FLAG_RESOLVED;
+            }
 
             ai = fib_path_attached_next_hop_get_adj(
                      path,
@@ -818,6 +843,32 @@ FIXME comment
                     fib_proto_to_dpo(path->fp_nh_proto),
                     ai);
             adj_unlock(ai);
+
+            if (!if_is_up)
+            {
+                /*
+                 * If the interface is not up there is no reason to walk
+                 * back to children. if we did they would only evalute
+                 * that this path is unresolved and hence it would
+                 * not contribute the adjacency - so it would be wasted
+                 * CPU time.
+                 */
+                return (FIB_NODE_BACK_WALK_CONTINUE);
+            }
+        }
+        if (FIB_NODE_BW_REASON_FLAG_ADJ_DOWN & ctx->fnbw_reason)
+	{
+            if (!(path->fp_oper_flags & FIB_PATH_OPER_FLAG_RESOLVED))
+            {
+                /*
+                 * alreday unresolved. no need to walk back again
+                 */
+                return (FIB_NODE_BACK_WALK_CONTINUE);
+            }
+            /*
+             * the adj has gone down. the path is no longer resolved.
+             */
+	    path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
         }
 	break;
     case FIB_PATH_TYPE_ATTACHED:
@@ -885,7 +936,7 @@ static const fib_node_vft_t fib_path_vft = {
 static fib_path_cfg_flags_t
 fib_path_route_flags_to_cfg_flags (const fib_route_path_t *rpath)
 {
-    fib_path_cfg_flags_t cfg_flags = FIB_PATH_CFG_ATTRIBUTE_FIRST;
+    fib_path_cfg_flags_t cfg_flags = FIB_PATH_CFG_FLAG_NONE;
 
     if (rpath->frp_flags & FIB_ROUTE_PATH_RESOLVE_VIA_HOST)
 	cfg_flags |= FIB_PATH_CFG_FLAG_RESOLVE_HOST;
@@ -920,6 +971,14 @@ fib_path_create (fib_node_index_t pl_index,
     path->fp_nh_proto = nh_proto;
     path->fp_via_fib = FIB_NODE_INDEX_INVALID;
     path->fp_weight = rpath->frp_weight;
+    if (0 == path->fp_weight)
+    {
+        /*
+         * a weight of 0 is a meaningless value. We could either reject it, and thus force
+         * clients to always use 1, or we can accept it and fixup approrpiately.
+         */
+        path->fp_weight = 1;
+    }
     path->fp_cfg_flags = flags;
     path->fp_cfg_flags |= fib_path_route_flags_to_cfg_flags(rpath);
 
@@ -1802,6 +1861,49 @@ fib_path_is_looped (fib_node_index_t path_index)
     path = fib_path_get(path_index);
 
     return (path->fp_oper_flags & FIB_PATH_OPER_FLAG_RECURSIVE_LOOP);
+}
+
+int
+fib_path_encode (fib_node_index_t path_list_index,
+		 fib_node_index_t path_index,
+                 void *ctx)
+{
+    fib_route_path_encode_t **api_rpaths = ctx;
+    fib_route_path_encode_t *api_rpath;
+    fib_path_t *path;
+
+    path = fib_path_get(path_index);
+    if (!path)
+      return (0);
+    vec_add2(*api_rpaths, api_rpath, 1);
+    api_rpath->rpath.frp_weight = path->fp_weight;
+    api_rpath->rpath.frp_proto = path->fp_nh_proto;
+    api_rpath->rpath.frp_sw_if_index = ~0;
+    api_rpath->dpo = path->exclusive.fp_ex_dpo;
+    switch (path->fp_type)
+      {
+      case FIB_PATH_TYPE_RECEIVE:
+        api_rpath->rpath.frp_addr = path->receive.fp_addr;
+        api_rpath->rpath.frp_sw_if_index = path->receive.fp_interface;
+        break;
+      case FIB_PATH_TYPE_ATTACHED:
+        api_rpath->rpath.frp_sw_if_index = path->attached.fp_interface;
+        break;
+      case FIB_PATH_TYPE_ATTACHED_NEXT_HOP:
+        api_rpath->rpath.frp_sw_if_index = path->attached_next_hop.fp_interface;
+        api_rpath->rpath.frp_addr = path->attached_next_hop.fp_nh;
+        break;
+      case FIB_PATH_TYPE_SPECIAL:
+        break;
+      case FIB_PATH_TYPE_DEAG:
+        break;
+      case FIB_PATH_TYPE_RECURSIVE:
+        api_rpath->rpath.frp_addr = path->recursive.fp_nh;
+        break;
+      default:
+        break;
+      }
+    return (1);
 }
 
 void

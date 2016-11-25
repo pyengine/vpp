@@ -69,8 +69,8 @@ typedef enum dpo_proto_t_
     DPO_PROTO_MPLS,
 } __attribute__((packed)) dpo_proto_t;
 
-#define DPO_PROTO_NUM (DPO_PROTO_MPLS+1)
-#define DPO_PROTO_NONE (DPO_PROTO_NUM+1)
+#define DPO_PROTO_NUM ((dpo_proto_t)(DPO_PROTO_MPLS+1))
+#define DPO_PROTO_NONE ((dpo_proto_t)(DPO_PROTO_NUM+1))
 
 #define DPO_PROTOS {		\
     [DPO_PROTO_IP4]  = "ip4",	\
@@ -94,6 +94,7 @@ typedef enum dpo_type_t_ {
      */
     DPO_FIRST,
     DPO_DROP,
+    DPO_IP_NULL,
     DPO_PUNT,
     /**
      * @brief load-balancing over a choice of [un]equal cost paths
@@ -116,6 +117,7 @@ typedef enum dpo_type_t_ {
 #define DPO_TYPES {			\
     [DPO_FIRST] = "dpo-invalid",	\
     [DPO_DROP] = "dpo-drop",	\
+    [DPO_IP_NULL] = "dpo-ip-null",		\
     [DPO_PUNT] = "dpo-punt",	\
     [DPO_ADJACENCY] = "dpo-adjacency",	\
     [DPO_ADJACENCY_INCOMPLETE] = "dpo-adjacency-incomplete",	\
@@ -126,7 +128,7 @@ typedef enum dpo_type_t_ {
     [DPO_LOAD_BALANCE] = "dpo-load-balance",	\
     [DPO_LISP_CP] = "dpo-lisp-cp",	\
     [DPO_CLASSIFY] = "dpo-classify",	\
-    [DPO_MPLS_LABEL] = "dpo-mpls-label",	\
+    [DPO_MPLS_LABEL] = "dpo-mpls-label"	\
 }
 
 /**
@@ -152,14 +154,21 @@ typedef struct dpo_id_t_ {
     index_t dpoi_index;
 } __attribute__ ((aligned(sizeof(u64)))) dpo_id_t;
 
-_Static_assert(sizeof(dpo_id_t) <= sizeof(u64),
-	       "DPO ID is greater than sizeof u64 "
-	       "atomic updates need to be revisited");
+STATIC_ASSERT(sizeof(dpo_id_t) <= sizeof(u64),
+	      "DPO ID is greater than sizeof u64 "
+	      "atomic updates need to be revisited");
 
 /**
- * @brief An initialiser for DPos declared on the stack.
+ * @brief An initialiser for DPOs declared on the stack.
+ * Thenext node is set to 0 since VLIB graph nodes should set 0 index to drop.
  */
-#define DPO_NULL {0}
+#define DPO_INVALID                \
+{                                  \
+    .dpoi_type = DPO_FIRST,        \
+    .dpoi_proto = DPO_PROTO_NONE,  \
+    .dpoi_index = INDEX_INVALID,   \
+    .dpoi_next_node = 0,           \
+}
 
 /**
  * @brief Return true if the DPO object is valid, i.e. has been initialised.
@@ -170,6 +179,8 @@ dpo_id_is_valid (const dpo_id_t *dpoi)
     return (dpoi->dpoi_type != DPO_FIRST &&
 	    dpoi->dpoi_index != INDEX_INVALID);
 }
+
+extern dpo_proto_t vnet_link_to_dpo_proto(vnet_link_t linkt);
 
 /**
  * @brief

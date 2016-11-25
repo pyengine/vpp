@@ -169,13 +169,8 @@ show_dpdk_buffer (vlib_main_t * vm, unformat_input_t * input,
       rmp = vm->buffer_main->pktmbuf_pools[i];
       if (rmp)
 	{
-#if RTE_VERSION >= RTE_VERSION_NUM(16, 7, 0, 0)
 	  unsigned count = rte_mempool_avail_count (rmp);
 	  unsigned free_count = rte_mempool_in_use_count (rmp);
-#else
-	  unsigned count = rte_mempool_count (rmp);
-	  unsigned free_count = rte_mempool_free_count (rmp);
-#endif
 
 	  vlib_cli_output (vm,
 			   "name=\"%s\"  available = %7d allocated = %7d total = %7d\n",
@@ -258,419 +253,6 @@ VLIB_CLI_COMMAND (cmd_test_dpdk_buffer,static) = {
     .short_help = "test dpdk buffer [allocate <nn>][free <nn>]",
     .function = test_dpdk_buffer,
     .is_mp_safe = 1,
-};
-/* *INDENT-ON* */
-
-static void
-show_dpdk_device_stats (vlib_main_t * vm, dpdk_device_t * xd)
-{
-  vlib_cli_output (vm,
-		   "device_index %d\n"
-		   "  last_burst_sz           %d\n"
-		   "  max_burst_sz            %d\n"
-		   "  full_frames_cnt         %u\n"
-		   "  consec_full_frames_cnt  %u\n"
-		   "  congestion_cnt          %d\n"
-		   "  last_poll_time          %llu\n"
-		   "  max_poll_delay          %llu\n"
-		   "  discard_cnt             %u\n"
-		   "  total_packet_cnt        %u\n",
-		   xd->device_index,
-		   xd->efd_agent.last_burst_sz,
-		   xd->efd_agent.max_burst_sz,
-		   xd->efd_agent.full_frames_cnt,
-		   xd->efd_agent.consec_full_frames_cnt,
-		   xd->efd_agent.congestion_cnt,
-		   xd->efd_agent.last_poll_time,
-		   xd->efd_agent.max_poll_delay,
-		   xd->efd_agent.discard_cnt, xd->efd_agent.total_packet_cnt);
-
-  u32 device_queue_sz = rte_eth_rx_queue_count (xd->device_index,
-						0 /* queue_id */ );
-  vlib_cli_output (vm, "  device_queue_sz         %u\n", device_queue_sz);
-}
-
-static void
-show_efd_config (vlib_main_t * vm)
-{
-  vlib_thread_main_t *tm = vlib_get_thread_main ();
-  dpdk_main_t *dm = &dpdk_main;
-
-  vlib_cli_output (vm,
-		   "dpdk:   (0x%04x) enabled:%d monitor:%d drop_all:%d\n"
-		   "  dpdk_queue_hi_thresh          %d\n"
-		   "  consec_full_frames_hi_thresh  %d\n"
-		   "---------\n"
-		   "worker: (0x%04x) enabled:%d monitor:%d\n"
-		   "  worker_queue_hi_thresh        %d\n",
-		   dm->efd.enabled,
-		   ((dm->efd.enabled & DPDK_EFD_DISCARD_ENABLED) ? 1 : 0),
-		   ((dm->efd.enabled & DPDK_EFD_MONITOR_ENABLED) ? 1 : 0),
-		   ((dm->efd.enabled & DPDK_EFD_DROPALL_ENABLED) ? 1 : 0),
-		   dm->efd.queue_hi_thresh,
-		   dm->efd.consec_full_frames_hi_thresh,
-		   tm->efd.enabled,
-		   ((tm->efd.enabled & VLIB_EFD_DISCARD_ENABLED) ? 1 : 0),
-		   ((dm->efd.enabled & VLIB_EFD_MONITOR_ENABLED) ? 1 : 0),
-		   tm->efd.queue_hi_thresh);
-  vlib_cli_output (vm,
-		   "---------\n"
-		   "ip_prec_bitmap   0x%02x\n"
-		   "mpls_exp_bitmap  0x%02x\n"
-		   "vlan_cos_bitmap  0x%02x\n",
-		   tm->efd.ip_prec_bitmap,
-		   tm->efd.mpls_exp_bitmap, tm->efd.vlan_cos_bitmap);
-}
-
-static clib_error_t *
-show_efd (vlib_main_t * vm,
-	  unformat_input_t * input, vlib_cli_command_t * cmd)
-{
-
-  if (unformat (input, "config"))
-    {
-      show_efd_config (vm);
-    }
-  else if (unformat (input, "dpdk"))
-    {
-      dpdk_main_t *dm = &dpdk_main;
-      dpdk_device_t *xd;
-      u32 device_id = ~0;
-
-      (void) unformat (input, "device %d", &device_id);
-	/* *INDENT-OFF* */
-        vec_foreach (xd, dm->devices)
-	  {
-            if ((xd->device_index == device_id) || (device_id == ~0))
-	      {
-                show_dpdk_device_stats(vm, xd);
-              }
-          }
-	/* *INDENT-ON* */
-    }
-  else if (unformat (input, "worker"))
-    {
-      vlib_thread_main_t *tm = vlib_get_thread_main ();
-      vlib_frame_queue_t *fq;
-      vlib_thread_registration_t *tr;
-      int thread_id;
-      u32 num_workers = 0;
-      u32 first_worker_index = 0;
-      uword *p;
-
-      p = hash_get_mem (tm->thread_registrations_by_name, "workers");
-      ASSERT (p);
-      tr = (vlib_thread_registration_t *) p[0];
-      if (tr)
-	{
-	  num_workers = tr->count;
-	  first_worker_index = tr->first_index;
-	}
-
-      vlib_cli_output (vm,
-		       "num_workers               %d\n"
-		       "first_worker_index        %d\n"
-		       "vlib_frame_queues[%d]:\n",
-		       num_workers, first_worker_index, tm->n_vlib_mains);
-
-      for (thread_id = 0; thread_id < tm->n_vlib_mains; thread_id++)
-	{
-	  fq = vlib_frame_queues[thread_id];
-	  if (fq)
-	    {
-	      vlib_cli_output (vm,
-			       "%2d: frames_queued         %u\n"
-			       "    frames_queued_hint    %u\n"
-			       "    enqueue_full_events   %u\n"
-			       "    enqueue_efd_discards  %u\n",
-			       thread_id,
-			       (fq->tail - fq->head),
-			       (fq->tail - fq->head_hint),
-			       fq->enqueue_full_events,
-			       fq->enqueue_efd_discards);
-	    }
-	}
-    }
-  else if (unformat (input, "help"))
-    {
-      vlib_cli_output (vm, "Usage: show efd config | "
-		       "dpdk [device <id>] | worker\n");
-    }
-  else
-    {
-      show_efd_config (vm);
-    }
-
-  return 0;
-}
-
-/* *INDENT-OFF* */
-VLIB_CLI_COMMAND (show_efd_command, static) = {
-  .path = "show efd",
-  .short_help = "Show efd [device <id>] | [config]",
-  .function = show_efd,
-};
-/* *INDENT-ON* */
-
-static clib_error_t *
-clear_efd (vlib_main_t * vm,
-	   unformat_input_t * input, vlib_cli_command_t * cmd)
-{
-  dpdk_main_t *dm = &dpdk_main;
-  dpdk_device_t *xd;
-  vlib_thread_main_t *tm = vlib_get_thread_main ();
-  vlib_frame_queue_t *fq;
-  int thread_id;
-
-    /* *INDENT-OFF* */
-    vec_foreach (xd, dm->devices)
-      {
-        xd->efd_agent.last_burst_sz = 0;
-        xd->efd_agent.max_burst_sz = 0;
-        xd->efd_agent.full_frames_cnt = 0;
-        xd->efd_agent.consec_full_frames_cnt = 0;
-        xd->efd_agent.congestion_cnt = 0;
-        xd->efd_agent.last_poll_time = 0;
-        xd->efd_agent.max_poll_delay = 0;
-        xd->efd_agent.discard_cnt = 0;
-        xd->efd_agent.total_packet_cnt = 0;
-      }
-    /* *INDENT-ON* */
-
-  for (thread_id = 0; thread_id < tm->n_vlib_mains; thread_id++)
-    {
-      fq = vlib_frame_queues[thread_id];
-      if (fq)
-	{
-	  fq->enqueue_full_events = 0;
-	  fq->enqueue_efd_discards = 0;
-	}
-    }
-
-  return 0;
-}
-
-/* *INDENT-OFF* */
-VLIB_CLI_COMMAND (clear_efd_command,static) = {
-  .path = "clear efd",
-  .short_help = "Clear early-fast-discard counters",
-  .function = clear_efd,
-};
-/* *INDENT-ON* */
-
-static clib_error_t *
-parse_op_and_prec (vlib_main_t * vm, unformat_input_t * input,
-		   vlib_cli_command_t * cmd,
-		   char *prec_type, u8 * prec_bitmap)
-{
-  clib_error_t *error = NULL;
-  u8 op = 0;
-  u8 prec = 0;
-
-  if (unformat (input, "ge"))
-    {
-      op = EFD_OPERATION_GREATER_OR_EQUAL;
-    }
-  else if (unformat (input, "lt"))
-    {
-      op = EFD_OPERATION_LESS_THAN;
-    }
-  else if (unformat (input, "help"))
-    {
-      vlib_cli_output (vm, "enter operation [ge | lt] and precedence <0-7>)");
-      return (error);
-    }
-  else
-    {
-      return clib_error_return (0, "unknown input `%U'",
-				format_unformat_error, input);
-    }
-
-  if (unformat (input, "%u", &prec))
-    {
-      if (prec > 7)
-	{
-	  return clib_error_return (0, "precedence %d is out of range <0-7>",
-				    prec);
-	}
-    }
-  else
-    {
-      return clib_error_return (0, "unknown input `%U'",
-				format_unformat_error, input);
-    }
-
-  set_efd_bitmap (prec_bitmap, prec, op);
-
-  vlib_cli_output (vm,
-		   "EFD will be set for %s precedence %s%u%s.",
-		   prec_type,
-		   (op == EFD_OPERATION_LESS_THAN) ? "less than " : "",
-		   prec,
-		   (op ==
-		    EFD_OPERATION_GREATER_OR_EQUAL) ? " and greater" : "");
-
-  return (error);
-}
-
-
-static clib_error_t *
-set_efd (vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd)
-{
-  dpdk_main_t *dm = &dpdk_main;
-  vlib_thread_main_t *tm = vlib_get_thread_main ();
-  clib_error_t *error = NULL;
-  vlib_node_runtime_t *rt = vlib_node_get_runtime (vm, dpdk_input_node.index);
-
-  if (unformat (input, "enable"))
-    {
-      if (unformat (input, "dpdk"))
-	{
-	  dm->efd.enabled |= DPDK_EFD_DISCARD_ENABLED;
-	}
-      else if (unformat (input, "worker"))
-	{
-	  tm->efd.enabled |= VLIB_EFD_DISCARD_ENABLED;
-	}
-      else if (unformat (input, "monitor"))
-	{
-	  dm->efd.enabled |= DPDK_EFD_MONITOR_ENABLED;
-	  tm->efd.enabled |= VLIB_EFD_MONITOR_ENABLED;
-	}
-      else if (unformat (input, "drop_all"))
-	{
-	  dm->efd.enabled |= DPDK_EFD_DROPALL_ENABLED;
-	}
-      else if (unformat (input, "default"))
-	{
-	  dm->efd.enabled = (DPDK_EFD_DISCARD_ENABLED |
-			     DPDK_EFD_MONITOR_ENABLED);
-	  tm->efd.enabled = (VLIB_EFD_DISCARD_ENABLED |
-			     VLIB_EFD_MONITOR_ENABLED);
-	}
-      else
-	{
-	  return clib_error_return (0, "Usage: set efd enable [dpdk | "
-				    "worker | monitor | drop_all | default]");
-	}
-    }
-  else if (unformat (input, "disable"))
-    {
-      if (unformat (input, "dpdk"))
-	{
-	  dm->efd.enabled &= ~DPDK_EFD_DISCARD_ENABLED;
-	}
-      else if (unformat (input, "worker"))
-	{
-	  tm->efd.enabled &= ~VLIB_EFD_DISCARD_ENABLED;
-	}
-      else if (unformat (input, "monitor"))
-	{
-	  dm->efd.enabled &= ~DPDK_EFD_MONITOR_ENABLED;
-	  tm->efd.enabled &= ~VLIB_EFD_MONITOR_ENABLED;
-	}
-      else if (unformat (input, "drop_all"))
-	{
-	  dm->efd.enabled &= ~DPDK_EFD_DROPALL_ENABLED;
-	}
-      else if (unformat (input, "all"))
-	{
-	  dm->efd.enabled = 0;
-	  tm->efd.enabled = 0;
-	}
-      else
-	{
-	  return clib_error_return (0, "Usage: set efd disable [dpdk | "
-				    "worker | monitor | drop_all | all]");
-	}
-    }
-  else if (unformat (input, "worker_queue_hi_thresh"))
-    {
-      u32 mark;
-      if (unformat (input, "%u", &mark))
-	{
-	  tm->efd.queue_hi_thresh = mark;
-	}
-      else
-	{
-	  return clib_error_return (0, "unknown input `%U'",
-				    format_unformat_error, input);
-	}
-    }
-  else if (unformat (input, "dpdk_device_hi_thresh"))
-    {
-      u32 thresh;
-      if (unformat (input, "%u", &thresh))
-	{
-	  dm->efd.queue_hi_thresh = thresh;
-	}
-      else
-	{
-	  return clib_error_return (0, "unknown input `%U'",
-				    format_unformat_error, input);
-	}
-    }
-  else if (unformat (input, "consec_full_frames_hi_thresh"))
-    {
-      u32 thresh;
-      if (unformat (input, "%u", &thresh))
-	{
-	  dm->efd.consec_full_frames_hi_thresh = thresh;
-	}
-      else
-	{
-	  return clib_error_return (0, "unknown input `%U'",
-				    format_unformat_error, input);
-	}
-    }
-  else if (unformat (input, "ip-prec"))
-    {
-      return (parse_op_and_prec (vm, input, cmd,
-				 "ip", &tm->efd.ip_prec_bitmap));
-    }
-  else if (unformat (input, "mpls-exp"))
-    {
-      return (parse_op_and_prec (vm, input, cmd,
-				 "mpls", &tm->efd.mpls_exp_bitmap));
-    }
-  else if (unformat (input, "vlan-cos"))
-    {
-      return (parse_op_and_prec (vm, input, cmd,
-				 "vlan", &tm->efd.vlan_cos_bitmap));
-    }
-  else if (unformat (input, "help"))
-    {
-      vlib_cli_output (vm,
-		       "Usage:\n"
-		       "  set efd enable <dpdk | worker | monitor | drop_all | default> |\n"
-		       "  set efd disable <dpdk | worker | monitor | drop_all | all> |\n"
-		       "  set efd <ip-prec | mpls-exp | vlan-cos> <ge | lt> <0-7>\n"
-		       "  set efd worker_queue_hi_thresh <0-32> |\n"
-		       "  set efd dpdk_device_hi_thresh <0-%d> |\n"
-		       "  set efd consec_full_frames_hi_thresh <count> |\n",
-		       DPDK_NB_RX_DESC_10GE);
-    }
-  else
-    {
-      return clib_error_return (0, "unknown input `%U'",
-				format_unformat_error, input);
-    }
-
-  if (dm->efd.enabled)
-    rt->function = dpdk_input_efd_multiarch_select ();
-  else if (dm->use_rss)
-    rt->function = dpdk_input_rss_multiarch_select ();
-  else
-    rt->function = dpdk_input_multiarch_select ();
-
-  return error;
-}
-
-/* *INDENT-OFF* */
-VLIB_CLI_COMMAND (cmd_set_efd,static) = {
-    .path = "set efd",
-    .short_help = "set early-fast-discard commands",
-    .function = set_efd,
 };
 /* *INDENT-ON* */
 
@@ -1155,7 +737,10 @@ set_dpdk_if_hqos_tctbl (vlib_main_t * vm, unformat_input_t * input,
   vnet_hw_interface_t *hw;
   dpdk_device_t *xd;
   u32 hw_if_index = (u32) ~ 0;
-  u32 entry, tc, queue, val, i;
+  u32 tc = (u32) ~ 0;
+  u32 queue = (u32) ~ 0;
+  u32 entry = (u32) ~ 0;
+  u32 val, i;
 
   if (!unformat_user (input, unformat_line_input, line_input))
     return 0;
@@ -1193,6 +778,10 @@ set_dpdk_if_hqos_tctbl (vlib_main_t * vm, unformat_input_t * input,
 
   /* Detect the set of worker threads */
   uword *p = hash_get_mem (tm->thread_registrations_by_name, "workers");
+  /* Should never happen, shut up Coverity warning */
+  if (p == 0)
+    return clib_error_return (0, "no worker registrations?");
+
   vlib_thread_registration_t *tr = (vlib_thread_registration_t *) p[0];
   int worker_thread_first = tr->first_index;
   int worker_thread_count = tr->count;
@@ -1229,13 +818,18 @@ set_dpdk_if_hqos_pktfield (vlib_main_t * vm, unformat_input_t * input,
 
   /* Detect the set of worker threads */
   uword *p = hash_get_mem (tm->thread_registrations_by_name, "workers");
+  /* Should never happen, shut up Coverity warning */
+  if (p == 0)
+    return clib_error_return (0, "no worker registrations?");
+
   vlib_thread_registration_t *tr = (vlib_thread_registration_t *) p[0];
   int worker_thread_first = tr->first_index;
   int worker_thread_count = tr->count;
 
   /* Packet field configuration */
-  u64 mask;
-  u32 id, offset;
+  u64 mask = (u64) ~ 0;
+  u32 id = (u32) ~ 0;
+  u32 offset = (u32) ~ 0;
 
   /* HQoS params */
   u32 n_subports_per_port, n_pipes_per_subport, tctbl_size;
@@ -1333,15 +927,21 @@ set_dpdk_if_hqos_pktfield (vlib_main_t * vm, unformat_input_t * input,
       case 0:
 	xd->hqos_wt[worker_thread_first + i].hqos_field0_slabpos = offset;
 	xd->hqos_wt[worker_thread_first + i].hqos_field0_slabmask = mask;
+	xd->hqos_wt[worker_thread_first + i].hqos_field0_slabshr =
+	  __builtin_ctzll (mask);
 	break;
       case 1:
 	xd->hqos_wt[worker_thread_first + i].hqos_field1_slabpos = offset;
 	xd->hqos_wt[worker_thread_first + i].hqos_field1_slabmask = mask;
+	xd->hqos_wt[worker_thread_first + i].hqos_field1_slabshr =
+	  __builtin_ctzll (mask);
 	break;
       case 2:
       default:
 	xd->hqos_wt[worker_thread_first + i].hqos_field2_slabpos = offset;
 	xd->hqos_wt[worker_thread_first + i].hqos_field2_slabmask = mask;
+	xd->hqos_wt[worker_thread_first + i].hqos_field2_slabshr =
+	  __builtin_ctzll (mask);
       }
 
   return 0;
@@ -1425,6 +1025,11 @@ show_dpdk_if_hqos (vlib_main_t * vm, unformat_input_t * input,
 
   /* Detect the set of worker threads */
   p = hash_get_mem (tm->thread_registrations_by_name, "workers");
+
+  /* Should never happen, shut up Coverity warning */
+  if (p == 0)
+    return clib_error_return (0, "no worker registrations?");
+
   tr = (vlib_thread_registration_t *) p[0];
 
   cfg = &devconf->hqos;
@@ -1556,6 +1161,121 @@ VLIB_CLI_COMMAND (cmd_show_dpdk_if_hqos, static) = {
   .path = "show dpdk interface hqos",
   .short_help = "show dpdk interface hqos <if-name>",
   .function = show_dpdk_if_hqos,
+};
+
+/* *INDENT-ON* */
+
+static clib_error_t *
+show_dpdk_hqos_queue_stats (vlib_main_t * vm, unformat_input_t * input,
+			    vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  dpdk_main_t *dm = &dpdk_main;
+  u32 hw_if_index = (u32) ~ 0;
+  u32 subport = (u32) ~ 0;
+  u32 pipe = (u32) ~ 0;
+  u32 tc = (u32) ~ 0;
+  u32 tc_q = (u32) ~ 0;
+  vnet_hw_interface_t *hw;
+  dpdk_device_t *xd;
+  uword *p = 0;
+  struct rte_eth_dev_info dev_info;
+  dpdk_device_config_t *devconf = 0;
+  u32 qindex;
+  struct rte_sched_queue_stats stats;
+  u16 qlen;
+
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat
+	  (line_input, "%U", unformat_vnet_hw_interface, dm->vnet_main,
+	   &hw_if_index))
+	;
+
+      else if (unformat (line_input, "subport %d", &subport))
+	;
+
+      else if (unformat (line_input, "pipe %d", &pipe))
+	;
+
+      else if (unformat (line_input, "tc %d", &tc))
+	;
+
+      else if (unformat (line_input, "tc_q %d", &tc_q))
+	;
+
+      else
+	return clib_error_return (0, "parse error: '%U'",
+				  format_unformat_error, line_input);
+    }
+
+  unformat_free (line_input);
+
+  if (hw_if_index == (u32) ~ 0)
+    return clib_error_return (0, "please specify interface name!!");
+
+  hw = vnet_get_hw_interface (dm->vnet_main, hw_if_index);
+  xd = vec_elt_at_index (dm->devices, hw->dev_instance);
+
+  rte_eth_dev_info_get (xd->device_index, &dev_info);
+  if (dev_info.pci_dev)
+    {				/* bonded interface has no pci info */
+      vlib_pci_addr_t pci_addr;
+
+      pci_addr.domain = dev_info.pci_dev->addr.domain;
+      pci_addr.bus = dev_info.pci_dev->addr.bus;
+      pci_addr.slot = dev_info.pci_dev->addr.devid;
+      pci_addr.function = dev_info.pci_dev->addr.function;
+
+      p =
+	hash_get (dm->conf->device_config_index_by_pci_addr, pci_addr.as_u32);
+    }
+
+  if (p)
+    devconf = pool_elt_at_index (dm->conf->dev_confs, p[0]);
+  else
+    devconf = &dm->conf->default_devconf;
+
+  if (devconf->hqos_enabled == 0)
+    {
+      vlib_cli_output (vm, "HQoS disabled for this interface");
+      return 0;
+    }
+
+  /*
+   * Figure out which queue to query.  cf rte_sched_port_qindex.  (Not sure why
+   * that method isn't made public by DPDK - how _should_ we get the queue ID?)
+   */
+  qindex = subport * devconf->hqos.port.n_pipes_per_subport + pipe;
+  qindex = qindex * RTE_SCHED_TRAFFIC_CLASSES_PER_PIPE + tc;
+  qindex = qindex * RTE_SCHED_QUEUES_PER_TRAFFIC_CLASS + tc_q;
+
+  if (rte_sched_queue_read_stats (xd->hqos_ht->hqos, qindex, &stats, &qlen) !=
+      0)
+    return clib_error_return (0, "failed to read stats");
+
+  vlib_cli_output (vm, "%=24s%=16s", "Stats Parameter", "Value");
+  vlib_cli_output (vm, "%=24s%=16d", "Packets", stats.n_pkts);
+  vlib_cli_output (vm, "%=24s%=16d", "Packets dropped", stats.n_pkts_dropped);
+#ifdef RTE_SCHED_RED
+  vlib_cli_output (vm, "%=24s%=16d", "Packets dropped (RED)",
+		   stats.n_pkts_red_dropped);
+#endif
+  vlib_cli_output (vm, "%=24s%=16d", "Bytes", stats.n_bytes);
+  vlib_cli_output (vm, "%=24s%=16d", "Bytes dropped", stats.n_bytes_dropped);
+
+
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (cmd_show_dpdk_hqos_queue_stats, static) = {
+  .path = "show dpdk hqos queue",
+  .short_help = "show dpdk hqos queue <if-name> subport <subport> pipe <pipe> tc <tc> tc_q <tc_q>",
+  .function = show_dpdk_hqos_queue_stats,
 };
 /* *INDENT-ON* */
 

@@ -42,11 +42,13 @@
 #include <vnet/ethernet/ethernet.h>
 #include <vnet/ip/ip.h>
 #include <vnet/mpls/mpls.h>
+#include <vnet/devices/devices.h>
 
 /* Mark stream active or inactive. */
 void
 pg_stream_enable_disable (pg_main_t * pg, pg_stream_t * s, int want_enabled)
 {
+  vlib_main_t *vm;
   vnet_main_t *vnm = vnet_get_main ();
   pg_interface_t *pi = pool_elt_at_index (pg->interfaces, s->pg_if_index);
 
@@ -64,8 +66,10 @@ pg_stream_enable_disable (pg_main_t * pg, pg_stream_t * s, int want_enabled)
 
   ASSERT (!pool_is_free (pg->streams, s));
 
-  pg->enabled_streams
-    = clib_bitmap_set (pg->enabled_streams, s - pg->streams, want_enabled);
+  vec_validate (pg->enabled_streams, s->worker_index);
+  pg->enabled_streams[s->worker_index] =
+    clib_bitmap_set (pg->enabled_streams[s->worker_index], s - pg->streams,
+		     want_enabled);
 
   if (want_enabled)
     {
@@ -76,11 +80,15 @@ pg_stream_enable_disable (pg_main_t * pg, pg_stream_t * s, int want_enabled)
 				   VNET_SW_INTERFACE_FLAG_ADMIN_UP);
     }
 
-  vlib_node_set_state (pg->vlib_main,
-		       pg_input_node.index,
-		       (clib_bitmap_is_zero (pg->enabled_streams)
-			? VLIB_NODE_STATE_DISABLED
-			: VLIB_NODE_STATE_POLLING));
+  if (vlib_num_workers ())
+    vm = vlib_get_worker_vlib_main (s->worker_index);
+  else
+    vm = vlib_get_main ();
+
+  vlib_node_set_state (vm, pg_input_node.index,
+		       (clib_bitmap_is_zero
+			(pg->enabled_streams[s->worker_index]) ?
+			VLIB_NODE_STATE_DISABLED : VLIB_NODE_STATE_POLLING));
 
   s->packet_accumulator = 0;
   s->time_last_generate = 0;
@@ -188,6 +196,13 @@ pg_interface_add_or_get (pg_main_t * pg, uword if_id)
       pi->sw_if_index = hi->sw_if_index;
 
       hash_set (pg->if_index_by_if_id, if_id, i);
+
+      if (vlib_num_workers ())
+	{
+	  pi->lockp = clib_mem_alloc_aligned (CLIB_CACHE_LINE_BYTES,
+					      CLIB_CACHE_LINE_BYTES);
+	  *pi->lockp = 0;
+	}
 
       ip4_sw_interface_enable_disable (pi->hw_if_index, 1);
       ip6_sw_interface_enable_disable (pi->hw_if_index, 1);
@@ -353,7 +368,7 @@ perform_fixed_edits (pg_stream_t * s)
 void
 pg_stream_add (pg_main_t * pg, pg_stream_t * s_init)
 {
-  vlib_main_t *vm = pg->vlib_main;
+  vlib_main_t *vm = vlib_get_main ();
   pg_stream_t *s;
   uword *p;
 
@@ -418,12 +433,13 @@ pg_stream_add (pg_main_t * pg, pg_stream_t * s_init)
     vec_resize (s->buffer_indices, n);
 
     vec_foreach (bi, s->buffer_indices)
-      bi->free_list_index = vlib_buffer_create_free_list (vm, s->buffer_bytes,
-							  "pg stream %d buffer #%d",
-							  s - pg->streams,
-							  1 + (bi -
-							       s->
-							       buffer_indices));
+    {
+      bi->free_list_index =
+	vlib_buffer_create_free_list (vm, s->buffer_bytes,
+				      "pg stream %d buffer #%d",
+				      s - pg->streams,
+				      1 + (bi - s->buffer_indices));
+    }
   }
 
   /* Find an interface to use. */
@@ -441,13 +457,14 @@ pg_stream_add (pg_main_t * pg, pg_stream_t * s_init)
   }
 
   /* Connect the graph. */
-  s->next_index = vlib_node_add_next (vm, pg_input_node.index, s->node_index);
+  s->next_index = vlib_node_add_next (vm, device_input_node.index,
+				      s->node_index);
 }
 
 void
 pg_stream_del (pg_main_t * pg, uword index)
 {
-  vlib_main_t *vm = pg->vlib_main;
+  vlib_main_t *vm = vlib_get_main ();
   pg_stream_t *s;
   pg_buffer_index_t *bi;
 

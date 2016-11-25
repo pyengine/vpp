@@ -18,6 +18,7 @@
 #include <vnet/vnet.h>
 #include <vnet/api_errno.h>
 #include <vnet/ip/ip.h>
+#include <vnet/feature/feature.h>
 
 #include <vnet/ipsec/ipsec.h>
 #include <vnet/ipsec/esp.h>
@@ -187,9 +188,6 @@ ipsec_input_ip4_node_fn (vlib_main_t * vm,
 			 vlib_node_runtime_t * node,
 			 vlib_frame_t * from_frame)
 {
-  ip4_main_t *i4m = &ip4_main;
-  ip_lookup_main_t *lm = &i4m->lookup_main;
-  ip_config_main_t *cm = &lm->feature_config_mains[VNET_IP_RX_UNICAST_FEAT];
   u32 n_left_from, *from, next_index, *to_next;
   ipsec_main_t *im = &ipsec_main;
 
@@ -221,9 +219,10 @@ ipsec_input_ip4_node_fn (vlib_main_t * vm,
 	  n_left_to_next -= 1;
 
 	  b0 = vlib_get_buffer (vm, bi0);
-	  c0 = vnet_get_config_data (&cm->config_main,
-				     &b0->current_config_index,
-				     &next0, sizeof (c0[0]));
+	  c0 =
+	    vnet_feature_next_with_data (vnet_buffer (b0)->sw_if_index
+					 [VLIB_RX], &next0, b0,
+					 sizeof (c0[0]));
 
 	  spd0 = pool_elt_at_index (im->spds, c0->spd_index);
 
@@ -255,9 +254,8 @@ ipsec_input_ip4_node_fn (vlib_main_t * vm,
 		{
 		  p0->counter.packets++;
 		  p0->counter.bytes += clib_net_to_host_u16 (ip0->length);
-		  vnet_buffer (b0)->output_features.ipsec_sad_index =
-		    p0->sa_index;
-		  vnet_buffer (b0)->output_features.ipsec_flags = 0;
+		  vnet_buffer (b0)->ipsec.sad_index = p0->sa_index;
+		  vnet_buffer (b0)->ipsec.flags = 0;
 		  next0 = IPSEC_INPUT_NEXT_ESP_DECRYPT;
 		  vlib_buffer_advance (b0, ip4_header_bytes (ip0));
 		  goto trace0;
@@ -322,9 +320,6 @@ VLIB_NODE_FUNCTION_MULTIARCH (ipsec_input_ip4_node, ipsec_input_ip4_node_fn)
 				vlib_node_runtime_t * node,
 				vlib_frame_t * from_frame)
 {
-  ip6_main_t *i6m = &ip6_main;
-  ip_lookup_main_t *lm = &i6m->lookup_main;
-  ip_config_main_t *cm = &lm->feature_config_mains[VNET_IP_RX_UNICAST_FEAT];
   u32 n_left_from, *from, next_index, *to_next;
   ipsec_main_t *im = &ipsec_main;
 
@@ -357,9 +352,10 @@ VLIB_NODE_FUNCTION_MULTIARCH (ipsec_input_ip4_node, ipsec_input_ip4_node_fn)
 	  n_left_to_next -= 1;
 
 	  b0 = vlib_get_buffer (vm, bi0);
-	  c0 = vnet_get_config_data (&cm->config_main,
-				     &b0->current_config_index,
-				     &next0, sizeof (c0[0]));
+	  c0 =
+	    vnet_feature_next_with_data (vnet_buffer (b0)->sw_if_index
+					 [VLIB_RX], &next0, b0,
+					 sizeof (c0[0]));
 
 	  spd0 = pool_elt_at_index (im->spds, c0->spd_index);
 
@@ -388,9 +384,8 @@ VLIB_NODE_FUNCTION_MULTIARCH (ipsec_input_ip4_node, ipsec_input_ip4_node_fn)
 		  p0->counter.bytes +=
 		    clib_net_to_host_u16 (ip0->payload_length);
 		  p0->counter.bytes += header_size;
-		  vnet_buffer (b0)->output_features.ipsec_sad_index =
-		    p0->sa_index;
-		  vnet_buffer (b0)->output_features.ipsec_flags = 0;
+		  vnet_buffer (b0)->ipsec.sad_index = p0->sa_index;
+		  vnet_buffer (b0)->ipsec.flags = 0;
 		  next0 = IPSEC_INPUT_NEXT_ESP_DECRYPT;
 		  vlib_buffer_advance (b0, header_size);
 		  goto trace0;

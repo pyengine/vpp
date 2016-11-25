@@ -22,6 +22,8 @@
 #include <vlib/vlib.h>
 #include <vlib/unix/unix.h>
 #include <vnet/ethernet/ethernet.h>
+#include <vnet/devices/devices.h>
+#include <vnet/feature/feature.h>
 
 #include <vnet/devices/netmap/net_netmap.h>
 #include <vnet/devices/netmap/netmap.h>
@@ -40,13 +42,6 @@ static char *netmap_input_error_strings[] = {
 #define _(n,s) s,
   foreach_netmap_input_error
 #undef _
-};
-
-enum
-{
-  NETMAP_INPUT_NEXT_DROP,
-  NETMAP_INPUT_NEXT_ETHERNET_INPUT,
-  NETMAP_INPUT_N_NEXT,
 };
 
 typedef struct
@@ -88,24 +83,13 @@ buffer_add_to_chain (vlib_main_t * vm, u32 bi, u32 first_bi, u32 prev_bi)
 
   /* update current buffer */
   b->next_buffer = 0;
-
-#if DPDK > 0
-  struct rte_mbuf *mbuf = rte_mbuf_from_vlib_buffer (b);
-  struct rte_mbuf *first_mbuf = rte_mbuf_from_vlib_buffer (first_b);
-  struct rte_mbuf *prev_mbuf = rte_mbuf_from_vlib_buffer (prev_b);
-  first_mbuf->nb_segs++;
-  prev_mbuf->next = mbuf;
-  mbuf->data_len = b->current_length;
-  mbuf->data_off = RTE_PKTMBUF_HEADROOM + b->current_data;
-  mbuf->next = 0;
-#endif
 }
 
 always_inline uword
 netmap_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 			vlib_frame_t * frame, netmap_if_t * nif)
 {
-  u32 next_index = NETMAP_INPUT_NEXT_ETHERNET_INPUT;
+  u32 next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
   uword n_trace = vlib_get_trace_count (vm, node);
   netmap_main_t *nm = &netmap_main;
   u32 n_rx_packets = 0;
@@ -158,7 +142,7 @@ netmap_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	  while (r && n_left_to_next)
 	    {
-	      vlib_buffer_t *b0, *first_b0 = 0;
+	      vlib_buffer_t *first_b0 = 0;
 	      u32 offset = 0;
 	      u32 bi0 = 0, first_bi0 = 0, prev_bi0;
 	      u32 next_slot_index = (cur_slot_index + 1) % ring->num_slots;
@@ -176,6 +160,7 @@ netmap_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	      while (data_len && n_free_bufs)
 		{
+		  vlib_buffer_t *b0;
 		  /* grab free buffer */
 		  u32 last_empty_buffer =
 		    vec_len (nm->rx_buffers[cpu_index]) - 1;
@@ -199,11 +184,6 @@ netmap_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 		  if (offset == 0)
 		    {
-#if DPDK > 0
-		      struct rte_mbuf *mb = rte_mbuf_from_vlib_buffer (b0);
-		      rte_pktmbuf_data_len (mb) = b0->current_length;
-		      rte_pktmbuf_pkt_len (mb) = b0->current_length;
-#endif
 		      b0->total_length_not_including_first_buffer = 0;
 		      b0->flags = VLIB_BUFFER_TOTAL_LENGTH_VALID;
 		      vnet_buffer (b0)->sw_if_index[VLIB_RX] =
@@ -235,6 +215,11 @@ netmap_device_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 		      memcpy (&tr->slot, slot, sizeof (struct netmap_slot));
 		    }
 		}
+
+	      /* redirect if feature path enabled */
+	      vnet_feature_start_device_input_x1 (nif->sw_if_index, &next0,
+						  first_b0, 0);
+
 	      /* enque and take next packet */
 	      vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
 					       n_left_to_next, first_bi0,
@@ -293,18 +278,13 @@ netmap_input_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
 VLIB_REGISTER_NODE (netmap_input_node) = {
   .function = netmap_input_fn,
   .name = "netmap-input",
+  .sibling_of = "device-input",
   .format_trace = format_netmap_input_trace,
   .type = VLIB_NODE_TYPE_INPUT,
   /* default state is INTERRUPT mode, switch to POLLING if worker threads are enabled */
   .state = VLIB_NODE_STATE_INTERRUPT,
   .n_errors = NETMAP_INPUT_N_ERROR,
   .error_strings = netmap_input_error_strings,
-
-  .n_next_nodes = NETMAP_INPUT_N_NEXT,
-  .next_nodes = {
-    [NETMAP_INPUT_NEXT_DROP] = "error-drop",
-    [NETMAP_INPUT_NEXT_ETHERNET_INPUT] = "ethernet-input",
-  },
 };
 
 VLIB_NODE_FUNCTION_MULTIARCH (netmap_input_node, netmap_input_fn)

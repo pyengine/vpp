@@ -44,28 +44,18 @@
 #include <rte_ring.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
-#ifdef RTE_LIBRTE_KNI
-#include <rte_kni.h>
-#endif
 #include <rte_virtio_net.h>
-#include <rte_pci_dev_ids.h>
 #include <rte_version.h>
 #include <rte_eth_bond.h>
 #include <rte_sched.h>
 
 #include <vnet/unix/pcap.h>
-#include <vnet/devices/virtio/vhost-user.h>
+#include <vnet/devices/devices.h>
 
 #if CLIB_DEBUG > 0
 #define always_inline static inline
 #else
 #define always_inline static inline __attribute__ ((__always_inline__))
-#endif
-
-#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
-#define DPDK_VHOST_USER 1
-#else
-#define DPDK_VHOST_USER 0
 #endif
 
 #include <vlib/pci/pci.h>
@@ -76,6 +66,25 @@ extern vnet_device_class_t dpdk_device_class;
 extern vlib_node_registration_t dpdk_input_node;
 extern vlib_node_registration_t handoff_dispatch_node;
 
+#if RTE_VERSION >= RTE_VERSION_NUM(16, 11, 0, 0)
+#define foreach_dpdk_pmd          \
+  _ ("net_thunderx", THUNDERX)    \
+  _ ("net_e1000_em", E1000EM)     \
+  _ ("net_e1000_igb", IGB)        \
+  _ ("net_e1000_igb_vf", IGBVF)   \
+  _ ("net_ixgbe", IXGBE)          \
+  _ ("net_ixgbe_vf", IXGBEVF)     \
+  _ ("net_i40e", I40E)            \
+  _ ("net_i40e_vf", I40EVF)       \
+  _ ("net_virtio", VIRTIO)        \
+  _ ("net_enic", ENIC)            \
+  _ ("net_vmxnet3", VMXNET3)      \
+  _ ("net_af_packet", AF_PACKET)  \
+  _ ("net_bonding", BOND)         \
+  _ ("net_fm10k", FM10K)          \
+  _ ("net_cxgbe", CXGBE)          \
+  _ ("net_dpaa2", DPAA2)
+#else
 #define foreach_dpdk_pmd          \
   _ ("rte_nicvf_pmd", THUNDERX)	  \
   _ ("rte_em_pmd", E1000EM)       \
@@ -93,6 +102,7 @@ extern vlib_node_registration_t handoff_dispatch_node;
   _ ("rte_pmd_fm10k", FM10K)      \
   _ ("rte_cxgbe_pmd", CXGBE)      \
   _ ("rte_dpaa2_dpni", DPAA2)
+#endif
 
 typedef enum
 {
@@ -113,64 +123,6 @@ typedef enum
   VNET_DPDK_PORT_TYPE_AF_PACKET,
   VNET_DPDK_PORT_TYPE_UNKNOWN,
 } dpdk_port_type_t;
-
-typedef struct
-{
-  f64 deadline;
-  vlib_frame_t *frame;
-} dpdk_frame_t;
-
-#define DPDK_EFD_MAX_DISCARD_RATE 10
-
-typedef struct
-{
-  u16 last_burst_sz;
-  u16 max_burst_sz;
-  u32 full_frames_cnt;
-  u32 consec_full_frames_cnt;
-  u32 congestion_cnt;
-  u64 last_poll_time;
-  u64 max_poll_delay;
-  u32 discard_cnt;
-  u32 total_packet_cnt;
-} dpdk_efd_agent_t;
-
-#if DPDK_VHOST_USER
-typedef struct
-{
-  int callfd;
-  int kickfd;
-  int errfd;
-  int enabled;
-  u32 callfd_idx;
-  u32 n_since_last_int;
-  f64 int_deadline;
-  u64 packets;
-  u64 bytes;
-} dpdk_vu_vring;
-
-typedef struct
-{
-  u32 is_up;
-  u32 unix_fd;
-  u32 unix_file_index;
-  u32 client_fd;
-  char sock_filename[256];
-  int sock_errno;
-  u8 sock_is_server;
-  u8 active;
-
-  u64 feature_mask;
-  u32 num_vrings;
-  dpdk_vu_vring vrings[VHOST_MAX_QUEUE_PAIRS * 2];
-  u64 region_addr[VHOST_MEMORY_MAX_NREGIONS];
-  u32 region_fd[VHOST_MEMORY_MAX_NREGIONS];
-  u64 region_offset[VHOST_MEMORY_MAX_NREGIONS];
-} dpdk_vu_intf_t;
-#endif
-
-typedef void (*dpdk_flowcontrol_callback_t) (vlib_main_t * vm,
-					     u32 hw_if_index, u32 n_packets);
 
 /*
  * The header for the tx_vector in dpdk_device_t.
@@ -209,6 +161,7 @@ typedef struct
   u32 hqos_burst_deq;
   u32 pkts_enq_len;
   u32 swq_pos;
+  u32 flush_count;
 } dpdk_device_hqos_per_hqos_thread_t;
 
 typedef struct
@@ -230,7 +183,7 @@ typedef struct
   struct rte_mbuf ***rx_vectors;
 
   /* vector of traced contexts, per device */
-  u32 *d_trace_buffers;
+  u32 **d_trace_buffers;
 
   dpdk_pmd_t pmd:8;
   i8 cpu_socket;
@@ -239,8 +192,8 @@ typedef struct
 #define DPDK_DEVICE_FLAG_ADMIN_UP       (1 << 0)
 #define DPDK_DEVICE_FLAG_PROMISC        (1 << 1)
 #define DPDK_DEVICE_FLAG_PMD            (1 << 2)
-#define DPDK_DEVICE_FLAG_KNI            (1 << 3)
-#define DPDK_DEVICE_FLAG_VHOST_USER     (1 << 4)
+#define DPDK_DEVICE_FLAG_MAYBE_MULTISEG (1 << 3)
+
 #define DPDK_DEVICE_FLAG_HAVE_SUBIF     (1 << 5)
 #define DPDK_DEVICE_FLAG_HQOS           (1 << 6)
 
@@ -264,18 +217,6 @@ typedef struct
   dpdk_device_hqos_per_worker_thread_t *hqos_wt;
   dpdk_device_hqos_per_hqos_thread_t *hqos_ht;
 
-  /* KNI related */
-  struct rte_kni *kni;
-  u8 kni_port_id;
-
-#if DPDK_VHOST_USER
-  /* vhost-user related */
-  u32 vu_if_id;
-  struct virtio_net vu_vhost_dev;
-  u32 vu_is_running;
-  dpdk_vu_intf_t *vu_intf;
-#endif
-
   /* af_packet */
   u8 af_packet_port_id;
 
@@ -285,18 +226,10 @@ typedef struct
   struct rte_eth_stats stats;
   struct rte_eth_stats last_stats;
   struct rte_eth_stats last_cleared_stats;
-#if RTE_VERSION >= RTE_VERSION_NUM(16, 7, 0, 0)
   struct rte_eth_xstat *xstats;
   struct rte_eth_xstat *last_cleared_xstats;
-#else
-  struct rte_eth_xstats *xstats;
-  struct rte_eth_xstats *last_cleared_xstats;
-#endif
   f64 time_last_stats_update;
   dpdk_port_type_t port_type;
-
-  dpdk_efd_agent_t efd_agent;
-  u8 need_txlock;		/* Used by VNET_DPDK_DEV_VHOST_USER */
 } dpdk_device_t;
 
 #define DPDK_STATS_POLL_INTERVAL      (10.0)
@@ -327,25 +260,12 @@ typedef struct
   u16 queue_id;
 } dpdk_device_and_queue_t;
 
-/* Early-Fast-Discard (EFD) */
-#define DPDK_EFD_DISABLED                       0
-#define DPDK_EFD_DISCARD_ENABLED                (1 << 0)
-#define DPDK_EFD_MONITOR_ENABLED                (1 << 1)
-#define DPDK_EFD_DROPALL_ENABLED                (1 << 2)
-
-#define DPDK_EFD_DEFAULT_DEVICE_QUEUE_HI_THRESH_PCT    90
-#define DPDK_EFD_DEFAULT_CONSEC_FULL_FRAMES_HI_THRESH  6
-
-typedef struct dpdk_efd_t
-{
-  u16 enabled;
-  u16 queue_hi_thresh;
-  u16 consec_full_frames_hi_thresh;
-  u16 pad;
-} dpdk_efd_t;
-
 #ifndef DPDK_HQOS_DBG_BYPASS
 #define DPDK_HQOS_DBG_BYPASS 0
+#endif
+
+#ifndef HQOS_FLUSH_COUNT_THRESHOLD
+#define HQOS_FLUSH_COUNT_THRESHOLD              100000
 #endif
 
 typedef struct dpdk_device_config_hqos_t
@@ -428,13 +348,6 @@ typedef struct
    */
   u8 interface_name_format_decimal;
 
-  /* virtio vhost-user switch */
-  u8 use_virtio_vhost;
-
-  /* vhost-user coalescence frames config */
-  u32 vhost_coalesce_frames;
-  f64 vhost_coalesce_time;
-
   /* per-device config */
   dpdk_device_config_t default_devconf;
   dpdk_device_config_t *dev_confs;
@@ -457,9 +370,6 @@ typedef struct
 
   /* buffer flags template, configurable to enable/disable tcp / udp cksum */
   u32 buffer_flags_template;
-
-  /* flow control callback. If 0 then flow control is disabled */
-  dpdk_flowcontrol_callback_t flowcontrol_callback;
 
   /* vlib buffer free list, must be same size as an rte_mbuf */
   u32 vlib_buffer_free_list_index;
@@ -485,11 +395,6 @@ typedef struct
   uword *vu_sw_if_index_by_listener_fd;
   uword *vu_sw_if_index_by_sock_fd;
   u32 *vu_inactive_interfaces_device_index;
-
-  u32 next_vu_if_id;
-
-  /* efd (early-fast-discard) settings */
-  dpdk_efd_t efd;
 
   /*
    * flag indicating that a posted admin up/down
@@ -522,16 +427,6 @@ typedef struct
 
 dpdk_main_t dpdk_main;
 
-typedef enum
-{
-  DPDK_RX_NEXT_IP4_INPUT,
-  DPDK_RX_NEXT_IP6_INPUT,
-  DPDK_RX_NEXT_MPLS_INPUT,
-  DPDK_RX_NEXT_ETHERNET_INPUT,
-  DPDK_RX_NEXT_DROP,
-  DPDK_RX_N_NEXT,
-} dpdk_rx_next_t;
-
 typedef struct
 {
   u32 buffer_index;
@@ -554,8 +449,6 @@ typedef struct
 
 void vnet_buffer_needs_dpdk_mb (vlib_buffer_t * b);
 
-void dpdk_set_next_node (dpdk_rx_next_t, char *);
-
 clib_error_t *dpdk_set_mac_address (vnet_hw_interface_t * hi, char *address);
 
 clib_error_t *dpdk_set_mc_filter (vnet_hw_interface_t * hi,
@@ -565,12 +458,7 @@ void dpdk_thread_input (dpdk_main_t * dm, dpdk_device_t * xd);
 
 clib_error_t *dpdk_port_setup (dpdk_main_t * dm, dpdk_device_t * xd);
 
-void dpdk_set_flowcontrol_callback (vlib_main_t * vm,
-				    dpdk_flowcontrol_callback_t callback);
-
 u32 dpdk_interface_tx_vector (vlib_main_t * vm, u32 dev_instance);
-
-void set_efd_bitmap (u8 * bitmap, u32 value, u32 op);
 
 struct rte_mbuf *dpdk_replicate_packet_mb (vlib_buffer_t * b);
 struct rte_mbuf *dpdk_zerocopy_replicate_packet_mb (vlib_buffer_t * b);
@@ -583,11 +471,7 @@ struct rte_mbuf *dpdk_zerocopy_replicate_packet_mb (vlib_buffer_t * b);
   _(IP_CHECKSUM_ERROR, "Rx ip checksum errors")				\
   _(RX_ALLOC_FAIL, "rx buf alloc from free list failed")		\
   _(RX_ALLOC_NO_PHYSMEM, "rx buf alloc failed no physmem")		\
-  _(RX_ALLOC_DROP_PKTS, "rx packets dropped due to alloc error")        \
-  _(IPV4_EFD_DROP_PKTS, "IPV4 Early Fast Discard rx drops")             \
-  _(IPV6_EFD_DROP_PKTS, "IPV6 Early Fast Discard rx drops")             \
-  _(MPLS_EFD_DROP_PKTS, "MPLS Early Fast Discard rx drops")             \
-  _(VLAN_EFD_DROP_PKTS, "VLAN Early Fast Discard rx drops")
+  _(RX_ALLOC_DROP_PKTS, "rx packets dropped due to alloc error")
 
 typedef enum
 {
@@ -597,35 +481,11 @@ typedef enum
     DPDK_N_ERROR,
 } dpdk_error_t;
 
-/*
- * Increment EFD drop counter
- */
-static_always_inline void
-increment_efd_drop_counter (vlib_main_t * vm, u32 counter_index, u32 count)
-{
-  vlib_node_t *my_n;
-
-  my_n = vlib_get_node (vm, dpdk_input_node.index);
-  vm->error_main.counters[my_n->error_heap_index + counter_index] += count;
-}
-
 int dpdk_set_stat_poll_interval (f64 interval);
 int dpdk_set_link_state_poll_interval (f64 interval);
 void dpdk_update_link_state (dpdk_device_t * xd, f64 now);
 void dpdk_device_lock_init (dpdk_device_t * xd);
 void dpdk_device_lock_free (dpdk_device_t * xd);
-void dpdk_efd_update_counters (dpdk_device_t * xd, u32 n_buffers,
-			       u16 enabled);
-u32 is_efd_discardable (vlib_thread_main_t * tm, vlib_buffer_t * b0,
-			struct rte_mbuf *mb);
-
-#if DPDK_VHOST_USER
-/* dpdk vhost-user interrupt management */
-u8 dpdk_vhost_user_want_interrupt (dpdk_device_t * xd, int idx);
-void dpdk_vhost_user_send_interrupt (vlib_main_t * vm, dpdk_device_t * xd,
-				     int idx);
-#endif
-
 
 static inline u64
 vnet_get_aggregate_rx_packets (void)
@@ -647,56 +507,6 @@ void dpdk_rx_trace (dpdk_main_t * dm,
 #define EFD_OPERATION_LESS_THAN          0
 #define EFD_OPERATION_GREATER_OR_EQUAL   1
 
-void efd_config (u32 enabled,
-		 u32 ip_prec, u32 ip_op,
-		 u32 mpls_exp, u32 mpls_op, u32 vlan_cos, u32 vlan_op);
-
-void post_sw_interface_set_flags (vlib_main_t * vm, u32 sw_if_index,
-				  u32 flags);
-
-#if DPDK_VHOST_USER
-typedef struct vhost_user_memory vhost_user_memory_t;
-
-void dpdk_vhost_user_process_init (void **ctx);
-void dpdk_vhost_user_process_cleanup (void *ctx);
-uword dpdk_vhost_user_process_if (vlib_main_t * vm, dpdk_device_t * xd,
-				  void *ctx);
-
-// vhost-user calls
-int dpdk_vhost_user_create_if (vnet_main_t * vnm, vlib_main_t * vm,
-			       const char *sock_filename,
-			       u8 is_server,
-			       u32 * sw_if_index,
-			       u64 feature_mask,
-			       u8 renumber, u32 custom_dev_instance,
-			       u8 * hwaddr);
-int dpdk_vhost_user_modify_if (vnet_main_t * vnm, vlib_main_t * vm,
-			       const char *sock_filename,
-			       u8 is_server,
-			       u32 sw_if_index,
-			       u64 feature_mask,
-			       u8 renumber, u32 custom_dev_instance);
-int dpdk_vhost_user_delete_if (vnet_main_t * vnm, vlib_main_t * vm,
-			       u32 sw_if_index);
-int dpdk_vhost_user_dump_ifs (vnet_main_t * vnm, vlib_main_t * vm,
-			      vhost_user_intf_details_t ** out_vuids);
-#endif
-
-u32 dpdk_get_admin_up_down_in_progress (void);
-
-u32 dpdk_num_mbufs (void);
-
-dpdk_pmd_t dpdk_get_pmd_type (vnet_hw_interface_t * hi);
-
-i8 dpdk_get_cpu_socket (vnet_hw_interface_t * hi);
-
-void *dpdk_input_multiarch_select ();
-void *dpdk_input_rss_multiarch_select ();
-void *dpdk_input_efd_multiarch_select ();
-
-clib_error_t *dpdk_get_hw_interface_stats (u32 hw_if_index,
-					   struct rte_eth_stats *dest);
-
 format_function_t format_dpdk_device_name;
 format_function_t format_dpdk_device;
 format_function_t format_dpdk_tx_dma_trace;
@@ -707,76 +517,6 @@ unformat_function_t unformat_socket_mem;
 clib_error_t *unformat_rss_fn (unformat_input_t * input, uword * rss_fn);
 clib_error_t *unformat_hqos (unformat_input_t * input,
 			     dpdk_device_config_hqos_t * hqos);
-
-
-static inline void
-dpdk_pmd_constructor_init ()
-{
-  /* Add references to DPDK Driver Constructor functions to get the dynamic
-   * loader to pull in the driver library & run the constructors.
-   */
-#define _(d)                                            \
-  do {                                                  \
-    void devinitfn_ ##d(void);                          \
-    __attribute__((unused)) void (* volatile pf)(void); \
-    pf = devinitfn_ ##d;                                \
-  } while(0);
-
-#ifdef RTE_LIBRTE_EM_PMD
-  _(em_pmd_drv)
-#endif
-#ifdef RTE_LIBRTE_IGB_PMD
-    _(pmd_igb_drv)
-#endif
-#ifdef RTE_LIBRTE_IXGBE_PMD
-    _(rte_ixgbe_driver)
-#endif
-#ifdef RTE_LIBRTE_I40E_PMD
-    _(rte_i40e_driver) _(rte_i40evf_driver)
-#endif
-#ifdef RTE_LIBRTE_FM10K_PMD
-    _(rte_fm10k_driver)
-#endif
-#ifdef RTE_LIBRTE_VIRTIO_PMD
-    _(rte_virtio_driver)
-#endif
-#ifdef RTE_LIBRTE_VMXNET3_PMD
-    _(rte_vmxnet3_driver)
-#endif
-#ifdef RTE_LIBRTE_VICE_PMD
-    _(rte_vice_driver)
-#endif
-#ifdef RTE_LIBRTE_ENIC_PMD
-    _(rte_enic_driver)
-#endif
-#ifdef RTE_LIBRTE_PMD_AF_PACKET
-    _(pmd_af_packet_drv)
-#endif
-#ifdef RTE_LIBRTE_CXGBE_PMD
-    _(rte_cxgbe_driver)
-#endif
-#ifdef RTE_LIBRTE_PMD_BOND
-    _(bond_drv)
-#endif
-#ifdef RTE_LIBRTE_DPAA2_PMD
-    _(pmd_dpaa2_drv)
-#endif
-#undef _
-/*
- * At the moment, the ThunderX NIC driver doesn't have
- * an entry point named "devinitfn_rte_xxx_driver"
- */
-#define _(d)                                          \
-  do {                                                  \
-    void d(void);			                      \
-    __attribute__((unused)) void (* volatile pf)(void); \
-    pf = d;		                              \
-  } while(0);
-#ifdef RTE_LIBRTE_THUNDERVNIC_PMD
-    _(rte_nicvf_pmd_init)
-#endif
-#undef _
-}
 
 uword
 admin_up_down_process (vlib_main_t * vm,

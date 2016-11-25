@@ -45,8 +45,8 @@ extern ip6_main_t ip6_main;
 #define foreach_ip6_hop_by_hop_ioam_trace_stats                                \
   _(PROCESSED, "Pkts with ip6 hop-by-hop trace options")                        \
   _(PROFILE_MISS, "Pkts with ip6 hop-by-hop trace options but no profile set") \
-  _(PASSED, "Pkts with TRACE in Policy")                                        \
-  _(FAILED, "Pkts with TRACE out of Policy")
+  _(UPDATED, "Pkts with trace updated")                                        \
+  _(FULL, "Pkts with trace options but no space")
 
 static char *ip6_hop_by_hop_ioam_trace_stats_strings[] = {
 #define _(sym,string) string,
@@ -153,7 +153,8 @@ ioam_trace_get_sizeof_handler (u32 * result)
   if (PREDICT_FALSE (profile->num_elts * trace_data_size > 254))
     return VNET_API_ERROR_INVALID_VALUE;
 
-  size += profile->num_elts * trace_data_size;
+  size +=
+    sizeof (ioam_trace_option_t) + (profile->num_elts * trace_data_size);
   *result = size;
 
   return 0;
@@ -270,7 +271,11 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 	  *elt = clib_host_to_net_u32 (profile->app_data);
 	  elt++;
 	}
-      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_PASSED, 1);
+      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_UPDATED, 1);
+    }
+  else
+    {
+      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_FULL, 1);
     }
   return (rv);
 }

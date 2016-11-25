@@ -146,6 +146,21 @@ static void *vl_api_sw_interface_set_table_t_print
   FINISH;
 }
 
+static void *vl_api_sw_interface_set_mpls_enable_t_print
+  (vl_api_sw_interface_set_mpls_enable_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: sw_interface_set_mpls_enable ");
+
+  s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
+
+  if (mp->enable == 0)
+    s = format (s, "disable");
+
+  FINISH;
+}
+
 static void *vl_api_sw_interface_set_vpath_t_print
   (vl_api_sw_interface_set_vpath_t * mp, void *handle)
 {
@@ -477,8 +492,8 @@ static void *vl_api_ip_add_del_route_t_print
 	s = format (s, "via %U ", format_ip4_address, mp->next_hop_address);
     }
 
-  if (mp->vrf_id != 0)
-    s = format (s, "vrf %d ", ntohl (mp->vrf_id));
+  if (mp->table_id != 0)
+    s = format (s, "vrf %d ", ntohl (mp->table_id));
 
   if (mp->create_vrf_if_needed)
     s = format (s, "create-vrf ");
@@ -498,8 +513,8 @@ static void *vl_api_ip_add_del_route_t_print
   if (mp->is_multipath)
     s = format (s, "multipath ");
 
-  if (mp->lookup_in_vrf)
-    s = format (s, "lookup-in-vrf %d ", ntohl (mp->lookup_in_vrf));
+  if (mp->next_hop_table_id)
+    s = format (s, "lookup-in-vrf %d ", ntohl (mp->next_hop_table_id));
 
   FINISH;
 }
@@ -537,30 +552,6 @@ static void *vl_api_proxy_arp_intfc_enable_disable_t_print
   FINISH;
 }
 
-static void *vl_api_mpls_add_del_decap_t_print
-  (vl_api_mpls_add_del_decap_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: mpls_add_del_decap ");
-
-  s = format (s, "rx_vrf_id %d ", ntohl (mp->rx_vrf_id));
-
-  s = format (s, "tx_vrf_id %d ", ntohl (mp->tx_vrf_id));
-
-  s = format (s, "label %d ", ntohl (mp->label));
-
-  s = format (s, "next-index %d ", ntohl (mp->next_index));
-
-  if (mp->s_bit == 0)
-    s = format (s, "s-bit-clear ");
-
-  if (mp->is_add == 0)
-    s = format (s, "del ");
-
-  FINISH;
-}
-
 static void *vl_api_mpls_add_del_encap_t_print
   (vl_api_mpls_add_del_encap_t * mp, void *handle)
 {
@@ -578,33 +569,6 @@ static void *vl_api_mpls_add_del_encap_t_print
 
   if (mp->is_add == 0)
     s = format (s, "del ");
-
-  FINISH;
-}
-
-static void *vl_api_mpls_gre_add_del_tunnel_t_print
-  (vl_api_mpls_gre_add_del_tunnel_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: mpls_gre_add_del_tunnel ");
-
-  s = format (s, "src %U ", format_ip4_address, mp->src_address);
-
-  s = format (s, "dst %U ", format_ip4_address, mp->dst_address);
-
-  s = format (s, "adj %U/%d ", format_ip4_address,
-	      (ip4_address_t *) mp->intfc_address, mp->intfc_address_length);
-
-  s = format (s, "inner-vrf_id %d ", ntohl (mp->inner_vrf_id));
-
-  s = format (s, "outer-vrf_id %d ", ntohl (mp->outer_vrf_id));
-
-  if (mp->is_add == 0)
-    s = format (s, "del ");
-
-  if (mp->l2_only)
-    s = format (s, "l2-only ");
 
   FINISH;
 }
@@ -1258,6 +1222,10 @@ static void *vl_api_classify_add_del_table_t_print
       s = format (s, "match %d ", ntohl (mp->match_n_vectors));
       s = format (s, "next-table %d ", ntohl (mp->next_table_index));
       s = format (s, "miss-next %d ", ntohl (mp->miss_next_index));
+      s = format (s, "current-data-flag %d ", ntohl (mp->current_data_flag));
+      if (mp->current_data_flag)
+	s = format (s, "current-data-offset %d ",
+		    ntohl (mp->current_data_offset));
       s = format (s, "mask hex ");
       for (i = 0; i < ntohl (mp->match_n_vectors) * sizeof (u32x4); i++)
 	s = format (s, "%02x", mp->mask[i]);
@@ -1279,6 +1247,9 @@ static void *vl_api_classify_add_del_session_t_print
   s = format (s, "hit_next_index %d ", ntohl (mp->hit_next_index));
   s = format (s, "opaque_index %d ", ntohl (mp->opaque_index));
   s = format (s, "advance %d ", ntohl (mp->advance));
+  s = format (s, "action %d ", mp->action);
+  if (mp->action)
+    s = format (s, "metadata %d ", ntohl (mp->metadata));
   if (mp->is_add == 0)
     s = format (s, "del ");
 
@@ -2060,18 +2031,6 @@ static void *vl_api_sw_interface_clear_stats_t_print
   FINISH;
 }
 
-static void *vl_api_mpls_gre_tunnel_dump_t_print
-  (vl_api_mpls_gre_tunnel_dump_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: mpls_gre_tunnel_dump ");
-
-  s = format (s, "tunnel_index %d ", ntohl (mp->tunnel_index));
-
-  FINISH;
-}
-
 static void *vl_api_mpls_eth_tunnel_dump_t_print
   (vl_api_mpls_eth_tunnel_dump_t * mp, void *handle)
 {
@@ -2094,12 +2053,32 @@ static void *vl_api_mpls_fib_encap_dump_t_print
   FINISH;
 }
 
-static void *vl_api_mpls_fib_decap_dump_t_print
-  (vl_api_mpls_fib_decap_dump_t * mp, void *handle)
+static void *vl_api_mpls_fib_dump_t_print
+  (vl_api_mpls_fib_dump_t * mp, void *handle)
 {
   u8 *s;
 
   s = format (0, "SCRIPT: mpls_fib_decap_dump ");
+
+  FINISH;
+}
+
+static void *vl_api_ip_fib_dump_t_print
+  (vl_api_ip_fib_dump_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: ip_fib_dump ");
+
+  FINISH;
+}
+
+static void *vl_api_ip6_fib_dump_t_print
+  (vl_api_ip6_fib_dump_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: ip6_fib_dump ");
 
   FINISH;
 }
@@ -2223,6 +2202,31 @@ static void *vl_api_ipfix_classify_table_dump_t_print
   u8 *s;
 
   s = format (0, "SCRIPT: ipfix_classify_table_dump ");
+
+  FINISH;
+}
+
+static void *vl_api_sw_interface_span_enable_disable_t_print
+  (vl_api_sw_interface_span_enable_disable_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: sw_interface_span_enable_disable ");
+  s = format (s, "src_sw_if_index %u ", ntohl (mp->sw_if_index_from));
+  s = format (s, "dst_sw_if_index %u ", ntohl (mp->sw_if_index_to));
+  if (!mp->enable)
+    s = format (s, "disable ");
+
+  FINISH;
+}
+
+static void *
+vl_api_sw_interface_span_dump_t_print (vl_api_sw_interface_span_dump_t * mp,
+				       void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: sw_interface_span_dump ");
 
   FINISH;
 }
@@ -2842,6 +2846,67 @@ static void *vl_api_flow_classify_dump_t_print
   FINISH;
 }
 
+static void *vl_api_get_first_msg_id_t_print
+  (vl_api_get_first_msg_id_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: get_first_msg_id %s ", mp->name);
+
+  FINISH;
+}
+
+static void *vl_api_ioam_enable_t_print
+  (vl_api_ioam_enable_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: ioam_enable ");
+
+  if (mp->trace_enable)
+    s = format (s, "trace enabled");
+
+  if (mp->pot_enable)
+    s = format (s, "POT enabled");
+
+  if (mp->seqno)
+    s = format (s, "Seqno enabled");
+
+  if (mp->analyse)
+    s = format (s, "Analyse enabled");
+
+  FINISH;
+}
+
+static void *vl_api_ioam_disable_t_print
+  (vl_api_ioam_disable_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: ioam_disable ");
+  s = format (s, "trace disabled");
+  s = format (s, "POT disabled");
+  s = format (s, "Seqno disabled");
+  s = format (s, "Analyse disabled");
+
+  FINISH;
+}
+
+static void *vl_api_feature_enable_disable_t_print
+  (vl_api_feature_enable_disable_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: feature_enable_disable ");
+  s = format (s, "arc_name %s ", mp->arc_name);
+  s = format (s, "feature_name %s ", mp->feature_name);
+  s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
+  if (!mp->enable)
+    s = format (s, "disable");
+
+  FINISH;
+}
+
 #define foreach_custom_print_no_arg_function                            \
 _(lisp_eid_table_vni_dump)                                              \
 _(lisp_map_resolver_dump)                                               \
@@ -2863,6 +2928,7 @@ _(CREATE_LOOPBACK, create_loopback)                                     \
 _(SW_INTERFACE_SET_FLAGS, sw_interface_set_flags)                       \
 _(SW_INTERFACE_ADD_DEL_ADDRESS, sw_interface_add_del_address)           \
 _(SW_INTERFACE_SET_TABLE, sw_interface_set_table)                       \
+_(SW_INTERFACE_SET_MPLS_ENABLE, sw_interface_set_mpls_enable)           \
 _(SW_INTERFACE_SET_VPATH, sw_interface_set_vpath)                       \
 _(TAP_CONNECT, tap_connect)                                             \
 _(TAP_MODIFY, tap_modify)                                               \
@@ -2871,9 +2937,7 @@ _(SW_INTERFACE_TAP_DUMP, sw_interface_tap_dump)                         \
 _(IP_ADD_DEL_ROUTE, ip_add_del_route)                                   \
 _(PROXY_ARP_ADD_DEL, proxy_arp_add_del)                                 \
 _(PROXY_ARP_INTFC_ENABLE_DISABLE, proxy_arp_intfc_enable_disable)       \
-_(MPLS_ADD_DEL_DECAP, mpls_add_del_decap)                               \
 _(MPLS_ADD_DEL_ENCAP, mpls_add_del_encap)                               \
-_(MPLS_GRE_ADD_DEL_TUNNEL, mpls_gre_add_del_tunnel)                     \
 _(MPLS_ETHERNET_ADD_DEL_TUNNEL, mpls_ethernet_add_del_tunnel)		\
 _(MPLS_ETHERNET_ADD_DEL_TUNNEL_2, mpls_ethernet_add_del_tunnel_2)	\
 _(SW_INTERFACE_SET_UNNUMBERED, sw_interface_set_unnumbered)             \
@@ -2951,10 +3015,9 @@ _(COP_WHITELIST_ENABLE_DISABLE, cop_whitelist_enable_disable)           \
 _(AF_PACKET_CREATE, af_packet_create)					\
 _(AF_PACKET_DELETE, af_packet_delete)					\
 _(SW_INTERFACE_CLEAR_STATS, sw_interface_clear_stats)                   \
-_(MPLS_GRE_TUNNEL_DUMP, mpls_gre_tunnel_dump)                           \
 _(MPLS_ETH_TUNNEL_DUMP, mpls_eth_tunnel_dump)                           \
 _(MPLS_FIB_ENCAP_DUMP, mpls_fib_encap_dump)                             \
-_(MPLS_FIB_DECAP_DUMP, mpls_fib_decap_dump)                             \
+_(MPLS_FIB_DUMP, mpls_fib_dump)                                         \
 _(CLASSIFY_TABLE_IDS,classify_table_ids)                                \
 _(CLASSIFY_TABLE_BY_INTERFACE, classify_table_by_interface)             \
 _(CLASSIFY_TABLE_INFO,classify_table_info)                              \
@@ -2965,6 +3028,8 @@ _(SET_IPFIX_CLASSIFY_STREAM, set_ipfix_classify_stream)                 \
 _(IPFIX_CLASSIFY_STREAM_DUMP, ipfix_classify_stream_dump)               \
 _(IPFIX_CLASSIFY_TABLE_ADD_DEL, ipfix_classify_table_add_del)           \
 _(IPFIX_CLASSIFY_TABLE_DUMP, ipfix_classify_table_dump)                 \
+_(SW_INTERFACE_SPAN_ENABLE_DISABLE, sw_interface_span_enable_disable)   \
+_(SW_INTERFACE_SPAN_DUMP, sw_interface_span_dump)                       \
 _(GET_NEXT_INDEX, get_next_index)                                       \
 _(PG_CREATE_INTERFACE,pg_create_interface)                              \
 _(PG_CAPTURE, pg_capture)                                               \
@@ -3007,7 +3072,13 @@ _(DELETE_SUBIF, delete_subif)                                           \
 _(L2_INTERFACE_PBB_TAG_REWRITE, l2_interface_pbb_tag_rewrite)           \
 _(PUNT, punt)                                                           \
 _(FLOW_CLASSIFY_SET_INTERFACE, flow_classify_set_interface)             \
-_(FLOW_CLASSIFY_DUMP, flow_classify_dump)
+_(FLOW_CLASSIFY_DUMP, flow_classify_dump)				\
+_(GET_FIRST_MSG_ID, get_first_msg_id)                                   \
+_(IOAM_ENABLE, ioam_enable)                                             \
+_(IOAM_DISABLE, ioam_disable)                                           \
+_(IP_FIB_DUMP, ip_fib_dump)                                             \
+_(IP6_FIB_DUMP, ip6_fib_dump)                                           \
+_(FEATURE_ENABLE_DISABLE, feature_enable_disable)
   void
 vl_msg_api_custom_dump_configure (api_main_t * am)
 {

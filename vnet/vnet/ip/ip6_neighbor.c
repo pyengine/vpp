@@ -23,10 +23,6 @@
 #include <vnet/fib/fib_table.h>
 #include <vnet/fib/ip6_fib.h>
 
-#if DPDK==1
-#include <vnet/devices/dpdk/dpdk.h>
-#endif
-
 /**
  * @file
  * @brief IPv6 Neighbor Adjacency and Neighbor Discovery.
@@ -317,7 +313,6 @@ typedef struct {
   ip6_address_t addr;
 } ip6_neighbor_set_unset_rpc_args_t;
 
-#if DPDK > 0
 static void ip6_neighbor_set_unset_rpc_callback 
 ( ip6_neighbor_set_unset_rpc_args_t * a);
 
@@ -340,7 +335,6 @@ static void set_unset_ip6_neighbor_rpc
   vl_api_rpc_call_main_thread (ip6_neighbor_set_unset_rpc_callback,
                                (u8 *) &args, sizeof (args));
 }
-#endif
 
 static void
 ip6_nbr_probe (ip_adjacency_t *adj)
@@ -538,14 +532,12 @@ vnet_set_ip6_ethernet_neighbor (vlib_main_t * vm,
   u32 next_index;
   pending_resolution_t * pr, * mc;
 
-#if DPDK > 0
   if (os_get_cpu_number())
     {
       set_unset_ip6_neighbor_rpc (vm, sw_if_index, a, link_layer_address,
                                   1 /* set new neighbor */, is_static);
       return 0;
     }
-#endif
 
   k.sw_if_index = sw_if_index;
   k.ip6_address = a[0];
@@ -687,14 +679,12 @@ vnet_unset_ip6_ethernet_neighbor (vlib_main_t * vm,
   uword * p;
   int rv = 0;
 
-#if DPDK > 0
   if (os_get_cpu_number())
     {
       set_unset_ip6_neighbor_rpc (vm, sw_if_index, a, link_layer_address,
                                   0 /* unset */, 0);
       return 0;
     }
-#endif
 
   k.sw_if_index = sw_if_index;
   k.ip6_address = a[0];
@@ -722,7 +712,6 @@ vnet_unset_ip6_ethernet_neighbor (vlib_main_t * vm,
   return rv;
 }
 
-#if DPDK > 0
 static void ip6_neighbor_set_unset_rpc_callback 
 ( ip6_neighbor_set_unset_rpc_args_t * a)
 {
@@ -734,7 +723,6 @@ static void ip6_neighbor_set_unset_rpc_callback
     vnet_unset_ip6_ethernet_neighbor (vm, a->sw_if_index, &a->addr, 
                                       a->link_layer_address, 6);
 }
-#endif
 
 static int
 ip6_neighbor_sort (void *a1, void *a2)
@@ -1063,7 +1051,8 @@ icmp6_neighbor_solicitation_or_advertisement (vlib_main_t * vm,
               vlib_buffer_advance(p0, - ethernet_buffer_header_size(p0));
               eth0 = vlib_buffer_get_current(p0);
               clib_memcpy(eth0->dst_address, eth0->src_address, 6);
-              clib_memcpy(eth0->src_address, eth_if0->address, 6);
+              if (eth_if0)
+                clib_memcpy(eth0->src_address, eth_if0->address, 6);
 
               /* Setup input and output sw_if_index for packet */
               ASSERT(vnet_buffer(p0)->sw_if_index[VLIB_RX] == sw_if_index0);
@@ -1848,7 +1837,6 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
 	  pool_put (nm->if_radv_pool,  a);
 	  nm->if_radv_pool_index_by_sw_if_index[sw_if_index] = ~0;
 	  ri = ~0;
-	  ip6_sw_interface_enable_disable(sw_if_index, 0);
 	}
     }
  else
@@ -1857,7 +1845,6 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
        {
 	 vnet_hw_interface_t * hw_if0;
      
-	 ip6_sw_interface_enable_disable(sw_if_index, 1);
 	 hw_if0 = vnet_get_sup_hw_interface (vnm, sw_if_index);
 	 
 	 pool_get (nm->if_radv_pool, a);
@@ -1880,11 +1867,10 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
 	 a->min_delay_between_radv = MIN_DELAY_BETWEEN_RAS;
 	 a->max_delay_between_radv = MAX_DELAY_BETWEEN_RAS;
 	 a->max_rtr_default_lifetime = MAX_DEF_RTR_LIFETIME;
-	 a->seed = random_default_seed();
-	 
-	 /* for generating random interface ids */
-	 a->randomizer = 0x1119194911191949ULL;
-	 a->randomizer = random_u64 ((u32 *)&a->randomizer);
+	 a->seed = (u32) clib_cpu_time_now();
+         (void) random_u32 (&a->seed);
+         a->randomizer = clib_cpu_time_now();
+	 (void) random_u64 (&a->randomizer);
 	 
 	 a->initial_adverts_count = MAX_INITIAL_RTR_ADVERTISEMENTS ; 
 	 a->initial_adverts_sent = a->initial_adverts_count-1;
@@ -1910,7 +1896,7 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
 	     {0x33, 0x33, 0x00, 0x00, 0x00, IP6_MULTICAST_GROUP_ID_all_hosts};
 	   
 	   a->all_nodes_adj_index = adj_rewrite_add_and_lock(FIB_PROTOCOL_IP6,
-							     FIB_LINK_IP6,
+							     VNET_LINK_IP6,
 							     sw_if_index,
 							     link_layer_address);
 	 } 
@@ -1920,7 +1906,7 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
 	     {0x33, 0x33, 0x00, 0x00, 0x00, IP6_MULTICAST_GROUP_ID_all_routers};
 	
 	   a->all_routers_adj_index = adj_rewrite_add_and_lock(FIB_PROTOCOL_IP6,
-							       FIB_LINK_IP6,
+							       VNET_LINK_IP6,
 							       sw_if_index,
 							       link_layer_address);
 	 } 
@@ -1931,7 +1917,7 @@ ip6_neighbor_sw_interface_add_del (vnet_main_t * vnm,
 	   
 	   a->all_mldv2_routers_adj_index = 
 	       adj_rewrite_add_and_lock(FIB_PROTOCOL_IP6,
-					FIB_LINK_IP6,
+					VNET_LINK_IP6,
 					sw_if_index,
 					link_layer_address);
 	 } 

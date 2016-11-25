@@ -35,6 +35,7 @@
 #include <vnet/dpo/receive_dpo.h>
 #include <vnet/dpo/punt_dpo.h>
 #include <vnet/dpo/classify_dpo.h>
+#include <vnet/dpo/ip_null_dpo.h>
 
 /**
  * Array of char* names for the DPO types and protos
@@ -64,21 +65,44 @@ static const char* const * const ** dpo_nodes;
 /**
  * @brief Vector of edge indicies from parent DPO nodes to child
  *
- * dpo_edges[child_type][child_proto][parent_type] = edge_index
+ * dpo_edges[child_type][child_proto][parent_type][parent_proto] = edge_index
  *
  * This array is derived at init time from the dpo_nodes above. Note that
  * the third dimension in dpo_nodes is lost, hence, the edge index from each
  * node MUST be the same.
+ * Including both the child and parent protocol is required to support the
+ * case where it changes as the grapth is traversed, most notablly when an
+ * MPLS label is popped.
  *
  * Note that this array is child type specific, not child instance specific.
  */
-static u32 ***dpo_edges;
+static u32 ****dpo_edges;
 
 /**
  * @brief The DPO type value that can be assigend to the next dynamic
  *        type registration.
  */
 static dpo_type_t dpo_dynamic = DPO_LAST;
+
+dpo_proto_t
+vnet_link_to_dpo_proto (vnet_link_t linkt)
+{
+    switch (linkt)
+    {
+    case VNET_LINK_IP6:
+        return (DPO_PROTO_IP6);
+    case VNET_LINK_IP4:
+        return (DPO_PROTO_IP4);
+    case VNET_LINK_MPLS:
+        return (DPO_PROTO_MPLS);
+    case VNET_LINK_ETHERNET:
+        return (DPO_PROTO_ETHERNET);
+    case VNET_LINK_ARP:
+	break;
+    }
+    ASSERT(0);
+    return (0);
+}
 
 u8 *
 format_dpo_type (u8 * s, va_list * args)
@@ -166,7 +190,12 @@ dpo_set (dpo_id_t *dpo,
 void
 dpo_reset (dpo_id_t *dpo)
 {
-    dpo_set(dpo, DPO_FIRST, DPO_PROTO_NONE, INDEX_INVALID);
+    dpo_id_t tmp = DPO_INVALID;
+
+    /*
+     * use the atomic copy operation.
+     */
+    dpo_copy(dpo, &tmp);
 }
 
 /**
@@ -268,13 +297,15 @@ dpo_get_next_node (dpo_type_t child_type,
 
     vec_validate(dpo_edges, child_type);
     vec_validate(dpo_edges[child_type], child_proto);
-    vec_validate_init_empty(dpo_edges[child_type][child_proto],
-                            parent_dpo->dpoi_type, ~0);
+    vec_validate(dpo_edges[child_type][child_proto], parent_type);
+    vec_validate_init_empty(
+        dpo_edges[child_type][child_proto][parent_type],
+        parent_proto, ~0);
 
     /*
      * if the edge index has not yet been created for this node to node transistion
      */
-    if (~0 == dpo_edges[child_type][child_proto][parent_type])
+    if (~0 == dpo_edges[child_type][child_proto][parent_type][parent_proto])
     {
         vlib_node_t *parent_node, *child_node;
         vlib_main_t *vm;
@@ -287,45 +318,45 @@ dpo_get_next_node (dpo_type_t child_type,
         ASSERT(NULL != dpo_nodes[parent_type]);
         ASSERT(NULL != dpo_nodes[parent_type][parent_proto]);
 
-        pp = 0;
+        cc = 0;
 
         /*
          * create a graph arc from each of the parent's registered node types,
          * to each of the childs.
          */
-        while (NULL != dpo_nodes[child_type][child_proto][pp])
+        while (NULL != dpo_nodes[child_type][child_proto][cc])
         {
-            parent_node =
+            child_node =
                 vlib_get_node_by_name(vm,
-                                      (u8*) dpo_nodes[child_type][child_proto][pp]);
+                                      (u8*) dpo_nodes[child_type][child_proto][cc]);
 
-            cc = 0;
+            pp = 0;
 
-            while (NULL != dpo_nodes[parent_type][child_proto][cc])
+            while (NULL != dpo_nodes[parent_type][parent_proto][pp])
             {
-                child_node =
+                parent_node =
                     vlib_get_node_by_name(vm,
-                                          (u8*) dpo_nodes[parent_type][parent_proto][cc]);
+                                          (u8*) dpo_nodes[parent_type][parent_proto][pp]);
 
                 edge = vlib_node_add_next(vm,
-                                          parent_node->index,
-                                          child_node->index);
+                                          child_node->index,
+                                          parent_node->index);
 
-                if (~0 == dpo_edges[child_type][child_proto][parent_type])
+                if (~0 == dpo_edges[child_type][child_proto][parent_type][parent_proto])
                 {
-                    dpo_edges[child_type][child_proto][parent_type] = edge;
+                    dpo_edges[child_type][child_proto][parent_type][parent_proto] = edge;
                 }
                 else
                 {
-                    ASSERT(dpo_edges[child_type][child_proto][parent_type] == edge);
+                    ASSERT(dpo_edges[child_type][child_proto][parent_type][parent_proto] == edge);
                 }
-                cc++;
+                pp++;
             }
-            pp++;
+            cc++;
         }
     }
 
-    return (dpo_edges[child_type][child_proto][parent_type]);
+    return (dpo_edges[child_type][child_proto][parent_type][parent_proto]);
 }
 
 /**
@@ -342,7 +373,7 @@ dpo_stack_i (u32 edge,
      * in order to get an atomic update of the parent we create a temporary,
      * from a copy of the child, and add the next_node. then we copy to the parent
      */
-    dpo_id_t tmp = DPO_NULL;
+    dpo_id_t tmp = DPO_INVALID;
     dpo_copy(&tmp, parent);
 
     /*
@@ -417,6 +448,7 @@ dpo_module_init (vlib_main_t * vm)
     mpls_label_dpo_module_init();
     classify_dpo_module_init();
     lookup_dpo_module_init();
+    ip_null_dpo_module_init();
 
     return (NULL);
 }

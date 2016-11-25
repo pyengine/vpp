@@ -31,6 +31,7 @@ endif
 ########################################
 libvnet_la_SOURCES +=					\
   vnet/config.c						\
+  vnet/devices/devices.c				\
   vnet/handoff.c					\
   vnet/interface.c					\
   vnet/interface_cli.c					\
@@ -44,6 +45,7 @@ nobase_include_HEADERS +=			\
   vnet/api_errno.h				\
   vnet/buffer.h					\
   vnet/config.h					\
+  vnet/devices/devices.h			\
   vnet/global_funcs.h				\
   vnet/handoff.h				\
   vnet/interface.h				\
@@ -66,7 +68,6 @@ libvnet_la_SOURCES +=				\
 nobase_include_HEADERS +=			\
   vnet/policer/police.h				\
   vnet/policer/policer.h			\
-  vnet/policer/fix_types.h			\
   vnet/policer/xlate.h
 
 ########################################
@@ -267,7 +268,6 @@ nobase_include_HEADERS +=			\
 # Layer 3 protocol: IP v4/v6
 ########################################
 libvnet_la_SOURCES +=				\
- vnet/ip/feature_registration.c			\
  vnet/ip/format.c				\
  vnet/ip/icmp4.c				\
  vnet/ip/icmp6.c				\
@@ -299,7 +299,6 @@ libvnet_la_SOURCES +=				\
  vnet/ip/udp_pg.c
 
 nobase_include_HEADERS +=			\
- vnet/ip/feature_registration.h			\
  vnet/ip/format.h				\
  vnet/ip/icmp46_packet.h			\
  vnet/ip/icmp4.h				\
@@ -630,8 +629,18 @@ libvnet_la_SOURCES +=				\
   vnet/lawful-intercept/node.c
 
 nobase_include_HEADERS += 			\
-  vnet/dpdk_replication.h			\
   vnet/lawful-intercept/lawful_intercept.h
+
+########################################
+# SPAN (port mirroring)
+########################################
+
+libvnet_la_SOURCES +=				\
+  vnet/span/span.c	\
+  vnet/span/node.c
+
+nobase_include_HEADERS += 			\
+  vnet/span/span.h
 
 ########################################
 # Packet generator
@@ -650,7 +659,7 @@ nobase_include_HEADERS +=			\
   vnet/pg/edit.h
 
 ########################################
-# Intel DPDK
+# DPDK
 ########################################
 if WITH_DPDK
 libvnet_la_SOURCES +=				\
@@ -660,7 +669,6 @@ libvnet_la_SOURCES +=				\
   vnet/devices/dpdk/init.c			\
   vnet/devices/dpdk/node.c			\
   vnet/devices/dpdk/hqos.c			\
-  vnet/devices/dpdk/vhost_user.c    \
   vnet/devices/dpdk/cli.c
 
 nobase_include_HEADERS +=			\
@@ -719,6 +727,17 @@ libvnet_la_SOURCES +=				\
 nobase_include_HEADERS +=			\
   vnet/devices/netmap/netmap.h
 
+
+########################################
+# Driver feature graph arc support
+########################################
+
+libvnet_la_SOURCES +=				\
+  vnet/feature/feature.c			\
+  vnet/feature/registration.c
+
+nobase_include_HEADERS +=			\
+  vnet/feature/feature.h
 
 ########################################
 # Unix kernel related
@@ -805,6 +824,7 @@ nobase_include_HEADERS +=			\
 libvnet_la_SOURCES +=				\
   vnet/dpo/dpo.c                                \
   vnet/dpo/drop_dpo.c                           \
+  vnet/dpo/ip_null_dpo.c                        \
   vnet/dpo/punt_dpo.c                           \
   vnet/dpo/receive_dpo.c                        \
   vnet/dpo/load_balance.c			\
@@ -820,6 +840,7 @@ nobase_include_HEADERS +=			\
   vnet/dpo/punt_dpo.h                           \
   vnet/dpo/classify_dpo.h                       \
   vnet/dpo/receive_dpo.h                        \
+  vnet/dpo/ip_null_dpo.h                        \
   vnet/dpo/dpo.h
 
 ########################################

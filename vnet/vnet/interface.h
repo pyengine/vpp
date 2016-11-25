@@ -61,6 +61,13 @@ typedef clib_error_t *(vnet_subif_add_del_function_t)
 typedef clib_error_t *(vnet_interface_set_mac_address_function_t)
   (struct vnet_hw_interface_t * hi, char *address);
 
+typedef enum vnet_interface_function_priority_t_
+{
+  VNET_ITF_FUNC_PRIORITY_LOW,
+  VNET_ITF_FUNC_PRIORITY_HIGH,
+} vnet_interface_function_priority_t;
+#define VNET_ITF_FUNC_N_PRIO ((vnet_interface_function_priority_t)VNET_ITF_FUNC_PRIORITY_HIGH+1)
+
 typedef struct _vnet_interface_function_list_elt
 {
   struct _vnet_interface_function_list_elt *next_interface_function;
@@ -76,8 +83,23 @@ static void __vnet_interface_function_init_##tag##_##f (void)           \
 {                                                                       \
  vnet_main_t * vnm = vnet_get_main();                                   \
  static _vnet_interface_function_list_elt_t init_function;              \
- init_function.next_interface_function = vnm->tag##_functions;          \
- vnm->tag##_functions = &init_function;                                 \
+ init_function.next_interface_function =                                \
+   vnm->tag##_functions[VNET_ITF_FUNC_PRIORITY_LOW];                    \
+ vnm->tag##_functions[VNET_ITF_FUNC_PRIORITY_LOW] = &init_function;     \
+ init_function.fp = (void *) &f;                                        \
+}
+
+#define _VNET_INTERFACE_FUNCTION_DECL_PRIO(f,tag,p)                    \
+                                                                        \
+static void __vnet_interface_function_init_##tag##_##f (void)           \
+    __attribute__((__constructor__)) ;                                  \
+                                                                        \
+static void __vnet_interface_function_init_##tag##_##f (void)           \
+{                                                                       \
+ vnet_main_t * vnm = vnet_get_main();                                   \
+ static _vnet_interface_function_list_elt_t init_function;              \
+ init_function.next_interface_function = vnm->tag##_functions[p];       \
+ vnm->tag##_functions[p] = &init_function;                              \
  init_function.fp = (void *) &f;                                        \
 }
 
@@ -85,10 +107,14 @@ static void __vnet_interface_function_init_##tag##_##f (void)           \
   _VNET_INTERFACE_FUNCTION_DECL(f,hw_interface_add_del)
 #define VNET_HW_INTERFACE_LINK_UP_DOWN_FUNCTION(f)		\
   _VNET_INTERFACE_FUNCTION_DECL(f,hw_interface_link_up_down)
+#define VNET_HW_INTERFACE_LINK_UP_DOWN_FUNCTION_PRIO(f,p)        \
+  _VNET_INTERFACE_FUNCTION_DECL_PRIO(f,hw_interface_link_up_down,p)
 #define VNET_SW_INTERFACE_ADD_DEL_FUNCTION(f)			\
   _VNET_INTERFACE_FUNCTION_DECL(f,sw_interface_add_del)
 #define VNET_SW_INTERFACE_ADMIN_UP_DOWN_FUNCTION(f)		\
   _VNET_INTERFACE_FUNCTION_DECL(f,sw_interface_admin_up_down)
+#define VNET_SW_INTERFACE_ADMIN_UP_DOWN_FUNCTION_PRIO(f,p)     	\
+  _VNET_INTERFACE_FUNCTION_DECL_PRIO(f,sw_interface_admin_up_down, p)
 
 /* A class of hardware interface devices. */
 typedef struct _vnet_device_class
@@ -215,6 +241,20 @@ typedef enum vnet_link_t_
   VNET_LINK_ETHERNET,
   VNET_LINK_ARP,
 } __attribute__ ((packed)) vnet_link_t;
+
+#define VNET_LINKS {                   \
+    [VNET_LINK_ETHERNET] = "ethernet", \
+    [VNET_LINK_IP4] = "ipv4",          \
+    [VNET_LINK_IP6] = "ipv6",          \
+    [VNET_LINK_MPLS] = "mpls",         \
+    [VNET_LINK_ARP] = "arp",	       \
+}
+
+/**
+ * @brief Number of link types. Not part of the enum so it does not have to be included in
+ * switch statements
+ */
+#define VNET_LINK_NUM (VNET_LINK_ARP+1)
 
 /**
  * @brief Convert a link to to an Ethertype
@@ -497,8 +537,6 @@ typedef struct
 
   u32 link_speed;
 
-  u32 output_feature_bitmap;
-
   union
   {
     /* VNET_SW_INTERFACE_TYPE_HARDWARE. */
@@ -592,30 +630,6 @@ vnet_interface_counter_unlock (vnet_interface_main_t * im)
 void vnet_pcap_drop_trace_filter_add_del (u32 error_index, int is_add);
 
 int vnet_interface_name_renumber (u32 sw_if_index, u32 new_show_dev_instance);
-
-
-/*
- *  Output features
- */
-
-#define foreach_intf_output_feat \
- _(IPSEC, "ipsec-output")
-
-/* Feature bitmap positions */
-typedef enum
-{
-#define _(sym,str) INTF_OUTPUT_FEAT_##sym,
-  foreach_intf_output_feat
-#undef _
-    INTF_OUTPUT_N_FEAT,
-} intf_output_feat_t;
-
-/* flag that we are done with feature path */
-#define INTF_OUTPUT_FEAT_DONE INTF_OUTPUT_N_FEAT
-
-int vnet_interface_add_del_feature (struct vnet_main_t *vnm, vlib_main_t * vm,
-				    u32 sw_if_index,
-				    intf_output_feat_t feature, int is_add);
 
 #endif /* included_vnet_interface_h */
 

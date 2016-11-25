@@ -18,6 +18,7 @@
 #include <vppinfra/xxhash.h>
 #include <vlib/threads.h>
 #include <vnet/handoff.h>
+#include <vnet/feature/feature.h>
 
 typedef struct
 {
@@ -33,12 +34,18 @@ typedef struct
 
   per_inteface_handoff_data_t *if_data;
 
+  /* Worker handoff index */
+  u32 frame_queue_index;
+
   /* convenience variables */
   vlib_main_t *vlib_main;
   vnet_main_t *vnet_main;
+
+    u64 (*hash_fn) (ethernet_header_t *);
 } handoff_main_t;
 
 handoff_main_t handoff_main;
+vlib_node_registration_t handoff_dispatch_node;
 
 typedef struct
 {
@@ -118,7 +125,7 @@ worker_handoff_node_fn (vlib_main_t * vm,
        */
 
       /* Compute ingress LB hash */
-      hash_key = eth_get_key ((ethernet_header_t *) b0->data);
+      hash_key = hm->hash_fn ((ethernet_header_t *) b0->data);
       hash = (u32) clib_xxhash (hash_key);
 
       /* if input node did not specify next index, then packet
@@ -146,8 +153,9 @@ worker_handoff_node_fn (vlib_main_t * vm,
 	  if (hf)
 	    hf->n_vectors = VLIB_FRAME_SIZE - n_left_to_next_worker;
 
-	  hf = dpdk_get_handoff_queue_elt (next_worker_index,
-					   handoff_queue_elt_by_worker_index);
+	  hf = vlib_get_worker_handoff_queue_elt (hm->frame_queue_index,
+						  next_worker_index,
+						  handoff_queue_elt_by_worker_index);
 
 	  n_left_to_next_worker = VLIB_FRAME_SIZE - hf->n_vectors;
 	  to_next_worker = &hf->buffer_index[hf->n_vectors];
@@ -162,7 +170,7 @@ worker_handoff_node_fn (vlib_main_t * vm,
       if (n_left_to_next_worker == 0)
 	{
 	  hf->n_vectors = VLIB_FRAME_SIZE;
-	  vlib_put_handoff_queue_elt (hf);
+	  vlib_put_frame_queue_elt (hf);
 	  current_worker_index = ~0;
 	  handoff_queue_elt_by_worker_index[next_worker_index] = 0;
 	  hf = 0;
@@ -195,7 +203,7 @@ worker_handoff_node_fn (vlib_main_t * vm,
 	   */
 	  if (1 || hf->n_vectors == hf->last_n_vectors)
 	    {
-	      vlib_put_handoff_queue_elt (hf);
+	      vlib_put_frame_queue_elt (hf);
 	      handoff_queue_elt_by_worker_index[i] = 0;
 	    }
 	  else
@@ -234,8 +242,7 @@ interface_handoff_enable_disable (vlib_main_t * vm, u32 sw_if_index,
   vnet_sw_interface_t *sw;
   vnet_main_t *vnm = vnet_get_main ();
   per_inteface_handoff_data_t *d;
-  int i, rv;
-  u32 node_index = enable_disable ? worker_handoff_node.index : ~0;
+  int i, rv = 0;
 
   if (pool_is_free_index (vnm->interface_main.sw_interfaces, sw_if_index))
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
@@ -246,6 +253,10 @@ interface_handoff_enable_disable (vlib_main_t * vm, u32 sw_if_index,
 
   if (clib_bitmap_last_set (bitmap) >= hm->num_workers)
     return VNET_API_ERROR_INVALID_WORKER;
+
+  if (hm->frame_queue_index == ~0)
+    hm->frame_queue_index =
+      vlib_frame_queue_main_init (handoff_dispatch_node.index, 0);
 
   vec_validate (hm->if_data, sw_if_index);
   d = vec_elt_at_index (hm->if_data, sw_if_index);
@@ -264,7 +275,8 @@ interface_handoff_enable_disable (vlib_main_t * vm, u32 sw_if_index,
       /* *INDENT-ON* */
     }
 
-  rv = vnet_hw_interface_rx_redirect_to_node (vnm, sw_if_index, node_index);
+  vnet_feature_enable_disable ("device-input", "worker-handoff",
+			       sw_if_index, enable_disable, 0, 0);
   return rv;
 }
 
@@ -273,9 +285,11 @@ set_interface_handoff_command_fn (vlib_main_t * vm,
 				  unformat_input_t * input,
 				  vlib_cli_command_t * cmd)
 {
+  handoff_main_t *hm = &handoff_main;
   u32 sw_if_index = ~0;
   int enable_disable = 1;
   uword *bitmap = 0;
+  u32 sym = ~0;
 
   int rv = 0;
 
@@ -288,6 +302,10 @@ set_interface_handoff_command_fn (vlib_main_t * vm,
       else if (unformat (input, "%U", unformat_vnet_sw_interface,
 			 vnet_get_main (), &sw_if_index))
 	;
+      else if (unformat (input, "symmetrical"))
+	sym = 1;
+      else if (unformat (input, "asymmetrical"))
+	sym = 0;
       else
 	break;
     }
@@ -323,6 +341,12 @@ set_interface_handoff_command_fn (vlib_main_t * vm,
     default:
       return clib_error_return (0, "unknown return value %d", rv);
     }
+
+  if (sym == 1)
+    hm->hash_fn = eth_get_sym_key;
+  else if (sym == 0)
+    hm->hash_fn = eth_get_key;
+
   return 0;
 }
 
@@ -330,7 +354,7 @@ set_interface_handoff_command_fn (vlib_main_t * vm,
 VLIB_CLI_COMMAND (set_interface_handoff_command, static) = {
   .path = "set interface handoff",
   .short_help =
-  "set interface handoff <interface-name> workers <workers-list>",
+  "set interface handoff <interface-name> workers <workers-list> [symmetrical|asymmetrical]",
   .function = set_interface_handoff_command_fn,
 };
 /* *INDENT-ON* */
@@ -354,9 +378,6 @@ format_handoff_dispatch_trace (u8 * s, va_list * args)
 	      t->sw_if_index, t->next_index, t->buffer_index);
   return s;
 }
-
-
-vlib_node_registration_t handoff_dispatch_node;
 
 #define foreach_handoff_dispatch_error \
 _(EXAMPLE, "example packets")
@@ -552,11 +573,12 @@ handoff_init (vlib_main_t * vm)
 	}
     }
 
+  hm->hash_fn = eth_get_key;
+
   hm->vlib_main = vm;
   hm->vnet_main = &vnet_main;
 
-  ASSERT (tm->handoff_dispatch_node_index == ~0);
-  tm->handoff_dispatch_node_index = handoff_dispatch_node.index;
+  hm->frame_queue_index = ~0;
 
   return 0;
 }

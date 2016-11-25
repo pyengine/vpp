@@ -23,31 +23,10 @@
 #include <vnet/classify/vnet_classify.h>
 #include <vnet/mpls/packet.h>
 #include <vnet/handoff.h>
+#include <vnet/devices/devices.h>
+#include <vnet/feature/feature.h>
 
 #include "dpdk_priv.h"
-
-#ifndef MAX
-#define MAX(a,b) ((a) < (b) ? (b) : (a))
-#endif
-
-#ifndef MIN
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#endif
-
-/*
- * At least in certain versions of ESXi, vmware e1000's don't honor the
- * "strip rx CRC" bit. Set this flag to work around that bug FOR UNIT TEST ONLY.
- *
- * If wireshark complains like so:
- *
- * "Frame check sequence: 0x00000000 [incorrect, should be <hex-num>]"
- * and you're using ESXi emulated e1000's, set this flag FOR UNIT TEST ONLY.
- *
- * Note: do NOT check in this file with this workaround enabled! You'll lose
- * actual data from e.g. 10xGE interfaces. The extra 4 bytes annoy
- * wireshark, but they're harmless...
- */
-#define VMWARE_LENGTH_BUG_WORKAROUND 0
 
 static char *dpdk_error_strings[] = {
 #define _(n,s) s,
@@ -75,68 +54,38 @@ vlib_buffer_is_mpls (vlib_buffer_t * b)
 }
 
 always_inline void
-dpdk_rx_next_and_error_from_mb_flags_x1 (dpdk_device_t * xd,
-					 struct rte_mbuf *mb,
-					 vlib_buffer_t * b0, u8 * next0,
-					 u8 * error0)
+dpdk_rx_next_from_mb (struct rte_mbuf *mb, vlib_buffer_t * b0, u32 * next0)
 {
-  u8 n0;
-  uint16_t mb_flags = mb->ol_flags;
+  u32 n0;
 
-  if (PREDICT_FALSE (mb_flags & (
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-				  PKT_EXT_RX_PKT_ERROR | PKT_EXT_RX_BAD_FCS |
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
-				  PKT_RX_IP_CKSUM_BAD | PKT_RX_L4_CKSUM_BAD)))
+  if (PREDICT_FALSE ((mb->ol_flags & PKT_RX_VLAN_PKT)))
+    n0 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+  else if (PREDICT_TRUE (dpdk_mbuf_is_ip4 (mb)))
+    n0 = VNET_DEVICE_INPUT_NEXT_IP4_INPUT;
+  else if (PREDICT_TRUE (dpdk_mbuf_is_ip6 (mb)))
+    n0 = VNET_DEVICE_INPUT_NEXT_IP6_INPUT;
+  else if (PREDICT_TRUE (vlib_buffer_is_mpls (b0)))
+    n0 = VNET_DEVICE_INPUT_NEXT_MPLS_INPUT;
+  else
+    n0 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+  *next0 = n0;
+}
+
+always_inline void
+dpdk_rx_error_from_mb (struct rte_mbuf *mb, u32 * next, u8 * error)
+{
+  if (mb->ol_flags & PKT_RX_IP_CKSUM_BAD)
     {
-      /* some error was flagged. determine the drop reason */
-      n0 = DPDK_RX_NEXT_DROP;
-      *error0 =
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-	(mb_flags & PKT_EXT_RX_PKT_ERROR) ? DPDK_ERROR_RX_PACKET_ERROR :
-	(mb_flags & PKT_EXT_RX_BAD_FCS) ? DPDK_ERROR_RX_BAD_FCS :
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
-	(mb_flags & PKT_RX_IP_CKSUM_BAD) ? DPDK_ERROR_IP_CHECKSUM_ERROR :
-	(mb_flags & PKT_RX_L4_CKSUM_BAD) ? DPDK_ERROR_L4_CHECKSUM_ERROR :
-	DPDK_ERROR_NONE;
+      *error = DPDK_ERROR_IP_CHECKSUM_ERROR;
+      *next = VNET_DEVICE_INPUT_NEXT_DROP;
+    }
+  else if (mb->ol_flags & PKT_RX_L4_CKSUM_BAD)
+    {
+      *error = DPDK_ERROR_L4_CHECKSUM_ERROR;
+      *next = VNET_DEVICE_INPUT_NEXT_DROP;
     }
   else
-    {
-      *error0 = DPDK_ERROR_NONE;
-      if (PREDICT_FALSE (xd->per_interface_next_index != ~0))
-	{
-	  n0 = xd->per_interface_next_index;
-	  b0->flags |= BUFFER_HANDOFF_NEXT_VALID;
-	  if (PREDICT_TRUE (dpdk_mbuf_is_ip4 (mb)))
-	    vnet_buffer (b0)->handoff.next_index =
-	      HANDOFF_DISPATCH_NEXT_IP4_INPUT;
-	  else if (PREDICT_TRUE (dpdk_mbuf_is_ip6 (mb)))
-	    vnet_buffer (b0)->handoff.next_index =
-	      HANDOFF_DISPATCH_NEXT_IP6_INPUT;
-	  else if (PREDICT_TRUE (vlib_buffer_is_mpls (b0)))
-	    vnet_buffer (b0)->handoff.next_index =
-	      HANDOFF_DISPATCH_NEXT_MPLS_INPUT;
-	  else
-	    vnet_buffer (b0)->handoff.next_index =
-	      HANDOFF_DISPATCH_NEXT_ETHERNET_INPUT;
-	}
-      else
-	if (PREDICT_FALSE ((xd->flags & DPDK_DEVICE_FLAG_HAVE_SUBIF) ||
-			   (mb_flags & PKT_RX_VLAN_PKT)))
-	n0 = DPDK_RX_NEXT_ETHERNET_INPUT;
-      else
-	{
-	  if (PREDICT_TRUE (dpdk_mbuf_is_ip4 (mb)))
-	    n0 = DPDK_RX_NEXT_IP4_INPUT;
-	  else if (PREDICT_TRUE (dpdk_mbuf_is_ip6 (mb)))
-	    n0 = DPDK_RX_NEXT_IP6_INPUT;
-	  else if (PREDICT_TRUE (vlib_buffer_is_mpls (b0)))
-	    n0 = DPDK_RX_NEXT_MPLS_INPUT;
-	  else
-	    n0 = DPDK_RX_NEXT_ETHERNET_INPUT;
-	}
-    }
-  *next0 = n0;
+    *error = DPDK_ERROR_NONE;
 }
 
 void
@@ -147,7 +96,7 @@ dpdk_rx_trace (dpdk_main_t * dm,
 {
   vlib_main_t *vm = vlib_get_main ();
   u32 *b, n_left;
-  u8 next0;
+  u32 next0;
 
   n_left = n_buffers;
   b = buffers;
@@ -165,7 +114,15 @@ dpdk_rx_trace (dpdk_main_t * dm,
 
       b0 = vlib_get_buffer (vm, bi0);
       mb = rte_mbuf_from_vlib_buffer (b0);
-      dpdk_rx_next_and_error_from_mb_flags_x1 (xd, mb, b0, &next0, &error0);
+
+      if (PREDICT_FALSE (xd->per_interface_next_index != ~0))
+	next0 = xd->per_interface_next_index;
+      else if (PREDICT_FALSE (xd->flags & DPDK_DEVICE_FLAG_HAVE_SUBIF))
+	next0 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+      else
+	dpdk_rx_next_from_mb (mb, b0, &next0);
+      dpdk_rx_error_from_mb (mb, &next0, &error0);
+
       vlib_trace_buffer (vm, node, next0, b0, /* follow_chain */ 0);
       t0 = vlib_add_trace (vm, node, b0, sizeof (t0[0]));
       t0->queue_index = queue_id;
@@ -178,104 +135,8 @@ dpdk_rx_trace (dpdk_main_t * dm,
 		   sizeof (t0->buffer.pre_data));
       clib_memcpy (&t0->data, mb->buf_addr + mb->data_off, sizeof (t0->data));
 
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-      /*
-       * Clear overloaded TX offload flags when a DPDK driver
-       * is using them for RX flags (e.g. Cisco VIC Ethernet driver)
-       */
-      mb->ol_flags &= PKT_EXT_RX_CLR_TX_FLAGS_MASK;
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
-
       b += 1;
     }
-}
-
-/*
- * dpdk_efd_update_counters()
- * Update EFD (early-fast-discard) counters
- */
-void
-dpdk_efd_update_counters (dpdk_device_t * xd, u32 n_buffers, u16 enabled)
-{
-  if (enabled & DPDK_EFD_MONITOR_ENABLED)
-    {
-      u64 now = clib_cpu_time_now ();
-      if (xd->efd_agent.last_poll_time > 0)
-	{
-	  u64 elapsed_time = (now - xd->efd_agent.last_poll_time);
-	  if (elapsed_time > xd->efd_agent.max_poll_delay)
-	    xd->efd_agent.max_poll_delay = elapsed_time;
-	}
-      xd->efd_agent.last_poll_time = now;
-    }
-
-  xd->efd_agent.total_packet_cnt += n_buffers;
-  xd->efd_agent.last_burst_sz = n_buffers;
-
-  if (n_buffers > xd->efd_agent.max_burst_sz)
-    xd->efd_agent.max_burst_sz = n_buffers;
-
-  if (PREDICT_FALSE (n_buffers == VLIB_FRAME_SIZE))
-    {
-      xd->efd_agent.full_frames_cnt++;
-      xd->efd_agent.consec_full_frames_cnt++;
-    }
-  else
-    {
-      xd->efd_agent.consec_full_frames_cnt = 0;
-    }
-}
-
-/* is_efd_discardable()
- *   returns non zero DPDK error if packet meets early-fast-discard criteria,
- *           zero otherwise
- */
-u32
-is_efd_discardable (vlib_thread_main_t * tm,
-		    vlib_buffer_t * b0, struct rte_mbuf *mb)
-{
-  ethernet_header_t *eh = (ethernet_header_t *) b0->data;
-
-  if (eh->type == clib_host_to_net_u16 (ETHERNET_TYPE_IP4))
-    {
-      ip4_header_t *ipv4 =
-	(ip4_header_t *) & (b0->data[sizeof (ethernet_header_t)]);
-      u8 pkt_prec = (ipv4->tos >> 5);
-
-      return (tm->efd.ip_prec_bitmap & (1 << pkt_prec) ?
-	      DPDK_ERROR_IPV4_EFD_DROP_PKTS : DPDK_ERROR_NONE);
-    }
-  else if (eh->type == clib_net_to_host_u16 (ETHERNET_TYPE_IP6))
-    {
-      ip6_header_t *ipv6 =
-	(ip6_header_t *) & (b0->data[sizeof (ethernet_header_t)]);
-      u8 pkt_tclass =
-	((ipv6->ip_version_traffic_class_and_flow_label >> 20) & 0xff);
-
-      return (tm->efd.ip_prec_bitmap & (1 << pkt_tclass) ?
-	      DPDK_ERROR_IPV6_EFD_DROP_PKTS : DPDK_ERROR_NONE);
-    }
-  else if (eh->type == clib_net_to_host_u16 (ETHERNET_TYPE_MPLS_UNICAST))
-    {
-      mpls_unicast_header_t *mpls =
-	(mpls_unicast_header_t *) & (b0->data[sizeof (ethernet_header_t)]);
-      u8 pkt_exp = ((mpls->label_exp_s_ttl >> 9) & 0x07);
-
-      return (tm->efd.mpls_exp_bitmap & (1 << pkt_exp) ?
-	      DPDK_ERROR_MPLS_EFD_DROP_PKTS : DPDK_ERROR_NONE);
-    }
-  else if ((eh->type == clib_net_to_host_u16 (ETHERNET_TYPE_VLAN)) ||
-	   (eh->type == clib_net_to_host_u16 (ETHERNET_TYPE_DOT1AD)))
-    {
-      ethernet_vlan_header_t *vlan =
-	(ethernet_vlan_header_t *) & (b0->data[sizeof (ethernet_header_t)]);
-      u8 pkt_cos = ((vlan->priority_cfi_and_id >> 13) & 0x07);
-
-      return (tm->efd.vlan_cos_bitmap & (1 << pkt_cos) ?
-	      DPDK_ERROR_VLAN_EFD_DROP_PKTS : DPDK_ERROR_NONE);
-    }
-
-  return DPDK_ERROR_NONE;
 }
 
 static inline u32
@@ -303,78 +164,6 @@ dpdk_rx_burst (dpdk_main_t * dm, dpdk_device_t * xd, u16 queue_id)
 	    break;
 	}
     }
-#if DPDK_VHOST_USER
-  else if (xd->flags & DPDK_DEVICE_FLAG_VHOST_USER)
-    {
-      vlib_main_t *vm = vlib_get_main ();
-      vlib_buffer_main_t *bm = vm->buffer_main;
-      unsigned socket_id = rte_socket_id ();
-      u32 offset = 0;
-
-      offset = queue_id * VIRTIO_QNUM;
-
-      struct vhost_virtqueue *vq =
-	xd->vu_vhost_dev.virtqueue[offset + VIRTIO_TXQ];
-
-      if (PREDICT_FALSE (!vq->enabled))
-	return 0;
-
-      struct rte_mbuf **pkts = xd->rx_vectors[queue_id];
-      while (n_left)
-	{
-	  n_this_chunk = rte_vhost_dequeue_burst (&xd->vu_vhost_dev,
-						  offset + VIRTIO_TXQ,
-						  bm->pktmbuf_pools
-						  [socket_id],
-						  pkts + n_buffers, n_left);
-	  n_buffers += n_this_chunk;
-	  n_left -= n_this_chunk;
-	  if (n_this_chunk == 0)
-	    break;
-	}
-
-      int i;
-      u32 bytes = 0;
-      for (i = 0; i < n_buffers; i++)
-	{
-	  struct rte_mbuf *buff = pkts[i];
-	  bytes += rte_pktmbuf_data_len (buff);
-	}
-
-      f64 now = vlib_time_now (vm);
-
-      dpdk_vu_vring *vring = NULL;
-      /* send pending interrupts if needed */
-      if (dpdk_vhost_user_want_interrupt (xd, offset + VIRTIO_TXQ))
-	{
-	  vring = &(xd->vu_intf->vrings[offset + VIRTIO_TXQ]);
-	  vring->n_since_last_int += n_buffers;
-
-	  if ((vring->n_since_last_int && (vring->int_deadline < now))
-	      || (vring->n_since_last_int > dm->conf->vhost_coalesce_frames))
-	    dpdk_vhost_user_send_interrupt (vm, xd, offset + VIRTIO_TXQ);
-	}
-
-      vring = &(xd->vu_intf->vrings[offset + VIRTIO_RXQ]);
-      vring->packets += n_buffers;
-      vring->bytes += bytes;
-
-      if (dpdk_vhost_user_want_interrupt (xd, offset + VIRTIO_RXQ))
-	{
-	  if (vring->n_since_last_int && (vring->int_deadline < now))
-	    dpdk_vhost_user_send_interrupt (vm, xd, offset + VIRTIO_RXQ);
-	}
-
-    }
-#endif
-#ifdef RTE_LIBRTE_KNI
-  else if (xd->flags & DPDK_DEVICE_FLAG_KNI)
-    {
-      n_buffers =
-	rte_kni_rx_burst (xd->kni, xd->rx_vectors[queue_id], VLIB_FRAME_SIZE);
-      rte_kni_handle_request (xd->kni);
-    }
-#endif
   else
     {
       ASSERT (0);
@@ -383,25 +172,70 @@ dpdk_rx_burst (dpdk_main_t * dm, dpdk_device_t * xd, u16 queue_id)
   return n_buffers;
 }
 
+
+static_always_inline void
+dpdk_process_subseq_segs (vlib_main_t * vm, vlib_buffer_t * b,
+			  struct rte_mbuf *mb, vlib_buffer_free_list_t * fl)
+{
+  u8 nb_seg = 1;
+  struct rte_mbuf *mb_seg = 0;
+  vlib_buffer_t *b_seg, *b_chain = 0;
+  mb_seg = mb->next;
+  b_chain = b;
+
+  while ((mb->nb_segs > 1) && (nb_seg < mb->nb_segs))
+    {
+      ASSERT (mb_seg != 0);
+
+      b_seg = vlib_buffer_from_rte_mbuf (mb_seg);
+      vlib_buffer_init_for_free_list (b_seg, fl);
+
+      ASSERT ((b_seg->flags & VLIB_BUFFER_NEXT_PRESENT) == 0);
+      ASSERT (b_seg->current_data == 0);
+
+      /*
+       * The driver (e.g. virtio) may not put the packet data at the start
+       * of the segment, so don't assume b_seg->current_data == 0 is correct.
+       */
+      b_seg->current_data =
+	(mb_seg->buf_addr + mb_seg->data_off) - (void *) b_seg->data;
+
+      b_seg->current_length = mb_seg->data_len;
+      b->total_length_not_including_first_buffer += mb_seg->data_len;
+
+      b_chain->flags |= VLIB_BUFFER_NEXT_PRESENT;
+      b_chain->next_buffer = vlib_get_buffer_index (vm, b_seg);
+
+      b_chain = b_seg;
+      mb_seg = mb_seg->next;
+      nb_seg++;
+    }
+}
+
+static_always_inline void
+dpdk_prefetch_buffer (struct rte_mbuf *mb)
+{
+  vlib_buffer_t *b = vlib_buffer_from_rte_mbuf (mb);
+  CLIB_PREFETCH (mb, CLIB_CACHE_LINE_BYTES, LOAD);
+  CLIB_PREFETCH (b, CLIB_CACHE_LINE_BYTES, STORE);
+}
+
 /*
  * This function is used when there are no worker threads.
  * The main thread performs IO and forwards the packets.
  */
-static inline u32
-dpdk_device_input (dpdk_main_t * dm,
-		   dpdk_device_t * xd,
-		   vlib_node_runtime_t * node,
-		   u32 cpu_index, u16 queue_id, int use_efd)
+static_always_inline u32
+dpdk_device_input (dpdk_main_t * dm, dpdk_device_t * xd,
+		   vlib_node_runtime_t * node, u32 cpu_index, u16 queue_id)
 {
   u32 n_buffers;
-  u32 next_index = DPDK_RX_NEXT_ETHERNET_INPUT;
+  u32 next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
   u32 n_left_to_next, *to_next;
   u32 mb_index;
   vlib_main_t *vm = vlib_get_main ();
   uword n_rx_bytes = 0;
   u32 n_trace, trace_cnt __attribute__ ((unused));
   vlib_buffer_free_list_t *fl;
-  u8 efd_discard_burst = 0;
   u32 buffer_flags_template;
 
   if ((xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) == 0)
@@ -411,116 +245,216 @@ dpdk_device_input (dpdk_main_t * dm,
 
   if (n_buffers == 0)
     {
-      /* check if EFD (dpdk) is enabled */
-      if (PREDICT_FALSE (use_efd && dm->efd.enabled))
-	{
-	  /* reset a few stats */
-	  xd->efd_agent.last_poll_time = 0;
-	  xd->efd_agent.last_burst_sz = 0;
-	}
       return 0;
     }
 
   buffer_flags_template = dm->buffer_flags_template;
 
-  vec_reset_length (xd->d_trace_buffers);
+  vec_reset_length (xd->d_trace_buffers[cpu_index]);
   trace_cnt = n_trace = vlib_get_trace_count (vm, node);
 
-  fl = vlib_buffer_get_free_list (vm, VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX);
-
-  /* Check for congestion if EFD (Early-Fast-Discard) is enabled
-   * in any mode (e.g. dpdk, monitor, or drop_all)
-   */
-  if (PREDICT_FALSE (use_efd && dm->efd.enabled))
+  if (n_trace > 0)
     {
-      /* update EFD counters */
-      dpdk_efd_update_counters (xd, n_buffers, dm->efd.enabled);
+      u32 n = clib_min (n_trace, n_buffers);
+      mb_index = 0;
 
-      if (PREDICT_FALSE (dm->efd.enabled & DPDK_EFD_DROPALL_ENABLED))
+      while (n--)
 	{
-	  /* discard all received packets */
-	  for (mb_index = 0; mb_index < n_buffers; mb_index++)
-	    rte_pktmbuf_free (xd->rx_vectors[queue_id][mb_index]);
-
-	  xd->efd_agent.discard_cnt += n_buffers;
-	  increment_efd_drop_counter (vm,
-				      DPDK_ERROR_VLAN_EFD_DROP_PKTS,
-				      n_buffers);
-
-	  return 0;
-	}
-
-      if (PREDICT_FALSE (xd->efd_agent.consec_full_frames_cnt >=
-			 dm->efd.consec_full_frames_hi_thresh))
-	{
-	  u32 device_queue_sz = rte_eth_rx_queue_count (xd->device_index,
-							queue_id);
-	  if (device_queue_sz >= dm->efd.queue_hi_thresh)
-	    {
-	      /* dpdk device queue has reached the critical threshold */
-	      xd->efd_agent.congestion_cnt++;
-
-	      /* apply EFD to packets from the burst */
-	      efd_discard_burst = 1;
-	    }
+	  struct rte_mbuf *mb = xd->rx_vectors[queue_id][mb_index++];
+	  vlib_buffer_t *b = vlib_buffer_from_rte_mbuf (mb);
+	  vec_add1 (xd->d_trace_buffers[cpu_index],
+		    vlib_get_buffer_index (vm, b));
 	}
     }
+
+  fl = vlib_buffer_get_free_list (vm, VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX);
 
   mb_index = 0;
 
   while (n_buffers > 0)
     {
-      u32 bi0;
-      u8 next0, error0;
-      u32 l3_offset0;
-      vlib_buffer_t *b0, *b_seg, *b_chain = 0;
-      u32 cntr_type;
+      vlib_buffer_t *b0, *b1, *b2, *b3;
+      u32 bi0, next0, l3_offset0;
+      u32 bi1, next1, l3_offset1;
+      u32 bi2, next2, l3_offset2;
+      u32 bi3, next3, l3_offset3;
+      u8 error0, error1, error2, error3;
+      u64 or_ol_flags;
 
       vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
 
+      while (n_buffers > 8 && n_left_to_next > 4)
+	{
+	  struct rte_mbuf *mb0 = xd->rx_vectors[queue_id][mb_index];
+	  struct rte_mbuf *mb1 = xd->rx_vectors[queue_id][mb_index + 1];
+	  struct rte_mbuf *mb2 = xd->rx_vectors[queue_id][mb_index + 2];
+	  struct rte_mbuf *mb3 = xd->rx_vectors[queue_id][mb_index + 3];
+
+	  dpdk_prefetch_buffer (xd->rx_vectors[queue_id][mb_index + 4]);
+	  dpdk_prefetch_buffer (xd->rx_vectors[queue_id][mb_index + 5]);
+	  dpdk_prefetch_buffer (xd->rx_vectors[queue_id][mb_index + 6]);
+	  dpdk_prefetch_buffer (xd->rx_vectors[queue_id][mb_index + 7]);
+
+	  if (xd->flags & DPDK_DEVICE_FLAG_MAYBE_MULTISEG)
+	    {
+	      if (PREDICT_FALSE (mb0->nb_segs > 1))
+		dpdk_prefetch_buffer (mb0->next);
+	      if (PREDICT_FALSE (mb1->nb_segs > 1))
+		dpdk_prefetch_buffer (mb1->next);
+	      if (PREDICT_FALSE (mb2->nb_segs > 1))
+		dpdk_prefetch_buffer (mb2->next);
+	      if (PREDICT_FALSE (mb3->nb_segs > 1))
+		dpdk_prefetch_buffer (mb3->next);
+	    }
+
+	  ASSERT (mb0);
+	  ASSERT (mb1);
+	  ASSERT (mb2);
+	  ASSERT (mb3);
+
+	  or_ol_flags = (mb0->ol_flags | mb1->ol_flags |
+			 mb2->ol_flags | mb3->ol_flags);
+	  b0 = vlib_buffer_from_rte_mbuf (mb0);
+	  b1 = vlib_buffer_from_rte_mbuf (mb1);
+	  b2 = vlib_buffer_from_rte_mbuf (mb2);
+	  b3 = vlib_buffer_from_rte_mbuf (mb3);
+
+	  vlib_buffer_init_for_free_list (b0, fl);
+	  vlib_buffer_init_for_free_list (b1, fl);
+	  vlib_buffer_init_for_free_list (b2, fl);
+	  vlib_buffer_init_for_free_list (b3, fl);
+
+	  bi0 = vlib_get_buffer_index (vm, b0);
+	  bi1 = vlib_get_buffer_index (vm, b1);
+	  bi2 = vlib_get_buffer_index (vm, b2);
+	  bi3 = vlib_get_buffer_index (vm, b3);
+
+	  to_next[0] = bi0;
+	  to_next[1] = bi1;
+	  to_next[2] = bi2;
+	  to_next[3] = bi3;
+	  to_next += 4;
+	  n_left_to_next -= 4;
+
+	  if (PREDICT_FALSE (xd->per_interface_next_index != ~0))
+	    {
+	      next0 = next1 = next2 = next3 = xd->per_interface_next_index;
+	    }
+	  else if (PREDICT_FALSE (xd->flags & DPDK_DEVICE_FLAG_HAVE_SUBIF))
+	    {
+	      next0 = next1 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+	      next2 = next3 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
+	    }
+	  else
+	    {
+	      dpdk_rx_next_from_mb (mb0, b0, &next0);
+	      dpdk_rx_next_from_mb (mb1, b1, &next1);
+	      dpdk_rx_next_from_mb (mb2, b2, &next2);
+	      dpdk_rx_next_from_mb (mb3, b3, &next3);
+	    }
+
+	  if (PREDICT_FALSE (or_ol_flags & (PKT_RX_IP_CKSUM_BAD |
+					    PKT_RX_L4_CKSUM_BAD)))
+	    {
+	      dpdk_rx_error_from_mb (mb0, &next0, &error0);
+	      dpdk_rx_error_from_mb (mb1, &next1, &error1);
+	      dpdk_rx_error_from_mb (mb2, &next2, &error2);
+	      dpdk_rx_error_from_mb (mb3, &next3, &error3);
+	      b0->error = node->errors[error0];
+	      b1->error = node->errors[error1];
+	      b2->error = node->errors[error2];
+	      b3->error = node->errors[error3];
+	    }
+	  else
+	    {
+	      b0->error = b1->error = node->errors[DPDK_ERROR_NONE];
+	      b2->error = b3->error = node->errors[DPDK_ERROR_NONE];
+	    }
+
+	  l3_offset0 = device_input_next_node_advance[next0];
+	  l3_offset1 = device_input_next_node_advance[next1];
+	  l3_offset2 = device_input_next_node_advance[next2];
+	  l3_offset3 = device_input_next_node_advance[next3];
+
+	  b0->current_data = l3_offset0 + mb0->data_off;
+	  b1->current_data = l3_offset1 + mb1->data_off;
+	  b2->current_data = l3_offset2 + mb2->data_off;
+	  b3->current_data = l3_offset3 + mb3->data_off;
+
+	  b0->current_data -= RTE_PKTMBUF_HEADROOM;
+	  b1->current_data -= RTE_PKTMBUF_HEADROOM;
+	  b2->current_data -= RTE_PKTMBUF_HEADROOM;
+	  b3->current_data -= RTE_PKTMBUF_HEADROOM;
+
+	  b0->current_length = mb0->data_len - l3_offset0;
+	  b1->current_length = mb1->data_len - l3_offset1;
+	  b2->current_length = mb2->data_len - l3_offset2;
+	  b3->current_length = mb3->data_len - l3_offset3;
+
+	  b0->flags = buffer_flags_template;
+	  b1->flags = buffer_flags_template;
+	  b2->flags = buffer_flags_template;
+	  b3->flags = buffer_flags_template;
+
+	  vnet_buffer (b0)->sw_if_index[VLIB_RX] = xd->vlib_sw_if_index;
+	  vnet_buffer (b1)->sw_if_index[VLIB_RX] = xd->vlib_sw_if_index;
+	  vnet_buffer (b2)->sw_if_index[VLIB_RX] = xd->vlib_sw_if_index;
+	  vnet_buffer (b3)->sw_if_index[VLIB_RX] = xd->vlib_sw_if_index;
+
+	  vnet_buffer (b0)->sw_if_index[VLIB_TX] = (u32) ~ 0;
+	  vnet_buffer (b1)->sw_if_index[VLIB_TX] = (u32) ~ 0;
+	  vnet_buffer (b2)->sw_if_index[VLIB_TX] = (u32) ~ 0;
+	  vnet_buffer (b3)->sw_if_index[VLIB_TX] = (u32) ~ 0;
+
+	  n_rx_bytes += mb0->pkt_len;
+	  n_rx_bytes += mb1->pkt_len;
+	  n_rx_bytes += mb2->pkt_len;
+	  n_rx_bytes += mb3->pkt_len;
+
+	  /* Process subsequent segments of multi-segment packets */
+	  if (xd->flags & DPDK_DEVICE_FLAG_MAYBE_MULTISEG)
+	    {
+	      dpdk_process_subseq_segs (vm, b0, mb0, fl);
+	      dpdk_process_subseq_segs (vm, b1, mb1, fl);
+	      dpdk_process_subseq_segs (vm, b2, mb2, fl);
+	      dpdk_process_subseq_segs (vm, b3, mb3, fl);
+	    }
+
+	  /*
+	   * Turn this on if you run into
+	   * "bad monkey" contexts, and you want to know exactly
+	   * which nodes they've visited... See main.c...
+	   */
+	  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b0);
+	  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b1);
+	  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b2);
+	  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b3);
+
+	  /* Do we have any driver RX features configured on the interface? */
+	  vnet_feature_start_device_input_x4 (xd->vlib_sw_if_index,
+					      &next0, &next1, &next2, &next3,
+					      b0, b1, b2, b3,
+					      l3_offset0, l3_offset1,
+					      l3_offset2, l3_offset3);
+
+	  vlib_validate_buffer_enqueue_x4 (vm, node, next_index,
+					   to_next, n_left_to_next,
+					   bi0, bi1, bi2, bi3,
+					   next0, next1, next2, next3);
+	  n_buffers -= 4;
+	  mb_index += 4;
+	}
       while (n_buffers > 0 && n_left_to_next > 0)
 	{
-	  u8 nb_seg = 1;
-	  struct rte_mbuf *mb = xd->rx_vectors[queue_id][mb_index];
-	  struct rte_mbuf *mb_seg = mb->next;
+	  struct rte_mbuf *mb0 = xd->rx_vectors[queue_id][mb_index];
 
-	  if (PREDICT_TRUE (n_buffers > 2))
-	    {
-	      struct rte_mbuf *pfmb = xd->rx_vectors[queue_id][mb_index + 2];
-	      vlib_buffer_t *bp = vlib_buffer_from_rte_mbuf (pfmb);
-	      CLIB_PREFETCH (pfmb, CLIB_CACHE_LINE_BYTES, STORE);
-	      CLIB_PREFETCH (bp, CLIB_CACHE_LINE_BYTES, STORE);
-	    }
+	  ASSERT (mb0);
 
-	  ASSERT (mb);
-
-	  b0 = vlib_buffer_from_rte_mbuf (mb);
-
-	  /* check whether EFD is looking for packets to discard */
-	  if (PREDICT_FALSE (efd_discard_burst))
-	    {
-	      vlib_thread_main_t *tm = vlib_get_thread_main ();
-
-	      if (PREDICT_TRUE (cntr_type = is_efd_discardable (tm, b0, mb)))
-		{
-		  rte_pktmbuf_free (mb);
-		  xd->efd_agent.discard_cnt++;
-		  increment_efd_drop_counter (vm, cntr_type, 1);
-		  n_buffers--;
-		  mb_index++;
-		  continue;
-		}
-	    }
+	  b0 = vlib_buffer_from_rte_mbuf (mb0);
 
 	  /* Prefetch one next segment if it exists. */
-	  if (PREDICT_FALSE (mb->nb_segs > 1))
-	    {
-	      struct rte_mbuf *pfmb = mb->next;
-	      vlib_buffer_t *bp = vlib_buffer_from_rte_mbuf (pfmb);
-	      CLIB_PREFETCH (pfmb, CLIB_CACHE_LINE_BYTES, LOAD);
-	      CLIB_PREFETCH (bp, CLIB_CACHE_LINE_BYTES, STORE);
-	      b_chain = b0;
-	    }
+	  if (PREDICT_FALSE (mb0->nb_segs > 1))
+	    dpdk_prefetch_buffer (mb0->next);
 
 	  vlib_buffer_init_for_free_list (b0, fl);
 
@@ -530,70 +464,29 @@ dpdk_device_input (dpdk_main_t * dm,
 	  to_next++;
 	  n_left_to_next--;
 
-	  dpdk_rx_next_and_error_from_mb_flags_x1 (xd, mb, b0,
-						   &next0, &error0);
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-	  /*
-	   * Clear overloaded TX offload flags when a DPDK driver
-	   * is using them for RX flags (e.g. Cisco VIC Ethernet driver)
-	   */
-
-	  if (PREDICT_TRUE (trace_cnt == 0))
-	    mb->ol_flags &= PKT_EXT_RX_CLR_TX_FLAGS_MASK;
+	  if (PREDICT_FALSE (xd->per_interface_next_index != ~0))
+	    next0 = xd->per_interface_next_index;
+	  else if (PREDICT_FALSE (xd->flags & DPDK_DEVICE_FLAG_HAVE_SUBIF))
+	    next0 = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
 	  else
-	    trace_cnt--;
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
-
+	    dpdk_rx_next_from_mb (mb0, b0, &next0);
+	  dpdk_rx_error_from_mb (mb0, &next0, &error0);
 	  b0->error = node->errors[error0];
 
-	  l3_offset0 = ((next0 == DPDK_RX_NEXT_IP4_INPUT ||
-			 next0 == DPDK_RX_NEXT_IP6_INPUT ||
-			 next0 == DPDK_RX_NEXT_MPLS_INPUT) ?
-			sizeof (ethernet_header_t) : 0);
+	  l3_offset0 = device_input_next_node_advance[next0];
 
 	  b0->current_data = l3_offset0;
-	  /* Some drivers like fm10k receive frames with
-	     mb->data_off > RTE_PKTMBUF_HEADROOM */
-	  b0->current_data += mb->data_off - RTE_PKTMBUF_HEADROOM;
-	  b0->current_length = mb->data_len - l3_offset0;
+	  b0->current_data += mb0->data_off - RTE_PKTMBUF_HEADROOM;
+	  b0->current_length = mb0->data_len - l3_offset0;
 
 	  b0->flags = buffer_flags_template;
 
-	  if (VMWARE_LENGTH_BUG_WORKAROUND)
-	    b0->current_length -= 4;
-
 	  vnet_buffer (b0)->sw_if_index[VLIB_RX] = xd->vlib_sw_if_index;
 	  vnet_buffer (b0)->sw_if_index[VLIB_TX] = (u32) ~ 0;
-	  n_rx_bytes += mb->pkt_len;
+	  n_rx_bytes += mb0->pkt_len;
 
 	  /* Process subsequent segments of multi-segment packets */
-	  while ((mb->nb_segs > 1) && (nb_seg < mb->nb_segs))
-	    {
-	      ASSERT (mb_seg != 0);
-
-	      b_seg = vlib_buffer_from_rte_mbuf (mb_seg);
-	      vlib_buffer_init_for_free_list (b_seg, fl);
-
-	      ASSERT ((b_seg->flags & VLIB_BUFFER_NEXT_PRESENT) == 0);
-	      ASSERT (b_seg->current_data == 0);
-
-	      /*
-	       * The driver (e.g. virtio) may not put the packet data at the start
-	       * of the segment, so don't assume b_seg->current_data == 0 is correct.
-	       */
-	      b_seg->current_data =
-		(mb_seg->buf_addr + mb_seg->data_off) - (void *) b_seg->data;
-
-	      b_seg->current_length = mb_seg->data_len;
-	      b0->total_length_not_including_first_buffer += mb_seg->data_len;
-
-	      b_chain->flags |= VLIB_BUFFER_NEXT_PRESENT;
-	      b_chain->next_buffer = vlib_get_buffer_index (vm, b_seg);
-
-	      b_chain = b_seg;
-	      mb_seg = mb_seg->next;
-	      nb_seg++;
-	    }
+	  dpdk_process_subseq_segs (vm, b0, mb0, fl);
 
 	  /*
 	   * Turn this on if you run into
@@ -602,23 +495,25 @@ dpdk_device_input (dpdk_main_t * dm,
 	   */
 	  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (b0);
 
+	  /* Do we have any driver RX features configured on the interface? */
+	  vnet_feature_start_device_input_x1 (xd->vlib_sw_if_index, &next0,
+					      b0, l3_offset0);
+
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
 					   to_next, n_left_to_next,
 					   bi0, next0);
-	  if (PREDICT_FALSE (n_trace > mb_index))
-	    vec_add1 (xd->d_trace_buffers, bi0);
 	  n_buffers--;
 	  mb_index++;
 	}
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  if (PREDICT_FALSE (vec_len (xd->d_trace_buffers) > 0))
+  if (PREDICT_FALSE (vec_len (xd->d_trace_buffers[cpu_index]) > 0))
     {
-      dpdk_rx_trace (dm, node, xd, queue_id, xd->d_trace_buffers,
-		     vec_len (xd->d_trace_buffers));
-      vlib_set_trace_count (vm, node,
-			    n_trace - vec_len (xd->d_trace_buffers));
+      dpdk_rx_trace (dm, node, xd, queue_id, xd->d_trace_buffers[cpu_index],
+		     vec_len (xd->d_trace_buffers[cpu_index]));
+      vlib_set_trace_count (vm, node, n_trace -
+			    vec_len (xd->d_trace_buffers[cpu_index]));
     }
 
   vlib_increment_combined_counter
@@ -708,60 +603,7 @@ dpdk_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * f)
   vec_foreach (dq, dm->devices_by_cpu[cpu_index])
     {
       xd = vec_elt_at_index(dm->devices, dq->device);
-      ASSERT(dq->queue_id == 0);
-      n_rx_packets += dpdk_device_input (dm, xd, node, cpu_index, 0, 0);
-    }
-  /* *INDENT-ON* */
-
-  poll_rate_limit (dm);
-
-  return n_rx_packets;
-}
-
-uword
-dpdk_input_rss (vlib_main_t * vm,
-		vlib_node_runtime_t * node, vlib_frame_t * f)
-{
-  dpdk_main_t *dm = &dpdk_main;
-  dpdk_device_t *xd;
-  uword n_rx_packets = 0;
-  dpdk_device_and_queue_t *dq;
-  u32 cpu_index = os_get_cpu_number ();
-
-  /*
-   * Poll all devices on this cpu for input/interrupts.
-   */
-  /* *INDENT-OFF* */
-  vec_foreach (dq, dm->devices_by_cpu[cpu_index])
-    {
-      xd = vec_elt_at_index(dm->devices, dq->device);
-      n_rx_packets += dpdk_device_input (dm, xd, node, cpu_index, dq->queue_id, 0);
-    }
-  /* *INDENT-ON* */
-
-  poll_rate_limit (dm);
-
-  return n_rx_packets;
-}
-
-uword
-dpdk_input_efd (vlib_main_t * vm,
-		vlib_node_runtime_t * node, vlib_frame_t * f)
-{
-  dpdk_main_t *dm = &dpdk_main;
-  dpdk_device_t *xd;
-  uword n_rx_packets = 0;
-  dpdk_device_and_queue_t *dq;
-  u32 cpu_index = os_get_cpu_number ();
-
-  /*
-   * Poll all devices on this cpu for input/interrupts.
-   */
-  /* *INDENT-OFF* */
-  vec_foreach (dq, dm->devices_by_cpu[cpu_index])
-    {
-      xd = vec_elt_at_index(dm->devices, dq->device);
-      n_rx_packets += dpdk_device_input (dm, xd, node, cpu_index, dq->queue_id, 1);
+      n_rx_packets += dpdk_device_input (dm, xd, node, cpu_index, dq->queue_id);
     }
   /* *INDENT-ON* */
 
@@ -775,6 +617,7 @@ VLIB_REGISTER_NODE (dpdk_input_node) = {
   .function = dpdk_input,
   .type = VLIB_NODE_TYPE_INPUT,
   .name = "dpdk-input",
+  .sibling_of = "device-input",
 
   /* Will be enabled if/when hardware is detected. */
   .state = VLIB_NODE_STATE_DISABLED,
@@ -784,94 +627,15 @@ VLIB_REGISTER_NODE (dpdk_input_node) = {
 
   .n_errors = DPDK_N_ERROR,
   .error_strings = dpdk_error_strings,
-
-  .n_next_nodes = DPDK_RX_N_NEXT,
-  .next_nodes = {
-    [DPDK_RX_NEXT_DROP] = "error-drop",
-    [DPDK_RX_NEXT_ETHERNET_INPUT] = "ethernet-input",
-    [DPDK_RX_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
-    [DPDK_RX_NEXT_IP6_INPUT] = "ip6-input",
-    [DPDK_RX_NEXT_MPLS_INPUT] = "mpls-input",
-  },
 };
 
-
-/* handle dpdk_input_rss alternative function */
-VLIB_NODE_FUNCTION_MULTIARCH_CLONE(dpdk_input)
-VLIB_NODE_FUNCTION_MULTIARCH_CLONE(dpdk_input_rss)
-VLIB_NODE_FUNCTION_MULTIARCH_CLONE(dpdk_input_efd)
-
-/* this macro defines dpdk_input_rss_multiarch_select() */
-CLIB_MULTIARCH_SELECT_FN(dpdk_input);
-CLIB_MULTIARCH_SELECT_FN(dpdk_input_rss);
-CLIB_MULTIARCH_SELECT_FN(dpdk_input_efd);
+VLIB_NODE_FUNCTION_MULTIARCH (dpdk_input_node, dpdk_input);
+/* *INDENT-ON* */
 
 /*
- * Override the next nodes for the dpdk input nodes.
- * Must be invoked prior to VLIB_INIT_FUNCTION calls.
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
  */
-void
-dpdk_set_next_node (dpdk_rx_next_t next, char *name)
-{
-  vlib_node_registration_t *r = &dpdk_input_node;
-  vlib_node_registration_t *r_handoff = &handoff_dispatch_node;
-
-  switch (next)
-    {
-    case DPDK_RX_NEXT_IP4_INPUT:
-    case DPDK_RX_NEXT_IP6_INPUT:
-    case DPDK_RX_NEXT_MPLS_INPUT:
-    case DPDK_RX_NEXT_ETHERNET_INPUT:
-      r->next_nodes[next] = name;
-      r_handoff->next_nodes[next] = name;
-      break;
-
-    default:
-      clib_warning ("%s: illegal next %d\n", __FUNCTION__, next);
-      break;
-    }
-}
-
-/*
- * set_efd_bitmap()
- * Based on the operation type, set lower/upper bits for the given index value
- */
-void
-set_efd_bitmap (u8 * bitmap, u32 value, u32 op)
-{
-  int ix;
-
-  *bitmap = 0;
-  for (ix = 0; ix < 8; ix++)
-    {
-      if (((op == EFD_OPERATION_LESS_THAN) && (ix < value)) ||
-	  ((op == EFD_OPERATION_GREATER_OR_EQUAL) && (ix >= value)))
-	{
-	  (*bitmap) |= (1 << ix);
-	}
-    }
-}
-
-void
-efd_config (u32 enabled,
-	    u32 ip_prec, u32 ip_op,
-	    u32 mpls_exp, u32 mpls_op, u32 vlan_cos, u32 vlan_op)
-{
-  vlib_thread_main_t *tm = vlib_get_thread_main ();
-  dpdk_main_t *dm = &dpdk_main;
-
-  if (enabled)
-    {
-      tm->efd.enabled |= VLIB_EFD_DISCARD_ENABLED;
-      dm->efd.enabled |= DPDK_EFD_DISCARD_ENABLED;
-    }
-  else
-    {
-      tm->efd.enabled &= ~VLIB_EFD_DISCARD_ENABLED;
-      dm->efd.enabled &= ~DPDK_EFD_DISCARD_ENABLED;
-    }
-
-  set_efd_bitmap (&tm->efd.ip_prec_bitmap, ip_prec, ip_op);
-  set_efd_bitmap (&tm->efd.mpls_exp_bitmap, mpls_exp, mpls_op);
-  set_efd_bitmap (&tm->efd.vlan_cos_bitmap, vlan_cos, vlan_op);
-}

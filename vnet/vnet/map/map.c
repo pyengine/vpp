@@ -22,7 +22,15 @@
 
 #include "map.h"
 
-#ifndef __SSE4_2__
+#ifdef __SSE4_2__
+static inline u32
+crc_u32 (u32 data, u32 value)
+{
+  __asm__ volatile ("crc32l %[data], %[value];":[value] "+r" (value):[data]
+		    "rm" (data));
+  return value;
+}
+#else
 #include <vppinfra/xxhash.h>
 
 static inline u32
@@ -166,8 +174,8 @@ map_create_domain (ip4_address_t * ip4_prefix,
 {
   u8 suffix_len, suffix_shift;
   map_main_t *mm = &map_main;
-  dpo_id_t dpo_v4 = DPO_NULL;
-  dpo_id_t dpo_v6 = DPO_NULL;
+  dpo_id_t dpo_v4 = DPO_INVALID;
+  dpo_id_t dpo_v6 = DPO_INVALID;
   fib_node_index_t fei;
   map_domain_t *d;
 
@@ -275,7 +283,7 @@ map_create_domain (ip4_address_t * ip4_prefix,
 
   if (FIB_NODE_INDEX_INVALID != fei)
     {
-      dpo_id_t dpo = DPO_NULL;
+      dpo_id_t dpo = DPO_INVALID;
 
       if (fib_entry_get_dpo_for_source (fei, FIB_SOURCE_MAP, &dpo))
 	{

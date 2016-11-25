@@ -159,45 +159,8 @@ classify_and_dispatch (vlib_main_t * vm,
   h0 = vlib_buffer_get_current (b0);
   l3h0 = (u8 *) h0 + vnet_buffer (b0)->l2.l2_len;
 
-  /*
-   * Determine L3 packet type. Only need to check the common types.
-   * Used to filter out features that don't apply to common packets.
-   */
   ethertype = clib_net_to_host_u16 (get_u16 (l3h0 - 2));
-  if (ethertype == ETHERNET_TYPE_IP4)
-    {
-      protocol = ((ip4_header_t *) l3h0)->protocol;
-      if ((protocol == IP_PROTOCOL_UDP) || (protocol == IP_PROTOCOL_TCP))
-	{
-	  feat_mask = IP_UDP_TCP_FEAT_MASK;
-	}
-      else
-	{
-	  feat_mask = IP4_FEAT_MASK;
-	}
-    }
-  else if (ethertype == ETHERNET_TYPE_IP6)
-    {
-      protocol = ((ip6_header_t *) l3h0)->protocol;
-      /* Don't bother checking for extension headers for now */
-      if ((protocol == IP_PROTOCOL_UDP) || (protocol == IP_PROTOCOL_TCP))
-	{
-	  feat_mask = IP_UDP_TCP_FEAT_MASK;
-	}
-      else
-	{
-	  feat_mask = IP6_FEAT_MASK;
-	}
-    }
-  else if (ethertype == ETHERNET_TYPE_MPLS_UNICAST)
-    {
-      feat_mask = IP6_FEAT_MASK;
-    }
-  else
-    {
-      /* allow all features */
-      feat_mask = ~0;
-    }
+  feat_mask = ~0;
 
   /* determine layer2 kind for stat and mask */
   mcast_dmac = ethernet_address_cast (h0->dst_address);
@@ -606,22 +569,29 @@ set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_
       l2_if_adjust--;
     }
 
+  /*
+   * Directs the l2 output path to work out the interface
+   * output next-arc itself. Needed when recycling a sw_if_index.
+   */
+  vec_validate_init_empty (l2om->next_nodes.output_node_index_vec,
+			   sw_if_index, ~0);
+  l2om->next_nodes.output_node_index_vec[sw_if_index] = ~0;
+
   /* Initialize the l2-input configuration for the interface */
   if (mode == MODE_L3)
     {
+      /* Set L2 config to BD index 0 so that if any packet accidentally
+       * came in on L2 path, it will be dropped in BD 0 */
       config->xconnect = 0;
       config->bridge = 0;
       config->shg = 0;
       config->bd_index = 0;
       config->feature_bitmap = L2INPUT_FEAT_DROP;
-      /*
-       * Directs the l2 output path to work out the interface
-       * output next-arc itself. Needed when recycling a sw_if_index.
-       */
-      vec_validate_init_empty (l2om->next_nodes.output_node_index_vec,
-			       sw_if_index, ~0);
-      l2om->next_nodes.output_node_index_vec[sw_if_index] = ~0;
 
+      /* Make sure any L2-output packet to this interface now in L3 mode is
+       * dropped. This may happen if L2 FIB MAC entry is stale */
+      l2om->next_nodes.output_node_index_vec[sw_if_index] =
+	L2OUTPUT_NEXT_BAD_INTF;
     }
   else if (mode == MODE_L2_CLASSIFY)
     {

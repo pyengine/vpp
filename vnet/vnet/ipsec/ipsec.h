@@ -12,10 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if DPDK==1
-#include <vnet/devices/dpdk/dpdk.h>
-#endif
-
 #define IPSEC_FLAG_IPSEC_GRE_TUNNEL (1 << 0)
 
 #define foreach_ipsec_policy_action \
@@ -280,12 +276,6 @@ int ipsec_set_interface_key (vnet_main_t * vnm, u32 hw_if_index,
 always_inline void
 ipsec_alloc_empty_buffers (vlib_main_t * vm, ipsec_main_t * im)
 {
-#if DPDK==1
-  dpdk_main_t *dm = &dpdk_main;
-  u32 free_list_index = dm->vlib_buffer_free_list_index;
-#else
-  u32 free_list_index = VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX;
-#endif
   u32 cpu_index = os_get_cpu_number ();
   uword l = vec_len (im->empty_buffers[cpu_index]);
   uword n_alloc = 0;
@@ -297,48 +287,24 @@ ipsec_alloc_empty_buffers (vlib_main_t * vm, ipsec_main_t * im)
 	  vec_alloc (im->empty_buffers[cpu_index], 2 * VLIB_FRAME_SIZE);
 	}
 
-      n_alloc = vlib_buffer_alloc_from_free_list (vm,
-						  im->empty_buffers[cpu_index]
-						  + l,
-						  2 * VLIB_FRAME_SIZE - l,
-						  free_list_index);
+      n_alloc = vlib_buffer_alloc (vm, im->empty_buffers[cpu_index] + l,
+				   2 * VLIB_FRAME_SIZE - l);
 
       _vec_len (im->empty_buffers[cpu_index]) = l + n_alloc;
     }
 }
 
-static_always_inline u32	/* FIXME move to interface???.h */
-get_next_output_feature_node_index (vnet_main_t * vnm, vlib_buffer_t * b)
+static_always_inline u32
+get_next_output_feature_node_index (vlib_buffer_t * b,
+				    vlib_node_runtime_t * nr)
 {
+  u32 next;
+  u32 sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_TX];
   vlib_main_t *vm = vlib_get_main ();
-  vlib_node_t *node;
-  u32 r;
-  intf_output_feat_t next_feature;
+  vlib_node_t *node = vlib_get_node (vm, nr->node_index);
 
-  u8 *node_names[] = {
-#define _(sym, str) (u8 *) str,
-    foreach_intf_output_feat
-#undef _
-  };
-
-  count_trailing_zeros (next_feature,
-			vnet_buffer (b)->output_features.bitmap);
-
-  if (next_feature >= INTF_OUTPUT_FEAT_DONE)
-    {
-      u32 sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_TX];
-      vnet_hw_interface_t *hw = vnet_get_sup_hw_interface (vnm, sw_if_index);
-      r = hw->output_node_index;
-    }
-  else
-    {
-      vnet_buffer (b)->output_features.bitmap &= ~(1 << next_feature);
-      /* FIXME */
-      node = vlib_get_node_by_name (vm, node_names[next_feature]);
-      r = node->index;
-    }
-
-  return r;
+  vnet_feature_next (sw_if_index, &next, b);
+  return node->next_nodes[next];
 }
 
 /*

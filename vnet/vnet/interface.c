@@ -240,17 +240,25 @@ unserialize_vnet_interface_state (serialize_main_t * m, va_list * va)
 static clib_error_t *
 call_elf_section_interface_callbacks (vnet_main_t * vnm, u32 if_index,
 				      u32 flags,
-				      _vnet_interface_function_list_elt_t *
-				      elt)
+				      _vnet_interface_function_list_elt_t **
+				      elts)
 {
+  _vnet_interface_function_list_elt_t *elt;
+  vnet_interface_function_priority_t prio;
   clib_error_t *error = 0;
 
-  while (elt)
+  for (prio = VNET_ITF_FUNC_PRIORITY_LOW;
+       prio <= VNET_ITF_FUNC_PRIORITY_HIGH; prio++)
     {
-      error = elt->fp (vnm, if_index, flags);
-      if (error)
-	return error;
-      elt = elt->next_interface_function;
+      elt = elts[prio];
+
+      while (elt)
+	{
+	  error = elt->fp (vnm, if_index, flags);
+	  if (error)
+	    return error;
+	  elt = elt->next_interface_function;
+	}
     }
   return error;
 }
@@ -623,6 +631,16 @@ vnet_delete_sw_interface (vnet_main_t * vnm, u32 sw_if_index)
   vnet_sw_interface_t *sw =
     pool_elt_at_index (im->sw_interfaces, sw_if_index);
 
+  /* Make sure the interface is in L3 mode (removed from L2 BD or XConnect) */
+  vlib_main_t *vm = vlib_get_main ();
+  l2_input_config_t *config;
+  config = vec_elt_at_index (l2input_main.configs, sw_if_index);
+  if (config->xconnect)
+    set_int_l2_mode (vm, vnm, MODE_L3, config->output_sw_if_index, 0, 0, 0,
+		     0);
+  if (config->xconnect || config->bridge)
+    set_int_l2_mode (vm, vnm, MODE_L3, sw_if_index, 0, 0, 0, 0);
+
   /* Bring down interface in case it is up. */
   if (sw->flags != 0)
     vnet_sw_interface_set_flags (vnm, sw_if_index, /* flags */ 0);
@@ -721,6 +739,8 @@ vnet_register_interface (vnet_main_t * vnm,
     {
       vnet_hw_interface_nodes_t *hn;
       vnet_interface_output_runtime_t *rt;
+      vlib_node_t *node;
+      vlib_node_runtime_t *nrt;
 
       hn = vec_end (im->deleted_hw_interface_nodes) - 1;
 
@@ -741,6 +761,22 @@ vnet_register_interface (vnet_main_t * vnm,
       rt->hw_if_index = hw_index;
       rt->sw_if_index = hw->sw_if_index;
       rt->dev_instance = hw->dev_instance;
+
+      /* The new class may differ from the old one.
+       * Functions have to be updated. */
+      node = vlib_get_node (vm, hw->output_node_index);
+      node->function = dev_class->no_flatten_output_chains ?
+	vnet_interface_output_node_no_flatten_multiarch_select () :
+	vnet_interface_output_node_multiarch_select ();
+      node->format_trace = format_vnet_interface_output_trace;
+      nrt = vlib_node_get_runtime (vm, hw->output_node_index);
+      nrt->function = node->function;
+
+      node = vlib_get_node (vm, hw->tx_node_index);
+      node->function = dev_class->tx_function;
+      node->format_trace = dev_class->format_tx_trace;
+      nrt = vlib_node_get_runtime (vm, hw->tx_node_index);
+      nrt->function = node->function;
 
       vlib_worker_thread_node_runtime_update ();
       _vec_len (im->deleted_hw_interface_nodes) -= 1;
@@ -790,14 +826,9 @@ vnet_register_interface (vnet_main_t * vnm,
       }
       hw->output_node_index = vlib_register_node (vm, &r);
 
-#define _(sym,str) vlib_node_add_named_next_with_slot (vm, \
-                     hw->output_node_index, str,           \
-                     VNET_INTERFACE_OUTPUT_NEXT_##sym);
-      foreach_intf_output_feat
-#undef _
-	vlib_node_add_named_next_with_slot (vm, hw->output_node_index,
-					    "error-drop",
-					    VNET_INTERFACE_OUTPUT_NEXT_DROP);
+      vlib_node_add_named_next_with_slot (vm, hw->output_node_index,
+					  "error-drop",
+					  VNET_INTERFACE_OUTPUT_NEXT_DROP);
       vlib_node_add_next_with_slot (vm, hw->output_node_index,
 				    hw->tx_node_index,
 				    VNET_INTERFACE_OUTPUT_NEXT_TX);
@@ -863,6 +894,27 @@ vnet_delete_hw_interface (vnet_main_t * vnm, u32 hw_if_index)
   vec_free (hw->name);
 
   pool_put (im->hw_interfaces, hw);
+}
+
+void
+vnet_hw_interface_walk_sw (vnet_main_t * vnm,
+			   u32 hw_if_index,
+			   vnet_hw_sw_interface_walk_t fn, void *ctx)
+{
+  vnet_hw_interface_t *hi;
+  u32 id, sw_if_index;
+
+  hi = vnet_get_hw_interface (vnm, hw_if_index);
+  /* the super first, then the and sub interfaces */
+  fn (vnm, hi->sw_if_index, ctx);
+
+  /* *INDENT-OFF* */
+  hash_foreach (id, sw_if_index,
+                hi->sub_interface_sw_if_index_by_id,
+  ({
+    fn (vnm, sw_if_index, ctx);
+  }));
+  /* *INDENT-ON* */
 }
 
 static void
@@ -1182,34 +1234,6 @@ vnet_interface_name_renumber (u32 sw_if_index, u32 new_show_dev_instance)
 
   hash_set_mem (im->hw_interface_by_name, hi->name, hi->hw_if_index);
   return rv;
-}
-
-int
-vnet_interface_add_del_feature (vnet_main_t * vnm,
-				vlib_main_t * vm,
-				u32 sw_if_index,
-				intf_output_feat_t feature, int is_add)
-{
-  vnet_sw_interface_t *sw;
-
-  sw = vnet_get_sw_interface (vnm, sw_if_index);
-
-  if (is_add)
-    {
-
-      sw->output_feature_bitmap |= (1 << feature);
-      sw->output_feature_bitmap |= (1 << INTF_OUTPUT_FEAT_DONE);
-
-    }
-  else
-    {				/* delete */
-
-      sw->output_feature_bitmap &= ~(1 << feature);
-      if (sw->output_feature_bitmap == (1 << INTF_OUTPUT_FEAT_DONE))
-	sw->output_feature_bitmap = 0;
-
-    }
-  return 0;
 }
 
 clib_error_t *

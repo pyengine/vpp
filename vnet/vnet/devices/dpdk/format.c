@@ -136,20 +136,6 @@
   foreach_dpdk_pkt_rx_offload_flag              \
   foreach_dpdk_pkt_tx_offload_flag
 
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-#define foreach_dpdk_pkt_ext_rx_offload_flag                    \
-  _ (PKT_EXT_RX_PKT_ERROR, "RX Packet Error")                   \
-  _ (PKT_EXT_RX_BAD_FCS, "RX Bad FCS checksum")                 \
-  _ (PKT_EXT_RX_UDP, "RX packet with UDP L4 header")            \
-  _ (PKT_EXT_RX_TCP, "RX packet with TCP L4 header")            \
-  _ (PKT_EXT_RX_IPV4_FRAGMENT, "RX packet IPv4 Fragment")
-
-#define foreach_dpdk_pkt_ext_offload_flag \
-  foreach_dpdk_pkt_rx_offload_flag    \
-  foreach_dpdk_pkt_ext_rx_offload_flag
-
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
-
 u8 *
 format_dpdk_device_name (u8 * s, va_list * args)
 {
@@ -165,19 +151,6 @@ format_dpdk_device_name (u8 * s, va_list * args)
   else
     devname_format = "%s%x/%x/%x";
 
-#ifdef RTE_LIBRTE_KNI
-  if (dm->devices[i].flags & DPDK_DEVICE_FLAG_KNI)
-    {
-      return format (s, "kni%d", dm->devices[i].kni_port_id);
-    }
-  else
-#endif
-#if DPDK_VHOST_USER
-  if (dm->devices[i].flags & DPDK_DEVICE_FLAG_VHOST_USER)
-    {
-      return format (s, "VirtualEthernet0/0/%d", dm->devices[i].vu_if_id);
-    }
-#endif
   switch (dm->devices[i].port_type)
     {
     case VNET_DPDK_PORT_TYPE_ETH_1G:
@@ -225,15 +198,6 @@ format_dpdk_device_type (u8 * s, va_list * args)
   dpdk_main_t *dm = &dpdk_main;
   char *dev_type;
   u32 i = va_arg (*args, u32);
-
-  if (dm->devices[i].flags & DPDK_DEVICE_FLAG_KNI)
-    {
-      return format (s, "Kernel NIC Interface");
-    }
-  else if (dm->devices[i].flags & DPDK_DEVICE_FLAG_VHOST_USER)
-    {
-      return format (s, "vhost-user interface");
-    }
 
   switch (dm->devices[i].pmd)
     {
@@ -455,13 +419,6 @@ format_dpdk_device (u8 * s, va_list * args)
 		  format_dpdk_rss_hf_name, di.flow_type_rss_offloads);
     }
 
-  if (verbose && xd->flags & DPDK_DEVICE_FLAG_VHOST_USER)
-    {
-      s = format (s, "%Uqueue size (max):  rx %d (%d) tx %d (%d)\n",
-		  format_white_space, indent + 2,
-		  xd->rx_q_used, xd->rx_q_used, xd->tx_q_used, xd->tx_q_used);
-    }
-
   s = format (s, "%Urx queues %d, rx desc %d, tx queues %d, tx desc %d\n",
 	      format_white_space, indent + 2,
 	      xd->rx_q_used, xd->nb_rx_desc, xd->tx_q_used, xd->nb_tx_desc);
@@ -486,15 +443,11 @@ format_dpdk_device (u8 * s, va_list * args)
 
   u8 *xs = 0;
   u32 i = 0;
-#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
-  struct rte_eth_xstats *xstat, *last_xstat;
-#else
   struct rte_eth_xstat *xstat, *last_xstat;
   struct rte_eth_xstat_name *xstat_names = 0;
   int len = rte_eth_xstats_get_names (xd->device_index, NULL, 0);
   vec_validate (xstat_names, len - 1);
   rte_eth_xstats_get_names (xd->device_index, xstat_names, len);
-#endif
 
   ASSERT (vec_len (xd->xstats) == vec_len (xd->last_cleared_xstats));
 
@@ -509,11 +462,7 @@ format_dpdk_device (u8 * s, va_list * args)
       if (verbose == 2 || (verbose && delta))
         {
           /* format_c_identifier doesn't like c strings inside vector */
-#if RTE_VERSION < RTE_VERSION_NUM(16, 7, 0, 0)
-          u8 * name = format(0,"%s", xstat->name);
-#else
           u8 * name = format(0,"%s", xstat_names[i].name);
-#endif
           xs = format(xs, "\n%U%-38U%16Ld",
                       format_white_space, indent + 4,
                       format_c_identifier, name, delta);
@@ -522,50 +471,7 @@ format_dpdk_device (u8 * s, va_list * args)
     }
   /* *INDENT-ON* */
 
-#if RTE_VERSION >= RTE_VERSION_NUM(16, 7, 0, 0)
   vec_free (xstat_names);
-#endif
-
-#if DPDK_VHOST_USER
-  if (verbose && xd->flags & DPDK_DEVICE_FLAG_VHOST_USER)
-    {
-      int i;
-      for (i = 0; i < xd->rx_q_used * VIRTIO_QNUM; i++)
-	{
-	  u8 *name;
-	  if (verbose == 2 || xd->vu_intf->vrings[i].packets)
-	    {
-	      if (i & 1)
-		{
-		  name = format (NULL, "tx q%d packets", i >> 1);
-		}
-	      else
-		{
-		  name = format (NULL, "rx q%d packets", i >> 1);
-		}
-	      xs = format (xs, "\n%U%-38U%16Ld",
-			   format_white_space, indent + 4,
-			   format_c_identifier, name,
-			   xd->vu_intf->vrings[i].packets);
-	      vec_free (name);
-
-	      if (i & 1)
-		{
-		  name = format (NULL, "tx q%d bytes", i >> 1);
-		}
-	      else
-		{
-		  name = format (NULL, "rx q%d bytes", i >> 1);
-		}
-	      xs = format (xs, "\n%U%-38U%16Ld",
-			   format_white_space, indent + 4,
-			   format_c_identifier, name,
-			   xd->vu_intf->vrings[i].bytes);
-	      vec_free (name);
-	    }
-	}
-    }
-#endif
 
   if (xs)
     {
@@ -623,15 +529,10 @@ format_dpdk_rx_dma_trace (u8 * s, va_list * va)
 	      format_white_space, indent,
 	      t->buffer_index, format_vlib_buffer, &t->buffer);
 
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-  s = format (s, "\n%U%U",
-	      format_white_space, indent,
-	      format_dpdk_rx_rte_mbuf, &t->mb, &t->data);
-#else
   s = format (s, "\n%U%U",
 	      format_white_space, indent,
 	      format_dpdk_rte_mbuf, &t->mb, &t->data);
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
+
   if (vm->trace_main.verbose)
     {
       s = format (s, "\n%UPacket Dump%s", format_white_space, indent + 2,
@@ -750,69 +651,6 @@ format_dpdk_rte_mbuf (u8 * s, va_list * va)
 
   return s;
 }
-
-#ifdef RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS
-
-static inline u8 *
-format_dpdk_pkt_rx_offload_flags (u8 * s, va_list * va)
-{
-  u16 *ol_flags = va_arg (*va, u16 *);
-  uword indent = format_get_indent (s) + 2;
-
-  if (!*ol_flags)
-    return s;
-
-  s = format (s, "Packet RX Offload Flags");
-
-#define _(F, S)             \
-  if (*ol_flags & F)            \
-    {               \
-      s = format (s, "\n%U%s (0x%04x) %s",      \
-      format_white_space, indent, #F, F, S);  \
-    }
-
-  foreach_dpdk_pkt_ext_offload_flag
-#undef _
-    return s;
-}
-
-u8 *
-format_dpdk_rx_rte_mbuf (u8 * s, va_list * va)
-{
-  struct rte_mbuf *mb = va_arg (*va, struct rte_mbuf *);
-  ethernet_header_t *eth_hdr = va_arg (*args, ethernet_header_t *);
-  uword indent = format_get_indent (s) + 2;
-
-  /*
-   * Note: Assumes mb is head of pkt chain -- port, nb_segs, & pkt_len
-   *       are only valid for the 1st mbuf segment.
-   */
-  s = format (s, "PKT MBUF: port %d, nb_segs %d, pkt_len %d"
-	      "\n%Ubuf_len %d, data_len %d, ol_flags 0x%x"
-	      "\n%Upacket_type 0x%x",
-	      mb->port, mb->nb_segs, mb->pkt_len,
-	      format_white_space, indent,
-	      mb->buf_len, mb->data_len, mb->ol_flags,
-	      format_white_space, indent, mb->packet_type);
-
-  if (mb->ol_flags)
-    s = format (s, "\n%U%U", format_white_space, indent,
-		format_dpdk_pkt_rx_offload_flags, &mb->ol_flags);
-
-  if (mb->ol_flags & PKT_RX_VLAN_PKT)
-    {
-      ethernet_vlan_header_tv_t *vlan_hdr =
-	((ethernet_vlan_header_tv_t *) & (eth_hdr->type));
-      s = format (s, " %U", format_dpdk_rte_mbuf_vlan, vlan_hdr);
-    }
-
-  if (mb->packet_type)
-    s = format (s, "\n%U%U", format_white_space, indent,
-		format_dpdk_pkt_types, &mb->packet_type);
-
-  return s;
-}
-#endif /* RTE_LIBRTE_MBUF_EXT_RX_OLFLAGS */
 
 uword
 unformat_socket_mem (unformat_input_t * input, va_list * va)

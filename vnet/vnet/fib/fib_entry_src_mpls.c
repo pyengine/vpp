@@ -29,7 +29,7 @@ fib_entry_src_mpls_init (fib_entry_src_t *src)
 {
     mpls_eos_bit_t eos;
 
-    src->fes_flags = FIB_ENTRY_FLAG_NONE;
+    src->fes_flags = FIB_ENTRY_SRC_FLAG_NONE;
     src->mpls.fesm_label = MPLS_LABEL_INVALID;
 
     FOR_EACH_MPLS_EOS_BIT(eos)
@@ -104,7 +104,7 @@ fib_entry_src_mpls_set_data (fib_entry_src_t *src,
 	    .fp_label = label,
 	};
 	fib_node_index_t fib_index;
-	dpo_id_t dpo = DPO_NULL;
+	dpo_id_t dpo = DPO_INVALID;
 
         /*
          * adding a new local label. make sure the MPLS fib exists.
@@ -118,6 +118,19 @@ fib_entry_src_mpls_set_data (fib_entry_src_t *src,
 	else
 	{
 	    fib_index = mpls_fib_index_from_table_id(MPLS_FIB_DEFAULT_TABLE_ID);
+
+	    /*
+	     * if this is a change in label, reomve the old one first
+	     */
+	    if (src->mpls.fesm_label != label)
+	    {
+		FOR_EACH_MPLS_EOS_BIT(eos)
+		{
+		    ASSERT(FIB_NODE_INDEX_INVALID != src->mpls.fesm_lfes[eos]);
+		    fib_table_entry_delete_index(src->mpls.fesm_lfes[eos],
+						 FIB_SOURCE_SPECIAL);
+		}
+	    }
 	}
 
         src->mpls.fesm_label = label;

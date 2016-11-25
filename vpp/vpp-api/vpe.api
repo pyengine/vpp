@@ -367,6 +367,198 @@ define create_vlan_subif_reply
   u32 sw_if_index;
 };
 
+/** \brief MPLS Route Add / del route
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param mr_label - The MPLS label value
+    @param mr_eos - The End of stack bit
+    @param mr_table_id - The MPLS table-id the route is added in
+    @param mr_classify_table_index - If this is a classify route, 
+                                     this is the classify table index
+    @param  mr_create_table_if_needed - If the MPLS or IP tables do not exist,
+                                        create them
+    @param mr_is_add - Is this a route add or delete
+    @param mr_is_classify - Is this route result a classify
+    @param mr_is_multipath - Is this route update a multipath - i.e. is this
+                             a path addition to an existing route
+    @param mr_is_resolve_host - Recurse resolution constraint via a host prefix
+    @param mr_is_resolve_attached - Recurse resolution constraint via attached prefix
+    @param mr_next_hop_proto_is_ip4 - The next-hop is IPV4
+    @param mr_next_hop_weight - The weight, for UCMP
+    @param mr_next_hop[16] - the nextop address
+    @param mr_next_hop_sw_if_index - the next-hop SW interface
+    @param mr_next_hop_table_id - the next-hop table-id (if appropriate)
+    @param mr_next_hop_out_label - the next-hop output label
+*/
+define mpls_route_add_del
+{
+  u32 client_index;
+  u32 context;
+  u32 mr_label;
+  u8 mr_eos;
+  u32 mr_table_id;
+  u32 mr_classify_table_index;
+  u8 mr_create_table_if_needed;
+  u8 mr_is_add;
+  u8 mr_is_classify;
+  u8 mr_is_multipath;
+  u8 mr_is_resolve_host;
+  u8 mr_is_resolve_attached;
+  u8 mr_next_hop_proto_is_ip4;
+  u8 mr_next_hop_weight;
+  u8 mr_next_hop[16];
+  u32 mr_next_hop_sw_if_index;
+  u32 mr_next_hop_table_id;
+  u32 mr_next_hop_out_label;
+};
+
+/** \brief Reply for MPLS route add / del request
+    @param context - returned sender context, to match reply w/ request
+    @param retval - return code
+*/
+define mpls_route_add_del_reply
+{
+  u32 context;
+  i32 retval;
+};
+
+/** \brief Dump MPLS fib table
+    @param client_index - opaque cookie to identify the sender
+*/
+define mpls_fib_dump
+{
+  u32 client_index;
+  u32 context;
+};
+
+/** \brief FIB path
+    @param sw_if_index - index of the interface
+    @param weight - The weight, for UCMP
+    @param is_local - local if non-zero, else remote
+    @param is_drop - Drop the packet
+    @param is_unreach - Drop the packet and rate limit send ICMP unreachable
+    @param is_prohibit - Drop the packet and rate limit send ICMP prohibited
+    @param afi - the afi of the next hop, IP46_TYPE_IP4=1, IP46_TYPE_IP6=2
+    @param next_hop[16] - the next hop address
+*/
+typeonly manual_print manual_endian define fib_path
+{
+  u32 sw_if_index;
+  u32 weight;
+  u8 is_local;
+  u8 is_drop;
+  u8 is_unreach;
+  u8 is_prohibit;
+  u8 afi;
+  u8 next_hop[16];
+};
+
+/** \brief mpls FIB table response
+    @param table_id - MPLS fib table id
+    @param s_bit - End-of-stack bit
+    @param label - MPLS label value
+    @param count - the number of fib_path in path
+    @param path  - array of of fib_path structures
+*/
+manual_endian manual_print define mpls_fib_details
+{
+  u32 context;
+  u32 table_id;
+  u8  eos_bit;
+  u32 label;
+  u32 count;
+  vl_api_fib_path_t path[count];
+};
+
+/** \brief Dump IP6 fib table
+    @param client_index - opaque cookie to identify the sender
+*/
+define ip6_fib_dump
+{
+  u32 client_index;
+  u32 context;
+};
+
+/** \brief IP6 FIB table response
+    @param table_id - IP6 fib table id
+    @address_length - mask length
+    @address - ip6 prefix
+    @param count - the number of fib_path in path
+    @param path  - array of of fib_path structures
+*/
+manual_endian manual_print define ip6_fib_details
+{
+  u32 context;
+  u32 table_id;
+  u8  address_length;
+  u8  address[16];
+  u32 count;
+  vl_api_fib_path_t path[count];
+};
+
+/** \brief Dump IP fib table
+    @param client_index - opaque cookie to identify the sender
+*/
+define ip_fib_dump
+{
+  u32 client_index;
+  u32 context;
+};
+
+/** \brief IP FIB table response
+    @param table_id - IP fib table id
+    @address_length - mask length
+    @address - ip4 prefix
+    @param count - the number of fib_path in path
+    @param path  - array of of fib_path structures
+*/
+manual_endian manual_print define ip_fib_details
+{
+  u32 context;
+  u32 table_id;
+  u8  address_length;
+  u8  address[4];
+  u32 count;
+  vl_api_fib_path_t path[count];
+};
+
+/** \brief Bind/Unbind an MPLS local label to an IP prefix. i.e. create
+           a per-prefix label entry.
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param mb_mpls_table_id - The MPLS table-id the MPLS entry will be added in
+    @param mb_label - The MPLS label value to bind
+    @param mb_ip_table_id - The IP table-id of the IP prefix to bind to.
+    @param mb_create_table_if_needed - Create either/both tables if required.
+    @param mb_is_bind - Bind or unbind
+    @param mb_is_ip4 - The prefix to bind to is IPv4
+    @param mb_address_length - Length of IP prefix
+    @param mb_address[16] - IP prefix/
+*/
+define mpls_ip_bind_unbind
+{
+  u32 client_index;
+  u32 context;
+  u32 mb_mpls_table_id;
+  u32 mb_label;
+  u32 mb_ip_table_id;
+  u8 mb_create_table_if_needed;
+  u8 mb_is_bind;
+  u8 mb_is_ip4;
+  u8 mb_address_length;
+  u8 mb_address[16];
+};
+
+/** \brief Reply for MPLS IP bind/unbind request
+    @param context - returned sender context, to match reply w/ request
+    @param retval - return code
+*/
+define mpls_ip_bind_unbind_reply
+{
+  u32 context;
+  i32 retval;
+};
+
 /** \brief Add / del route request
     @param client_index - opaque cookie to identify the sender
     @param context - sender context, to match reply w/ request
@@ -378,7 +570,9 @@ define create_vlan_subif_reply
     @param create_vrf_if_needed - 
     @param resolve_if_needed - 
     @param is_add - 1 if adding the route, 0 if deleting
-    @param is_drop - 
+    @param is_drop - Drop the packet
+    @param is_unreach - Drop the packet and rate limit send ICMP unreachable
+    @param is_prohibit - Drop the packet and rate limit send ICMP prohibited
     @param is_ipv6 - 0 if an ip4 route, else ip6
     @param is_local - 
     @param is_classify - 
@@ -394,14 +588,17 @@ define ip_add_del_route
   u32 client_index;
   u32 context;
   u32 next_hop_sw_if_index;
-  u32 vrf_id;
-  u32 lookup_in_vrf;
+  u32 table_id;
   u32 resolve_attempts;
   u32 classify_table_index;
+  u32 next_hop_out_label;
+  u32 next_hop_table_id;
   u8 create_vrf_if_needed;
   u8 resolve_if_needed;
   u8 is_add;
   u8 is_drop;
+  u8 is_unreach;
+  u8 is_prohibit;
   u8 is_ipv6;
   u8 is_local;
   u8 is_classify;
@@ -424,44 +621,6 @@ define ip_add_del_route_reply
 {
   u32 context;
   i32 retval;
-};
-
-/* works */
-/** \brief Add / del gre tunnel request
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-    @param sw_if_index - software index of the new vlan's parent interface
-    @param inner_vrf_id -
-    @param outer_vrf_id - 
-    @param is_add - 1 if adding the tunnel, 0 if deleting
-    @param src_address[4] - tunnel source address
-    @param dst_address[4] - tunnel destination address
-    @param intf_address - 
-    @param intf_address_length - 
-*/
-define mpls_gre_add_del_tunnel
-{
-  u32 client_index;
-  u32 context;
-  u32 inner_vrf_id;
-  u32 outer_vrf_id;
-  u8 is_add;
-  u8 l2_only;
-  u8 src_address[4];
-  u8 dst_address[4];
-  u8 intfc_address[4];
-  u8 intfc_address_length;
-};
-
-/** \brief Reply for add / del tunnel request
-    @param context - returned sender context, to match reply w/ request
-    @param retval - return code
-*/
-define mpls_gre_add_del_tunnel_reply
-{
-  u32 context;
-  i32 retval;
-  u32 tunnel_sw_if_index;
 };
 
 /** \brief Add / del MPLS encapsulation request
@@ -490,38 +649,6 @@ define mpls_add_del_encap
     @param retval - return code
 */
 define mpls_add_del_encap_reply
-{
-  u32 context;
-  i32 retval;
-};
-
-/** \brief Add / del MPLS decapsulation request
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-    @param rx_vrf_id - receive vrf
-    @param tx_vrf_id - transmit vrf
-    @param label - 
-    @param next_index - 
-    @param s_bit - 
-    @param is_add - 1 if adding the encap, 0 if deleting
-*/
-define mpls_add_del_decap
-{
-  u32 client_index;
-  u32 context;
-  u32 rx_vrf_id;
-  u32 tx_vrf_id;
-  u32 label;
-  u32 next_index;
-  u8 s_bit;
-  u8 is_add;
-};
-
-/** \brief Reply for MPLS decap add / del request
-    @param context - returned sender context, to match reply w/ request
-    @param retval - return code
-*/
-define mpls_add_del_decap_reply
 {
   u32 context;
   i32 retval;
@@ -1639,6 +1766,17 @@ define bd_ip_mac_add_del_reply
     @param match_n_vectors - number of match vectors
     @param next_table_index - index of next table
     @param miss_next_index - index of miss table
+    @param current_data_flag - option to use current node's packet payload
+            as the starting point from where packets are classified,
+            This option is only valid for L2/L3 input ACL for now.
+            0: by default, classify data from the buffer's start location
+            1: classify packets from VPP node’s current data pointer
+    @param current_data_offset - a signed value to shift the start location of
+            the packet to be classified
+            For example, if input IP ACL node is used, L2 header’s first byte
+            can be accessible by configuring current_data_offset to -14
+            if there is no vlan tag.
+            This is valid only if current_data_flag is set to 1.
     @param mask[] - match mask
 */
 define classify_add_del_table
@@ -1653,6 +1791,8 @@ define classify_add_del_table
   u32 match_n_vectors;
   u32 next_table_index;
   u32 miss_next_index;
+  u32 current_data_flag;
+  i32 current_data_offset;
   u8 mask[0];
 };
 
@@ -1680,6 +1820,17 @@ define classify_add_del_table_reply
     @param hit_next_index - for add, hit_next_index of new session, required
     @param opaque_index - for add, opaque_index of new session
     @param advance -for add, advance value for session
+    @param action -
+           0: no action (by default)
+              metadata is not used.
+           1: Classified IP packets will be looked up from the
+              specified ipv4 fib table (configured by metadata as VRF id).
+              Only valid for L3 input ACL node
+           2: Classified IP packets will be looked up from the
+              specified ipv6 fib table (configured by metadata as VRF id).
+              Only valid for L3 input ACL node
+    @param metadata - valid only if action != 0
+           VRF id if action is 1 or 2.
     @param match[] - for add, match value for session, required
 */
 define classify_add_del_session
@@ -1691,6 +1842,8 @@ define classify_add_del_session
   u32 hit_next_index;
   u32 opaque_index;
   i32 advance;
+  u8 action;
+  u32 metadata;
   u8 match[0];
 };
 
@@ -4075,7 +4228,8 @@ define sw_interface_clear_stats_reply
 
 /** \brief IOAM enable : Enable in-band OAM
     @param id - profile id
-    @param trace_ppc - Trace PPC (none/encap/decap)
+    @param seqno - To enable Seqno Processing
+    @param analyse - Enabling analysis of iOAM at decap node 
     @param pow_enable - Proof of Work enabled or not flag
     @param trace_enable - iOAM Trace enabled or not flag
 */
@@ -4084,8 +4238,9 @@ define ioam_enable
   u32 client_index;
   u32 context;
   u16 id;
-  u8 trace_ppc;
-  u8 pow_enable;
+  u8 seqno;
+  u8 analyse;
+  u8 pot_enable;
   u8 trace_enable;
   u32 node_id;
 };
@@ -4522,40 +4677,6 @@ define mpls_fib_encap_details
   u32 labels[nlabels];
 };
 
-/** \brief Dump mpls fib decap table
-    @param client_index - opaque cookie to identify the sender
-    @param fib_index    - mpls fib entry identifier or -1 in case of all entries
-*/
-define mpls_fib_decap_dump
-{
-  u32 client_index;
-  u32 context;
-};
-
-/** \brief mpls fib decap table response
-    @param fib_index - fib table id
-    @param entry_index - reference to mpls label table
-    @param dest - destination ipv4 addr
-    @param s_bit -
-    @param label - mpls labels
-    @param rx_table_id - rx fib id
-    @param tx_table_id - tx fib id
-    @param swif_tag -
-*/
-define mpls_fib_decap_details
-{
-  u32 context;
-
-  u32 fib_index;
-  u32 entry_index;
-  u32 dest;
-  u32 s_bit;
-  u32 label;
-  u32 rx_table_id;
-  u32 tx_table_id;
-  u8 swif_tag[8];
-};
-
 /** \brief Classify get table IDs request
     @param client_index - opaque cookie to identify the sender
     @param context - sender context, to match reply w/ request
@@ -4883,6 +5004,49 @@ define flow_classify_details {
     u32 context;
     u32 sw_if_index;
     u32 table_index;
+};
+
+/** \brief Enable/Disable span to mirror traffic from one interface to another
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context which was passed in the request
+    @param sw_if_index_from - interface to be mirorred
+    @param sw_if_index_to - interface where the traffic is mirrored
+    @param enable - 1 enable SPAN, 0 SPAN on given interface
+*/
+define sw_interface_span_enable_disable{
+    u32 client_index;
+    u32 context;
+    u32 sw_if_index_from;
+    u32 sw_if_index_to;
+    u8  enable;
+};
+
+/** \brief Reply to SPAN enable/disable request
+    @param context - sender context which was passed in the request
+*/
+define sw_interface_span_enable_disable_reply {
+    u32 context;
+    i32 retval;
+};
+
+/** \brief SPAN dump request
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+*/
+define sw_interface_span_dump {
+    u32 client_index;
+    u32 context;
+};
+
+/** \brief Reply to SPAN dump request
+    @param context - sender context which was passed in the request
+    @param sw_if_index_from - mirorred interface
+    @param sw_if_index_to - interface where the traffic is mirrored
+*/
+define sw_interface_span_details {
+    u32 context;
+    u32 sw_if_index_from;
+    u32 sw_if_index_to;
 };
 
 /** \brief Query relative index via node names
@@ -5276,3 +5440,82 @@ define punt_reply
     i32 retval;
 };
 
+/** \brief Dump ipsec policy database data
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param spd_id - SPD instance id
+    @param sa_id - SA id, optional, set to ~0 to see all policies in SPD
+*/
+define ipsec_spd_dump {
+    u32 client_index;
+    u32 context;
+    u32 spd_id;
+    u32 sa_id;
+};
+
+/** \brief IPsec policy database response
+    @param context - sender context which was passed in the request
+    @param spd_id - SPD instance id
+    @param priority - numeric value to control policy evaluation order
+    @param is_outbound - [1|0] to indicate if direction is [out|in]bound
+    @param is_ipv6 - [1|0] to indicate if address family is ipv[6|4]
+    @param local_start_addr - first address in local traffic selector range
+    @param local_stop_addr - last address in local traffic selector range
+    @param local_start_port - first port in local traffic selector range
+    @param local_stop_port - last port in local traffic selector range
+    @param remote_start_addr - first address in remote traffic selector range
+    @param remote_stop_addr - last address in remote traffic selector range
+    @param remote_start_port - first port in remote traffic selector range
+    @param remote_stop_port - last port in remote traffic selector range
+    @param protocol - traffic selector protocol
+    @param policy - policy action
+    @param sa_id - SA id
+    @param bytes - byte count of packets matching this policy
+    @param packets - count of packets matching this policy
+*/
+
+define ipsec_spd_details {
+    u32 context;
+    u32 spd_id;
+    i32 priority;
+    u8 is_outbound;
+    u8 is_ipv6;
+    u8 local_start_addr[16];
+    u8 local_stop_addr[16];
+    u16 local_start_port;
+    u16 local_stop_port;
+    u8 remote_start_addr[16];
+    u8 remote_stop_addr[16];
+    u16 remote_start_port;
+    u16 remote_stop_port;
+    u8 protocol;
+    u8 policy;
+    u32 sa_id;
+    u64 bytes;
+    u64 packets;
+};
+
+/** \brief Feature path enable/disable request
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param sw_if_index - the interface
+    @param enable - 1 = on, 0 = off
+*/
+define feature_enable_disable {
+    u32 client_index;
+    u32 context;
+    u32 sw_if_index;
+    u8 enable;
+    u8 arc_name[64];
+    u8 feature_name[64];
+};
+
+/** \brief Reply to the eature path enable/disable request
+    @param context - sender context which was passed in the request
+    @param retval - return code for the request
+*/
+define feature_enable_disable_reply
+{
+    u32 context;
+    i32 retval;
+};

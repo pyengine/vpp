@@ -32,85 +32,6 @@ typedef enum
   HANDOFF_DISPATCH_N_NEXT,
 } handoff_dispatch_next_t;
 
-static inline void
-vlib_put_handoff_queue_elt (vlib_frame_queue_elt_t * hf)
-{
-  CLIB_MEMORY_BARRIER ();
-  hf->valid = 1;
-}
-
-static inline vlib_frame_queue_elt_t *
-vlib_get_handoff_queue_elt (u32 vlib_worker_index)
-{
-  vlib_frame_queue_t *fq;
-  vlib_frame_queue_elt_t *elt;
-  u64 new_tail;
-
-  fq = vlib_frame_queues[vlib_worker_index];
-  ASSERT (fq);
-
-  new_tail = __sync_add_and_fetch (&fq->tail, 1);
-
-  /* Wait until a ring slot is available */
-  while (new_tail >= fq->head_hint + fq->nelts)
-    vlib_worker_thread_barrier_check ();
-
-  elt = fq->elts + (new_tail & (fq->nelts - 1));
-
-  /* this would be very bad... */
-  while (elt->valid)
-    ;
-
-  elt->msg_type = VLIB_FRAME_QUEUE_ELT_DISPATCH_FRAME;
-  elt->last_n_vectors = elt->n_vectors = 0;
-
-  return elt;
-}
-
-static inline vlib_frame_queue_t *
-is_vlib_handoff_queue_congested (u32 vlib_worker_index,
-				 u32 queue_hi_thresh,
-				 vlib_frame_queue_t **
-				 handoff_queue_by_worker_index)
-{
-  vlib_frame_queue_t *fq;
-
-  fq = handoff_queue_by_worker_index[vlib_worker_index];
-  if (fq != (vlib_frame_queue_t *) (~0))
-    return fq;
-
-  fq = vlib_frame_queues[vlib_worker_index];
-  ASSERT (fq);
-
-  if (PREDICT_FALSE (fq->tail >= (fq->head_hint + queue_hi_thresh)))
-    {
-      /* a valid entry in the array will indicate the queue has reached
-       * the specified threshold and is congested
-       */
-      handoff_queue_by_worker_index[vlib_worker_index] = fq;
-      fq->enqueue_full_events++;
-      return fq;
-    }
-
-  return NULL;
-}
-
-static inline vlib_frame_queue_elt_t *
-dpdk_get_handoff_queue_elt (u32 vlib_worker_index,
-			    vlib_frame_queue_elt_t **
-			    handoff_queue_elt_by_worker_index)
-{
-  vlib_frame_queue_elt_t *elt;
-
-  if (handoff_queue_elt_by_worker_index[vlib_worker_index])
-    return handoff_queue_elt_by_worker_index[vlib_worker_index];
-
-  elt = vlib_get_handoff_queue_elt (vlib_worker_index);
-
-  handoff_queue_elt_by_worker_index[vlib_worker_index] = elt;
-
-  return elt;
-}
 
 static inline u64
 ipv4_get_key (ip4_header_t * ip)
@@ -209,6 +130,72 @@ bottom_lbl_found:
 
 }
 
+static inline u64
+eth_get_sym_key (ethernet_header_t * h0)
+{
+  u64 hash_key;
+
+  if (PREDICT_TRUE (h0->type) == clib_host_to_net_u16 (ETHERNET_TYPE_IP4))
+    {
+      ip4_header_t *ip = (ip4_header_t *) (h0 + 1);
+      hash_key =
+	(u64) (ip->src_address.as_u32 ^
+	       ip->dst_address.as_u32 ^ ip->protocol);
+    }
+  else if (h0->type == clib_host_to_net_u16 (ETHERNET_TYPE_IP6))
+    {
+      ip6_header_t *ip = (ip6_header_t *) (h0 + 1);
+      hash_key = (u64) (ip->src_address.as_u64[0] ^
+			ip->src_address.as_u64[1] ^
+			ip->dst_address.as_u64[0] ^
+			ip->dst_address.as_u64[1] ^ ip->protocol);
+    }
+  else if (h0->type == clib_host_to_net_u16 (ETHERNET_TYPE_MPLS_UNICAST))
+    {
+      hash_key = mpls_get_key ((mpls_unicast_header_t *) (h0 + 1));
+    }
+  else
+    if (PREDICT_FALSE
+	((h0->type == clib_host_to_net_u16 (ETHERNET_TYPE_VLAN))
+	 || (h0->type == clib_host_to_net_u16 (ETHERNET_TYPE_DOT1AD))))
+    {
+      ethernet_vlan_header_t *outer = (ethernet_vlan_header_t *) (h0 + 1);
+
+      outer = (outer->type == clib_host_to_net_u16 (ETHERNET_TYPE_VLAN)) ?
+	outer + 1 : outer;
+      if (PREDICT_TRUE (outer->type) ==
+	  clib_host_to_net_u16 (ETHERNET_TYPE_IP4))
+	{
+	  ip4_header_t *ip = (ip4_header_t *) (outer + 1);
+	  hash_key =
+	    (u64) (ip->src_address.as_u32 ^
+		   ip->dst_address.as_u32 ^ ip->protocol);
+	}
+      else if (outer->type == clib_host_to_net_u16 (ETHERNET_TYPE_IP6))
+	{
+	  ip6_header_t *ip = (ip6_header_t *) (outer + 1);
+	  hash_key =
+	    (u64) (ip->src_address.as_u64[0] ^ ip->src_address.as_u64[1] ^
+		   ip->dst_address.as_u64[0] ^
+		   ip->dst_address.as_u64[1] ^ ip->protocol);
+	}
+      else if (outer->type ==
+	       clib_host_to_net_u16 (ETHERNET_TYPE_MPLS_UNICAST))
+	{
+	  hash_key = mpls_get_key ((mpls_unicast_header_t *) (outer + 1));
+	}
+      else
+	{
+	  hash_key = outer->type;
+	}
+    }
+  else
+    {
+      hash_key = 0;
+    }
+
+  return hash_key;
+}
 
 static inline u64
 eth_get_key (ethernet_header_t * h0)

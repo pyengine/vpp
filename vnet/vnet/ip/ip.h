@@ -63,11 +63,6 @@
 #include <vnet/ip/ip6_packet.h>
 #include <vnet/ip/ip6_error.h>
 #include <vnet/ip/icmp6.h>
-
-#if DPDK > 0
-#include <vnet/devices/dpdk/dpdk.h>
-#endif
-
 #include <vnet/classify/vnet_classify.h>
 
 /* Per protocol info. */
@@ -155,35 +150,6 @@ ip_incremental_checksum_buffer (vlib_main_t * vm, vlib_buffer_t * first_buffer,
 				u32 first_buffer_offset,
 				u32 n_bytes_to_checksum,
 				ip_csum_t sum)
-#if DPDK > 0
-{
-  u32 n_bytes_left = n_bytes_to_checksum;
-  struct rte_mbuf * mb = rte_mbuf_from_vlib_buffer(first_buffer);
-  u8 nb_segs = mb->nb_segs;
-  ASSERT(mb->data_len >= first_buffer_offset);
-  void * h;
-  u32 n;
-  
-  n = clib_min (n_bytes_left, mb->data_len);
-  h = vlib_buffer_get_current (first_buffer) + first_buffer_offset;
-  while (n_bytes_left)
-    {
-      sum = ip_incremental_checksum (sum, h, n);
-      n_bytes_left -= n;
-      nb_segs--;
-      mb = mb->next;
-      if ((nb_segs == 0) || (mb == 0))
-	break;
-
-      n = clib_min (n_bytes_left, mb->data_len);
-      h = rte_ctrlmbuf_data(mb);
-    }
- 
-  ASSERT(n_bytes_left == 0);
-  ASSERT(nb_segs == 0);
-  return sum;
-}
-#else
 {
   vlib_buffer_t * b = first_buffer;
   u32 n_bytes_left = n_bytes_to_checksum;
@@ -210,17 +176,10 @@ ip_incremental_checksum_buffer (vlib_main_t * vm, vlib_buffer_t * first_buffer,
 
   return sum;
 }
-#endif /* DPDK */
 
 void ip_del_all_interface_addresses (vlib_main_t *vm, u32 sw_if_index);
 
 extern vlib_node_registration_t ip4_inacl_node;
 extern vlib_node_registration_t ip6_inacl_node;
-
-void
-vnet_config_update_tx_feature_count (ip_lookup_main_t * lm, 
-                                     ip_config_main_t * tx_cm, 
-                                     u32 sw_if_index, 
-                                     int is_add);
 
 #endif /* included_ip_main_h */

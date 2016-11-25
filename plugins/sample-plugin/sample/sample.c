@@ -106,8 +106,7 @@ int sample_macswap_enable_disable (sample_main_t * sm, u32 sw_if_index,
                                    int enable_disable)
 {
   vnet_sw_interface_t * sw;
-  int rv;
-  u32 node_index = enable_disable ? sample_node.index : ~0;
+  int rv = 0;
 
   /* Utterly wrong? */
   if (pool_is_free_index (sm->vnet_main->interface_main.sw_interfaces, 
@@ -119,15 +118,9 @@ int sample_macswap_enable_disable (sample_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
-  /* 
-   * Redirect pkts from the driver to the macswap node.
-   * Returns VNET_API_ERROR_UNIMPLEMENTED if the h/w driver
-   * doesn't implement the API. 
-   *
-   * Node_index = ~0 => shut off redirection
-   */
-  rv = vnet_hw_interface_rx_redirect_to_node (sm->vnet_main, sw_if_index,
-                                              node_index);
+  vnet_feature_enable_disable ("device-input", "sample",
+                               sw_if_index, enable_disable, 0, 0);
+
   return rv;
 }
 
@@ -217,6 +210,19 @@ sample_plugin_api_hookup (vlib_main_t *vm)
     return 0;
 }
 
+#define vl_msg_name_crc_list
+#include <sample/sample_all_api_h.h>
+#undef vl_msg_name_crc_list
+
+static void 
+setup_message_id_table (sample_main_t * sm, api_main_t *am)
+{
+#define _(id,n,crc) \
+  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
+  foreach_vl_msg_name_crc_sample;
+#undef _
+}
+
 static clib_error_t * sample_init (vlib_main_t * vm)
 {
   sample_main_t * sm = &sample_main;
@@ -231,6 +237,9 @@ static clib_error_t * sample_init (vlib_main_t * vm)
 
   error = sample_plugin_api_hookup (vm);
 
+  /* Add our API messages to the global name_crc hash table */
+  setup_message_id_table (sm, &api_main);
+
   vec_free(name);
 
   return error;
@@ -238,4 +247,9 @@ static clib_error_t * sample_init (vlib_main_t * vm)
 
 VLIB_INIT_FUNCTION (sample_init);
 
-
+VNET_FEATURE_INIT (sample, static) = 
+{
+  .arc_name = "device-input",
+  .node_name = "sample",
+  .runs_before = VNET_FEATURES ("ethernet-input"),
+};

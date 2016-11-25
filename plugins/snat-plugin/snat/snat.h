@@ -127,6 +127,11 @@ typedef struct {
 } snat_static_mapping_t;
 
 typedef struct {
+  u32 sw_if_index;
+  u8 is_inside;
+} snat_interface_t;
+
+typedef struct {
   /* Main lookup tables */
   clib_bihash_8_8_t out2in;
   clib_bihash_8_8_t in2out;
@@ -149,6 +154,9 @@ typedef struct {
   /* Static mapping pool */
   snat_static_mapping_t * static_mappings;
 
+  /* Interface pool */
+  snat_interface_t * interfaces;
+
   /* Vector of outside addresses */
   snat_address_t * addresses;
 
@@ -157,12 +165,6 @@ typedef struct {
 
   /* Randomize port allocation order */
   u32 random_seed;
-
-  /* ip4 feature path indices */
-  u32 rx_feature_in2out;
-  u32 rx_feature_out2in;
-  u32 rx_feature_in2out_fast;
-  u32 rx_feature_out2in_fast;
 
   /* Config parameters */
   u8 static_mapping_only;

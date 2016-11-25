@@ -47,6 +47,7 @@
 #include <vnet/dpo/classify_dpo.h>
 #include <vnet/dpo/punt_dpo.h>
 #include <vnet/dpo/receive_dpo.h>
+#include <vnet/dpo/ip_null_dpo.h>
 
 /**
  * @file
@@ -164,8 +165,10 @@ ip_interface_address_add_del (ip_lookup_main_t * lm,
 void ip_lookup_init (ip_lookup_main_t * lm, u32 is_ip6)
 {
   /* ensure that adjacency is cacheline aligned and sized */
-  ASSERT(STRUCT_OFFSET_OF(ip_adjacency_t, cacheline0) == 0);
-  ASSERT(STRUCT_OFFSET_OF(ip_adjacency_t, cacheline1) == CLIB_CACHE_LINE_BYTES);
+  STATIC_ASSERT(STRUCT_OFFSET_OF(ip_adjacency_t, cacheline0) == 0,
+		"Cache line marker must be 1st element in struct");
+  STATIC_ASSERT(STRUCT_OFFSET_OF(ip_adjacency_t, cacheline1) == CLIB_CACHE_LINE_BYTES,
+		"Data in cache line 0 is bigger than cache line size");
 
   /* Preallocate three "special" adjacencies */
   lm->adjacency_heap = adj_pool;
@@ -278,6 +281,12 @@ static uword unformat_dpo (unformat_input_t * input, va_list * args)
     dpo_copy(dpo, punt_dpo_get(proto));
   else if (unformat (input, "local"))
     receive_dpo_add_or_lock(proto, ~0, NULL, dpo);
+  else if (unformat (input, "null-send-unreach"))
+      ip_null_dpo_add_and_lock(proto, IP_NULL_ACTION_SEND_ICMP_UNREACH, dpo);
+  else if (unformat (input, "null-send-prohibit"))
+      ip_null_dpo_add_and_lock(proto, IP_NULL_ACTION_SEND_ICMP_PROHIBIT, dpo);
+  else if (unformat (input, "null"))
+      ip_null_dpo_add_and_lock(proto, IP_NULL_ACTION_NONE, dpo);
   else if (unformat (input, "classify"))
     {
       u32 classify_table_index;
@@ -289,7 +298,7 @@ static uword unformat_dpo (unformat_input_t * input, va_list * args)
 	}
 
       dpo_set(dpo, DPO_CLASSIFY, proto,
-              classify_dpo_create(fp, classify_table_index));
+              classify_dpo_create(proto, classify_table_index));
     }
   else
     return 0;
@@ -337,7 +346,7 @@ vnet_ip_route_cmd (vlib_main_t * vm,
 {
   unformat_input_t _line_input, * line_input = &_line_input;
   fib_route_path_t *rpaths = NULL, rpath;
-  dpo_id_t dpo = DPO_NULL, *dpos = NULL;
+  dpo_id_t dpo = DPO_INVALID, *dpos = NULL;
   fib_prefix_t *prefixs = NULL, pfx;
   clib_error_t * error = NULL;
   mpls_label_t out_label;

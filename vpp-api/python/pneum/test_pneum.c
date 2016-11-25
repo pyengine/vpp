@@ -76,7 +76,7 @@ int main (int argc, char ** argv)
   vl_api_show_version_t message;
   vl_api_show_version_t *mp;
   int async = 1;
-  int rv = pneum_connect("pneum_client", NULL);
+  int rv = pneum_connect("pneum_client", NULL, NULL);
 
   if (rv != 0) {
     printf("Connect failed: %d\n", rv);
@@ -106,8 +106,11 @@ int main (int argc, char ** argv)
     /* Construct the API message */
     M_NOALLOC(SHOW_VERSION, show_version);
     pneum_write((char *)mp, sizeof(*mp));
+#ifndef __COVERITY__
+    /* As given, async is always 1. Shut up Coverity about it */
     if (!async)
       while (result_ready == 0);
+#endif
   }
   if (async) {
     vl_api_control_ping_t control;

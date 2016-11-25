@@ -120,8 +120,8 @@ typedef enum fib_source_t_ {
     FIB_SOURCE_LAST = FIB_SOURCE_DEFAULT_ROUTE,
 } __attribute__ ((packed)) fib_source_t;
 
-_Static_assert (sizeof(fib_source_t) == 1,
-		"FIB too many sources");
+STATIC_ASSERT (sizeof(fib_source_t) == 1,
+	       "FIB too many sources");
 
 /**
  * The maximum number of sources
@@ -260,8 +260,8 @@ typedef enum fib_entry_src_flag_t_ {
  * Keep the size of the flags field to 2 bytes, so it
  * can be placed next to the 2 bytes reference count
  */
-_Static_assert (sizeof(fib_entry_src_flag_t) <= 2,
-		"FIB entry flags field size too big");
+STATIC_ASSERT (sizeof(fib_entry_src_flag_t) <= 2,
+	       "FIB entry flags field size too big");
 
 /**
  * Information related to the source of a FIB entry
@@ -446,6 +446,10 @@ extern void fib_entry_special_add(fib_node_index_t fib_entry_index,
 				  fib_source_t source,
 				  fib_entry_flag_t flags,
 				  const dpo_id_t *dpo);
+extern void fib_entry_special_update(fib_node_index_t fib_entry_index,
+				     fib_source_t source,
+				     fib_entry_flag_t flags,
+				     const dpo_id_t *dpo);
 extern fib_entry_src_flag_t fib_entry_special_remove(fib_node_index_t fib_entry_index,
 						     fib_source_t source);
 
@@ -493,6 +497,8 @@ extern u32 fib_entry_get_resolving_interface_for_source(
     fib_node_index_t fib_entry_index,
     fib_source_t source);
 
+extern void fib_entry_encode(fib_node_index_t fib_entry_index,
+			     fib_route_path_encode_t **api_rpaths);
 extern void fib_entry_get_prefix(fib_node_index_t fib_entry_index,
 				 fib_prefix_t *pfx);
 extern u32 fib_entry_get_fib_index(fib_node_index_t fib_entry_index);

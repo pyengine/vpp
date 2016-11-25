@@ -391,7 +391,10 @@ acl_classify_add_del_table(vnet_classify_main_t * cm, u8 * mask, u32 mask_len, u
   u32 skip = count_skip(mask, mask_len);
   u32 match = (mask_len/16) - skip;
   u8 *skip_mask_ptr = mask + 16*skip;
-  return vnet_classify_add_del_table(cm, skip_mask_ptr, nbuckets, memory_size, skip, match, next_table_index, miss_next_index, table_index, is_add);
+  u32 current_data_flag = 0;
+  int current_data_offset = 0;
+
+  return vnet_classify_add_del_table(cm, skip_mask_ptr, nbuckets, memory_size, skip, match, next_table_index, miss_next_index, table_index, current_data_flag, current_data_offset, is_add);
 }
 
 static int
@@ -855,8 +858,11 @@ macip_create_classify_tables(acl_main_t *am, u32 macip_acl_index)
   a->ip4_table_index = ~0;
   a->ip6_table_index = ~0;
   a->l2_table_index = last_table;
+
   /* Populate the classifier tables with rules from the MACIP ACL */
   for(i=0; i<a->count; i++) {
+    u32 action = 0;
+    u32 metadata = 0;
     int is6 = a->rules[i].is_ipv6;
     int l3_src_offs = is6 ? 22 : 26; /* See the ascii art packet format above to verify these */
     memset(mask, 0, sizeof(mask));
@@ -868,7 +874,7 @@ macip_create_classify_tables(acl_main_t *am, u32 macip_acl_index)
     }
     match_type_index = macip_find_match_type(mvec, a->rules[i].src_mac_mask, a->rules[i].src_prefixlen, a->rules[i].is_ipv6);
     /* add session to table mvec[match_type_index].table_index; */
-    vnet_classify_add_del_session(cm,  mvec[match_type_index].table_index, mask, a->rules[i].is_permit ? ~0 : 0, i, 0, 1);
+    vnet_classify_add_del_session(cm,  mvec[match_type_index].table_index, mask, a->rules[i].is_permit ? ~0 : 0, i, 0, action, metadata, 1);
   }
   return 0;
 }

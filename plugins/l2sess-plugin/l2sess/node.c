@@ -209,10 +209,13 @@ void
 l2sess_add_session(vlib_buffer_t * b0,  int node_is_out, int node_is_ip6, u32 session_table, u32 session_match_next, u32 opaque_index)
 {
   vnet_classify_main_t * cm = &vnet_classify_main;
+  u32 action = 0;
+  u32 metadata = 0;
+
 #ifdef DEBUG_SESSIONS
   printf("Adding session to table %d with next %d\n", session_table, session_match_next);
 #endif
-  vnet_classify_add_del_session(cm, session_table, vlib_buffer_get_current (b0), session_match_next, opaque_index, 0, 1);
+  vnet_classify_add_del_session(cm, session_table, vlib_buffer_get_current (b0), session_match_next, opaque_index, 0, action, metadata, 1);
 }
 
 
@@ -280,11 +283,11 @@ delete_session(l2sess_main_t * sm, u32 sw_if_index, u32 session_index)
   l2sess_get_session_tables(sm, sw_if_index, 0, sess->is_ip6, sess->l4_proto, session_tables);
   if (session_tables[1] != ~0) {
     build_match_from_session(sm, match, sess, 1);
-    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0);
+    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0, 0, 0);
   }
   if (session_tables[1] != ~0) {
     build_match_from_session(sm, match, sess, 1);
-    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0);
+    vnet_classify_add_del_session(cm, session_tables[1], match, 0, 0, 0, 0, 0, 0);
   }
   pool_put(sm->sessions, sess);
 }

@@ -112,8 +112,12 @@ static void vl_api_udp_ping_add_del_req_t_handler
   src.ip6 = *((ip6_address_t *) mp->src_ip_address);
   dst.ip6 = *((ip6_address_t *) mp->dst_ip_address);
 
-  ip46_udp_ping_set_flow(src, dst, mp->start_src_port, mp->end_src_port,
-                         mp->start_dst_port, mp->end_dst_port, mp->interval,
+  ip46_udp_ping_set_flow(src, dst, 
+                         ntohs(mp->start_src_port), 
+			 ntohs(mp->end_src_port),
+                         ntohs(mp->start_dst_port),
+			 ntohs(mp->end_dst_port), 
+			 ntohs(mp->interval),
                          mp->dis);
   rv = 0;//FIXME
 

@@ -414,18 +414,6 @@ acl_del_list(u32 acl_list_index)
   return 0;
 }
 
-int
-acl_unhook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
-{
-  return 0;
-}
-
-int
-acl_unhook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
-{
-  return 0;
-}
-
 /* Some aids in ASCII graphing the content */
 #define XX "\377"
 #define __ "\000"
@@ -505,6 +493,58 @@ acl_classify_add_del_table(vnet_classify_main_t * cm, u8 * mask, u32 mask_len, u
 }
 
 static int
+acl_unhook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
+{
+  vnet_classify_main_t *cm = &vnet_classify_main;
+  u32 ip4_table_index = ~0;
+  u32 ip6_table_index = ~0;
+
+  vec_validate_init_empty(am->acl_ip4_input_classify_table_by_sw_if_index, sw_if_index, ~0);
+  vec_validate_init_empty(am->acl_ip6_input_classify_table_by_sw_if_index, sw_if_index, ~0);
+
+  vnet_l2_input_classify_enable_disable(sw_if_index, 0);
+
+  if (am->acl_ip4_input_classify_table_by_sw_if_index[sw_if_index] != ~0) {
+    ip4_table_index = am->acl_ip4_input_classify_table_by_sw_if_index[sw_if_index];
+    am->acl_ip4_input_classify_table_by_sw_if_index[sw_if_index] = ~0;
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip4_table_index, 0);
+  }
+  if (am->acl_ip6_input_classify_table_by_sw_if_index[sw_if_index] != ~0) {
+    ip6_table_index = am->acl_ip6_input_classify_table_by_sw_if_index[sw_if_index];
+    am->acl_ip6_input_classify_table_by_sw_if_index[sw_if_index] = ~0;
+    acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip6_table_index, 0);
+  }
+
+  return 0;
+}
+
+static int
+acl_unhook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
+{
+  vnet_classify_main_t *cm = &vnet_classify_main;
+  u32 ip4_table_index = ~0;
+  u32 ip6_table_index = ~0;
+
+  vec_validate_init_empty(am->acl_ip4_output_classify_table_by_sw_if_index, sw_if_index, ~0);
+  vec_validate_init_empty(am->acl_ip6_output_classify_table_by_sw_if_index, sw_if_index, ~0);
+
+  vnet_l2_output_classify_enable_disable(sw_if_index, 0);
+
+  if (am->acl_ip4_output_classify_table_by_sw_if_index[sw_if_index] != ~0) {
+    ip4_table_index = am->acl_ip4_output_classify_table_by_sw_if_index[sw_if_index];
+    am->acl_ip4_output_classify_table_by_sw_if_index[sw_if_index] = ~0;
+    acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip4_table_index, 0);
+  }
+  if (am->acl_ip6_output_classify_table_by_sw_if_index[sw_if_index] != ~0) {
+    ip6_table_index = am->acl_ip6_output_classify_table_by_sw_if_index[sw_if_index];
+    am->acl_ip6_output_classify_table_by_sw_if_index[sw_if_index] = ~0;
+    acl_classify_add_del_table(cm, ip6_5tuple_mask, sizeof(ip6_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip6_table_index, 0);
+  }
+
+  return 0;
+}
+
+static int
 acl_hook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
 {
   vnet_classify_main_t *cm = &vnet_classify_main;
@@ -529,6 +569,10 @@ acl_hook_l2_input_classify(acl_main_t * am, u32 sw_if_index)
     acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_input_classify_next_acl, &ip4_table_index, 0);
     return rv;
   }
+
+  am->acl_ip4_input_classify_table_by_sw_if_index[sw_if_index] = ip4_table_index;
+  am->acl_ip6_input_classify_table_by_sw_if_index[sw_if_index] = ip6_table_index;
+
   vnet_l2_input_classify_enable_disable(sw_if_index, 1);
   return rv;
 }
@@ -558,6 +602,10 @@ acl_hook_l2_output_classify(acl_main_t * am, u32 sw_if_index)
     acl_classify_add_del_table(cm, ip4_5tuple_mask, sizeof(ip4_5tuple_mask)-1, ~0, am->l2_output_classify_next_acl, &ip4_table_index, 0);
     return rv;
   }
+
+  am->acl_ip4_output_classify_table_by_sw_if_index[sw_if_index] = ip4_table_index;
+  am->acl_ip6_output_classify_table_by_sw_if_index[sw_if_index] = ip6_table_index;
+
   vnet_l2_output_classify_enable_disable(sw_if_index, 1);
   return rv;
 }
@@ -656,9 +704,11 @@ static void
 acl_interface_reset_inout_acls(u32 sw_if_index, u8 is_input) {
   acl_main_t *am = &acl_main;
   if (is_input) {
+    acl_interface_in_enable_disable(am, sw_if_index, 0);
     vec_validate(am->input_acl_vec_by_sw_if_index, sw_if_index);
     vec_reset_length(am->input_acl_vec_by_sw_if_index[sw_if_index]);
   } else {
+    acl_interface_out_enable_disable(am, sw_if_index, 0);
     vec_validate(am->output_acl_vec_by_sw_if_index, sw_if_index);
     vec_reset_length(am->output_acl_vec_by_sw_if_index[sw_if_index]);
   }

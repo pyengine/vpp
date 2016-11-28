@@ -631,8 +631,8 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       dst_port = *(u8 *)get_ptr_to_offset(b0, 35);
     } else {
       /* assume TCP/UDP */
-      src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 34));
-      dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 36));
+      src_port = (*(u16 *)get_ptr_to_offset(b0, 34));
+      dst_port = (*(u16 *)get_ptr_to_offset(b0, 36));
       /* UDP gets ability to check on an oddball data byte as a bonus */
       tcp_flags = *(u8 *)get_ptr_to_offset(b0, 14+20+13);
     }
@@ -649,8 +649,8 @@ acl_packet_match(acl_main_t *am, u32 acl_index, vlib_buffer_t * b0,
       dst_port = *(u8 *)get_ptr_to_offset(b0, 55);
     } else {
       /* assume TCP/UDP */
-      src_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 54));
-      dst_port = ntohs(*(u16 *)get_ptr_to_offset(b0, 56));
+      src_port = (*(u16 *)get_ptr_to_offset(b0, 54));
+      dst_port = (*(u16 *)get_ptr_to_offset(b0, 56));
       tcp_flags = *(u8 *)get_ptr_to_offset(b0, 14+40+13);
     }
   }

@@ -76,12 +76,14 @@ typedef struct
  */
 typedef struct
 {
+  u8 tag[64];
   u32 count;
   acl_rule_t *rules;
 } acl_list_t;
 
 typedef struct
 {
+  u8 tag[64];
   u32 count;
   macip_acl_rule_t *rules;
   /* References to the classifier tables that will enforce the rules */

@@ -317,7 +317,7 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 
 static int
 acl_add_list (u32 count, vl_api_acl_rule_t rules[],
-	      u32 * acl_list_index)
+	      u32 * acl_list_index, u8 *tag)
 {
   acl_main_t *am = &acl_main;
   acl_list_t  * a;
@@ -371,6 +371,7 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
   }
   a->rules = acl_new_rules;
   a->count = count;
+  memcpy(a->tag, tag, sizeof(a->tag));
 
   return 0;
 }
@@ -1058,7 +1059,7 @@ macip_destroy_classify_tables(acl_main_t *am, u32 macip_acl_index)
 
 static int
 macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
-	      u32 * acl_list_index)
+	      u32 * acl_list_index, u8 *tag)
 {
   acl_main_t *am = &acl_main;
   macip_acl_list_t  * a;
@@ -1093,6 +1094,7 @@ macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
 
   a->rules = acl_new_rules;
   a->count = count;
+  memcpy(a->tag, tag, sizeof(a->tag));
 
   /* Create and populate the classifer tables */
   macip_create_classify_tables(am, *acl_list_index);
@@ -1181,7 +1183,7 @@ vl_api_acl_add_replace_t_handler (vl_api_acl_add_replace_t * mp)
   int rv;
   u32 acl_list_index = ntohl(mp->acl_index);
 
-  rv = acl_add_list(ntohl(mp->count), mp->r, &acl_list_index);
+  rv = acl_add_list(ntohl(mp->count), mp->r, &acl_list_index, mp->tag);
 
   /* *INDENT-OFF* */
   REPLY_MACRO2(VL_API_ACL_ADD_REPLACE_REPLY,
@@ -1275,6 +1277,7 @@ send_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
   mp->context = context;
   mp->count = htonl(acl->count);
   mp->acl_index = htonl(acl - am->acls);
+  memcpy(mp->tag, acl->tag, sizeof(mp->tag));
   // clib_memcpy (mp->r, acl->rules, acl->count * sizeof(acl->rules[0]));
   rules = mp->r;
   for(i=0; i<acl->count; i++) {
@@ -1408,7 +1411,7 @@ vl_api_macip_acl_add_t_handler (vl_api_macip_acl_add_t * mp)
   int rv;
   u32 acl_list_index = ~0;
 
-  rv = macip_acl_add_list(ntohl(mp->count), mp->r, &acl_list_index);
+  rv = macip_acl_add_list(ntohl(mp->count), mp->r, &acl_list_index, mp->tag);
 
   /* *INDENT-OFF* */
   REPLY_MACRO2(VL_API_MACIP_ACL_ADD_REPLY,
@@ -1462,6 +1465,7 @@ send_macip_acl_details(acl_main_t * am, unix_shared_memory_queue_t * q,
   /* fill in the message */
   mp->context = context;
   if(acl) {
+    memcpy(mp->tag, acl->tag, sizeof(mp->tag));
     mp->count = htonl(acl->count);
     mp->acl_index = htonl(acl - am->macip_acls);
     rules = mp->r;

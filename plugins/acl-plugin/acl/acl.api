@@ -58,6 +58,7 @@ manual_print manual_endian define acl_add_replace
   u32 client_index;
   u32 context;
   u32 acl_index; /* ~0 to add, existing ACL# to replace */
+  u8 tag[64]; /* What gets in here gets out in the corresponding tag field when dumping the ACLs. */
   u32 count;
   vl_api_acl_rule_t r[count];
 };
@@ -127,6 +128,7 @@ manual_print manual_endian define acl_details
 {
   u32 context;
   u32 acl_index;
+  u8 tag[64]; /* Same blob that was supplied to us when creating the ACL, one hopes. */
   u32 count;
   vl_api_acl_rule_t r[count];
 };
@@ -151,6 +153,7 @@ manual_print manual_endian define macip_acl_add
 {
   u32 client_index;
   u32 context;
+  u8 tag[64];
   u32 count;
   vl_api_macip_acl_rule_t r[count];
 };
@@ -202,6 +205,7 @@ manual_print manual_endian define macip_acl_details
 {
   u32 context;
   u32 acl_index;
+  u8 tag[64];
   u32 count;
   vl_api_macip_acl_rule_t r[count];
 };

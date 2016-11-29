@@ -265,11 +265,13 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND (l2sess_bind_command, static) = {
     .path = "l2sess bind",
     .short_help = "l2sess bind <table-fwd> <table-rev>",
     .function = macswap_enable_disable_command_fn,
 };
+/* *INDENT-ON* */
 
 static char *get_l4_proto_str(int is_ip6, uint8_t l4_proto) {
   switch (l4_proto) {
@@ -337,7 +339,7 @@ l2sess_show_count_command_fn(vlib_main_t * vm,
 }
 
 
-
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND (l2sess_show_command, static) = {
     .path = "show l2sess",
     .short_help = "show l2sess",
@@ -349,6 +351,7 @@ VLIB_CLI_COMMAND (l2sess_show_count_command, static) = {
     .short_help = "show l2sess count",
     .function = l2sess_show_count_command_fn,
 };
+/* *INDENT-OFF* */
 
 /* API message handler */
 static void vl_api_l2sess_bind_tables_t_handler

@@ -16,6 +16,19 @@
 
 /* Define a simple binary API to control the feature */
 
+define acl_plugin_get_version
+{
+  u32 client_index;
+  u32 context;
+};
+
+define acl_plugin_get_version_reply
+{
+  u32 context;
+  u32 major;
+  u32 minor;
+};
+
 /*
  * Access List Rule entry
  *

@@ -25,6 +25,9 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 
+#define  ACL_PLUGIN_VERSION_MAJOR 0
+#define  ACL_PLUGIN_VERSION_MINOR 1
+
 extern vlib_node_registration_t acl_in_node;
 extern vlib_node_registration_t acl_out_node;
 

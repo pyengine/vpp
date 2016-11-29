@@ -282,6 +282,7 @@ bad_sw_if_index:                                \
 /* List of message types that this plugin understands */
 
 #define foreach_acl_plugin_api_msg		\
+_(ACL_PLUGIN_GET_VERSION, acl_plugin_get_version) \
 _(ACL_ADD_REPLACE, acl_add_replace)				\
 _(ACL_DEL, acl_del)				\
 _(ACL_INTERFACE_ADD_DEL, acl_interface_add_del)	\
@@ -314,6 +315,31 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 
   return error;
 }
+
+
+static void
+vl_api_acl_plugin_get_version_t_handler (vl_api_acl_plugin_get_version_t * mp)
+{
+  acl_main_t * am = &acl_main;
+  vl_api_acl_plugin_get_version_reply_t *rmp;
+  int msg_size = sizeof (*rmp);
+  unix_shared_memory_queue_t *q;
+
+  q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (q == 0) {
+    return;
+  }
+
+  rmp = vl_msg_api_alloc (msg_size);
+  memset (rmp, 0, msg_size);
+  rmp->_vl_msg_id = ntohs (VL_API_ACL_PLUGIN_GET_VERSION_REPLY + am->msg_id_base);
+  rmp->context = mp->context;
+  rmp->major = htonl(ACL_PLUGIN_VERSION_MAJOR);
+  rmp->minor = htonl(ACL_PLUGIN_VERSION_MINOR);
+
+  vl_msg_api_send_shmem (q, (u8 *) & rmp);
+}
+
 
 static int
 acl_add_list (u32 count, vl_api_acl_rule_t rules[],

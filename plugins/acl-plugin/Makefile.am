@@ -25,7 +25,7 @@ acl_plugin_la_SOURCES =				\
 	acl/node_out.c				\
 	acl/acl_plugin.api.h
 
-BUILT_SOURCES = acl/acl.api.h acl/acl.py
+BUILT_SOURCES = acl/acl.api.h
 
 SUFFIXES = .api.h .api
 
@@ -37,20 +37,8 @@ SUFFIXES = .api.h .api
 	$(CC) $(CPPFLAGS) -E -P -C -x c $^ \
 	| vppapigen --input - --output $@ --show-name $@
 
-define python_packaging_fn
-echo "from setuptools import setup" >setup.py
-echo "setup(name='vpp_papi_plugins.$(1)',packages=['vpp_papi_plugins','vpp_papi_plugins.$(1)'],namespace_packages=['vpp_papi_plugins'])" >>setup.py
-echo "__import__('pkg_resources').declare_namespace(__name__)" >vpp_papi_plugins/__init__.py
-echo "from . $(1) import *" >vpp_papi_plugins/$(1)/__init__.py
-endef
-
-%.py: %.api
-	$(info Creating Python binding for $@)
-	mkdir -p $(dir vpp_papi_plugins/$@) ;
-	$(CC) $(CPPFLAGS) -E -P -C -x c $<			\
-	| vppapigen --input - --python -			\
-	| pyvppapigen.py --input - > vpp_papi_plugins/$@
-	$(call python_packaging_fn,acl)
+apidir = $(prefix)/acl
+api_DATA = acl/acl.api
 
 noinst_HEADERS =				\
   acl/acl_all_api_h.h				\

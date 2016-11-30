@@ -53,6 +53,7 @@ end
 
 
 -- api calls
+--[[
 reply = vpp:api_call("show_version")
 print("Version: ", reply[1].version)
 print(vpp.hex_dump(reply[1].version))
@@ -124,6 +125,8 @@ reply = vpp:api_call("acl_del", { context = 42, acl_index = interface_acl_in })
 print(vpp.dump(reply))
 print("---")
 
+]]
+
 r1 = {
   { is_permit = 1, is_ipv6 = 1, src_ip_addr = ip46("2001:db8:1::1"), src_ip_prefix_len = 128, dst_ip_addr = ip46("2001:db8:1::2"), dst_ip_prefix_len = 128 },
   { is_permit = 0, is_ipv6 = 1, src_ip_addr = ip46("2001:db8:1::1"), src_ip_prefix_len = 128, dst_ip_addr = ip46("2001:db8:1::4"), dst_ip_prefix_len = 128 },
@@ -134,9 +137,9 @@ r1 = {
 }
 
 reply = vpp:api_call("acl_add_replace", { context = 42, acl_index = -1, count = 4, r = r1 })
+-- reply = vpp:api_call("acl_add_replace", { context = 42, acl_index = -1, count = 1, r = r1 })
 print(vpp.dump(reply))
 print("---")
-
 
 reply = vpp:api_call("acl_dump", { context = 42, acl_index = -1})
 print(vpp.dump(reply))

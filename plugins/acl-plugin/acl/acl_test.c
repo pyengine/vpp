@@ -62,6 +62,7 @@ acl_test_main_t acl_test_main;
 #define foreach_standard_reply_retval_handler   \
 _(acl_del_reply) \
 _(acl_interface_add_del_reply) \
+_(macip_acl_interface_add_del_reply) \
 _(acl_interface_set_acl_list_reply) \
 _(macip_acl_del_reply)
 
@@ -161,6 +162,7 @@ _(ACL_DETAILS, acl_details)  \
 _(MACIP_ACL_ADD_REPLY, macip_acl_add_reply) \
 _(MACIP_ACL_DEL_REPLY, macip_acl_del_reply) \
 _(MACIP_ACL_DETAILS, macip_acl_details)  \
+_(MACIP_ACL_INTERFACE_ADD_DEL_REPLY, macip_acl_interface_add_del_reply)  \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
@@ -480,6 +482,57 @@ static int api_acl_interface_add_del (vat_main_t * vam)
     W;
 }
 
+static int api_macip_acl_interface_add_del (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    unformat_input_t * i = vam->input;
+    f64 timeout;
+    vl_api_macip_acl_interface_add_del_t * mp;
+    u32 sw_if_index = ~0;
+    u32 acl_index = ~0;
+    u8 is_add = 0;
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
+            ;
+        else if (unformat (i, "sw_if_index %d", &sw_if_index))
+            ;
+        else if (unformat (i, "add"))
+            is_add = 1;
+        else if (unformat (i, "del"))
+            is_add = 0;
+        else if (unformat (i, "acl %d", &acl_index))
+            ;
+        else
+            break;
+    }
+
+    if (sw_if_index == ~0) {
+        errmsg ("missing interface name / explicit sw_if_index number \n");
+        return -99;
+    }
+
+    if (acl_index == ~0) {
+        errmsg ("missing ACL index\n");
+        return -99;
+    }
+
+
+
+    /* Construct the API message */
+    M(MACIP_ACL_INTERFACE_ADD_DEL, macip_acl_interface_add_del);
+    mp->acl_index = ntohl(acl_index);
+    mp->sw_if_index = ntohl(sw_if_index);
+    mp->is_add = is_add;
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+}
+
 static int api_acl_interface_set_acl_list (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
@@ -713,7 +766,7 @@ _(acl_interface_list_dump, "[<intfc> | sw_if_index <if-idx>]") \
 _(macip_acl_add, "...") \
 _(macip_acl_del, "<acl-idx>")\
 _(macip_acl_dump, "[<acl-idx>]") \
-
+_(macip_acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] acl <acl-idx>") \
 
 
 

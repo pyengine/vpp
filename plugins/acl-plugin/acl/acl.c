@@ -69,9 +69,6 @@ vl_api_acl_rule_t_endian (vl_api_acl_rule_t * a)
   /* a->dst_ip_addr[0..15] = a->dst_ip_addr[0..15] (no-op) */
   /* a->dst_ip_prefix_len = a->dst_ip_prefix_len (no-op) */
   /* a->proto = a->proto (no-op) */
-  clib_warning ("vl_api_acl_rule_t_endian: %d %d -> %d %d\n",
-		a->srcport_or_icmptype_first, a->srcport_or_icmptype_last,
-		a->dstport_or_icmpcode_first, a->dstport_or_icmpcode_last);
   a->srcport_or_icmptype_first =
     clib_net_to_host_u16 (a->srcport_or_icmptype_first);
   a->srcport_or_icmptype_last =

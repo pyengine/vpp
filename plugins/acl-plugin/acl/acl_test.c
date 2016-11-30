@@ -61,7 +61,8 @@ acl_test_main_t acl_test_main;
 
 #define foreach_standard_reply_retval_handler   \
 _(acl_del_reply) \
-_(acl_interface_add_del_reply)
+_(acl_interface_add_del_reply) \
+_(acl_interface_set_acl_list_reply)
 
 #define foreach_reply_retval_aclindex_handler  \
 _(acl_add_replace_reply)
@@ -99,12 +100,24 @@ foreach_standard_reply_retval_handler;
 foreach_reply_retval_aclindex_handler;
 #undef _
 
-static void vl_api_acl_plugin_get_version_reply_t_handler 
+static void vl_api_acl_plugin_get_version_reply_t_handler
     (vl_api_acl_plugin_get_version_reply_t * mp)
     {
         vat_main_t * vam = acl_test_main.vat_main;
-        clib_warning("ACL plugin version: %d.%d", ntohl(mp->major), ntohl(mp->minor)); 
-        vam->result_ready = 1; 
+        clib_warning("ACL plugin version: %d.%d", ntohl(mp->major), ntohl(mp->minor));
+        vam->result_ready = 1;
+    }
+
+static void vl_api_acl_interface_list_details_t_handler
+    (vl_api_acl_interface_list_details_t * mp)
+    {
+        int i;
+        vat_main_t * vam = acl_test_main.vat_main;
+	clib_warning("sw_if_index: %d, count: %d, n_input: %d", ntohl(mp->sw_if_index), mp->count, mp->n_input);
+	for(i=0; i<mp->count; i++) {
+          clib_warning("%d : %s", ntohl(mp->acls[i]), i < mp->n_input ? "input" : "output");
+	}
+        vam->result_ready = 1;
     }
 
 
@@ -116,6 +129,8 @@ static void vl_api_acl_plugin_get_version_reply_t_handler
 _(ACL_ADD_REPLACE_REPLY, acl_add_replace_reply) \
 _(ACL_DEL_REPLY, acl_del_reply) \
 _(ACL_INTERFACE_ADD_DEL_REPLY, acl_interface_add_del_reply)  \
+_(ACL_INTERFACE_SET_ACL_LIST_REPLY, acl_interface_set_acl_list_reply) \
+_(ACL_INTERFACE_LIST_DETAILS, acl_interface_list_details)  \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
@@ -411,6 +426,96 @@ static int api_acl_interface_add_del (vat_main_t * vam)
     W;
 }
 
+static int api_acl_interface_set_acl_list (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    unformat_input_t * i = vam->input;
+    f64 timeout;
+    vl_api_acl_interface_set_acl_list_t * mp;
+    u32 sw_if_index = ~0;
+    u32 acl_index = ~0;
+    u32 *inacls = 0;
+    u32 *outacls = 0;
+    u8 is_input = 0;
+
+//  acl_interface_set_acl_list <intfc> | sw_if_index <if-idx> input [acl-idx list] output [acl-idx list]
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
+            ;
+        else if (unformat (i, "sw_if_index %d", &sw_if_index))
+            ;
+        else if (unformat (i, "%d", &acl_index))
+          {
+            if(is_input)
+              vec_add1(inacls, htonl(acl_index));
+            else
+              vec_add1(outacls, htonl(acl_index));
+          }
+        else if (unformat (i, "acl %d", &acl_index))
+            ;
+        else if (unformat (i, "input"))
+            is_input = 1;
+        else if (unformat (i, "output"))
+            is_input = 0;
+        else
+            break;
+    }
+
+    if (sw_if_index == ~0) {
+        errmsg ("missing interface name / explicit sw_if_index number \n");
+        return -99;
+    }
+
+    /* Construct the API message */
+    M2(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list, sizeof(u32) * (vec_len(inacls) + vec_len(outacls)));
+    mp->sw_if_index = ntohl(sw_if_index);
+    mp->n_input = vec_len(inacls);
+    mp->count = vec_len(inacls) + vec_len(outacls);
+    vec_append(inacls, outacls);
+    if (vec_len(inacls) > 0)
+      clib_memcpy(mp->acls, inacls, vec_len(inacls)*sizeof(u32));
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+}
+
+
+static int api_acl_interface_list_dump (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    unformat_input_t * i = vam->input;
+    f64 timeout;
+    u32 sw_if_index = ~0;
+    vl_api_acl_interface_list_dump_t * mp;
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
+            ;
+        else if (unformat (i, "sw_if_index %d", &sw_if_index))
+            ;
+        else
+            break;
+    }
+
+    /* Construct the API message */
+    M(ACL_INTERFACE_LIST_DUMP, acl_interface_list_dump);
+    mp->sw_if_index = ntohl (sw_if_index);
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+}
+
+
+
 /*
  * List of messages that the api test plugin sends,
  * and that the data plane plugin processes
@@ -419,7 +524,9 @@ static int api_acl_interface_add_del (vat_main_t * vam)
 _(acl_plugin_get_version, "") \
 _(acl_add_replace, "<acl-idx> ") \
 _(acl_del, "<acl-idx>") \
-_(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>")
+_(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>") \
+_(acl_interface_set_acl_list, "<intfc> | sw_if_index <if-idx> input [acl-idx list] output [acl-idx list]") \
+_(acl_interface_list_dump, "[<intfc> | sw_if_index <if-idx>]")
 
 void vat_api_hookup (vat_main_t *vam)
 {

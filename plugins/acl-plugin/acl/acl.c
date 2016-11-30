@@ -404,9 +404,17 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
       r = &acl_new_rules[i];
       r->is_permit = rules[i].is_permit;
       r->is_ipv6 = rules[i].is_ipv6;
-      memcpy (&r->src, rules[i].src_ip_addr, sizeof (r->src));
+      if (r->is_ipv6)
+        {
+          memcpy (&r->src, rules[i].src_ip_addr, sizeof (r->src));
+          memcpy (&r->dst, rules[i].dst_ip_addr, sizeof (r->dst));
+        }
+      else
+        {
+          memcpy (&r->src.ip4, rules[i].src_ip_addr, sizeof (r->src.ip4));
+          memcpy (&r->dst.ip4, rules[i].dst_ip_addr, sizeof (r->dst.ip4));
+        }
       r->src_prefixlen = rules[i].src_ip_prefix_len;
-      memcpy (&r->dst, rules[i].dst_ip_addr, sizeof (r->dst));
       r->dst_prefixlen = rules[i].dst_ip_prefix_len;
       r->proto = rules[i].proto;
       r->src_port_or_type_first = rules[i].srcport_or_icmptype_first;
@@ -1554,9 +1562,17 @@ copy_acl_rule_to_api_rule (vl_api_acl_rule_t * api_rule, acl_rule_t * r)
 {
   api_rule->is_permit = r->is_permit;
   api_rule->is_ipv6 = r->is_ipv6;
-  memcpy (api_rule->src_ip_addr, &r->src, sizeof (r->src));
+  if(r->is_ipv6)
+    {
+      memcpy (api_rule->src_ip_addr, &r->src, sizeof (r->src));
+      memcpy (api_rule->dst_ip_addr, &r->dst, sizeof (r->dst));
+    }
+  else
+    {
+      memcpy (api_rule->src_ip_addr, &r->src.ip4, sizeof (r->src.ip4));
+      memcpy (api_rule->dst_ip_addr, &r->dst.ip4, sizeof (r->dst.ip4));
+    }
   api_rule->src_ip_prefix_len = r->src_prefixlen;
-  memcpy (api_rule->dst_ip_addr, &r->dst, sizeof (r->dst));
   api_rule->dst_ip_prefix_len = r->dst_prefixlen;
   api_rule->proto = r->proto;
   api_rule->srcport_or_icmptype_first = r->src_port_or_type_first;

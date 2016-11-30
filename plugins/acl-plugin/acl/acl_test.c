@@ -60,9 +60,11 @@ typedef struct {
 acl_test_main_t acl_test_main;
 
 #define foreach_standard_reply_retval_handler   \
-_(acl_add_replace_reply) \
 _(acl_del_reply) \
 _(acl_interface_add_del_reply)
+
+#define foreach_reply_retval_aclindex_handler  \
+_(acl_add_replace_reply)
 
 #define _(n)                                            \
     static void vl_api_##n##_t_handler                  \
@@ -78,6 +80,23 @@ _(acl_interface_add_del_reply)
         }                                               \
     }
 foreach_standard_reply_retval_handler;
+#undef _
+
+#define _(n)                                            \
+    static void vl_api_##n##_t_handler                  \
+    (vl_api_##n##_t * mp)                               \
+    {                                                   \
+        vat_main_t * vam = acl_test_main.vat_main;   \
+        i32 retval = ntohl(mp->retval);                 \
+        if (vam->async_mode) {                          \
+            vam->async_errors += (retval < 0);          \
+        } else {                                        \
+            clib_warning("ACL index: %d", ntohl(mp->acl_index)); \
+            vam->retval = retval;                       \
+            vam->result_ready = 1;                      \
+        }                                               \
+    }
+foreach_reply_retval_aclindex_handler;
 #undef _
 
 static void vl_api_acl_plugin_get_version_reply_t_handler 

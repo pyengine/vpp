@@ -16,7 +16,10 @@ AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS = -Wall
 AM_LDFLAGS = -module -shared -avoid-version
 
+vppapitestpluginsdir = ${libdir}/vpp_api_test_plugins
 vpppluginsdir = ${libdir}/vpp_plugins
+
+vppapitestplugins_LTLIBRARIES = acl_test_plugin.la
 vppplugins_LTLIBRARIES = acl_plugin.la
 
 acl_plugin_la_SOURCES =				\
@@ -45,7 +48,9 @@ noinst_HEADERS =				\
   acl/acl_msg_enum.h				\
   acl/acl.api.h
 
+acl_test_plugin_la_SOURCES = acl/acl_test.c acl/acl_plugin.api.h
+
 # Remove *.la files
 install-data-hook:
 	@(cd $(vpppluginsdir) && $(RM) $(vppplugins_LTLIBRARIES))
-
+	@(cd $(vppapitestpluginsdir) && $(RM) $(vppapitestplugins_LTLIBRARIES))

@@ -1595,6 +1595,7 @@ send_acl_details (acl_main_t * am, unix_shared_memory_queue_t * q,
       copy_acl_rule_to_api_rule (&rules[i], &acl->rules[i]);
     }
 
+  clib_warning("Sending acl details for ACL index %d", ntohl(mp->acl_index));
   vl_msg_api_send_shmem (q, (u8 *) & mp);
 }
 

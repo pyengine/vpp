@@ -114,6 +114,18 @@ VLIB_CLI_COMMAND (virtual_ip_cmd_fn_command, static) = {
 };
 /* *INDENT-ON* */
 
+extern clib_error_t *
+show_vpe_version_command_fn (vlib_main_t * vm,
+			     unformat_input_t * input,
+			     vlib_cli_command_t * cmd);
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (show_vpe_version_command, static) = {
+  .path = "show version",
+  .short_help = "show version information",
+  .function = show_vpe_version_command_fn,
+};
+/* *INDENT-ON* */
+
 /*
  * fd.io coding-style-patch-verification: ON
  *

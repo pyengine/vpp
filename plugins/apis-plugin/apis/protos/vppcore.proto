@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.fd.vpp.core";
+option java_outer_classname = "Core";
+
+package vppcore;
+
+// Service to setup and query VPP core
+service vpp {
+  rpc  ShowVersion (vppClientContext) returns (ShowVersionReply) {}
+  rpc  ExecCli (vppCommand) returns (vppCommandOutput) {}
+}
+
+message vppClientContext {
+  string name = 1;
+} 
+
+// The response message containing the show version response
+message ShowVersionReply {
+  string version = 1;
+  string program = 2;
+  string build_date = 3;
+  string build_directory = 4;
+}
+
+message vppCommand {
+  string command = 1;
+}
+
+message vppCommandOutput {
+  string cliout = 1;
+}

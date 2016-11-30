@@ -55,3 +55,7 @@ endif
 if ENABLE_flowperpkt_PLUGIN
 SUBDIRS += flowperpkt-plugin
 endif
+
+if ENABLE_apis_PLUGIN
+SUBDIRS += apis-plugin
+endif

@@ -3,6 +3,7 @@ AM_INIT_AUTOMAKE
 AM_SILENT_RULES([yes])
 
 AC_PROG_CC
+AC_PROG_RANLIB
 
 AC_ARG_WITH(dpdk,
             AC_HELP_STRING([--with-dpdk],[Use DPDK]),

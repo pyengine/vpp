@@ -25,7 +25,6 @@ bin_PROGRAMS += vpp
 vpp_SOURCES =					\
   vnet/main.c					\
   app/vpe_cli.c					\
-  app/version.c					\
   oam/oam.c					\
   stats/stats.c
 
@@ -49,6 +48,12 @@ apidir = $(prefix)/vpp-api
 api_DATA = vpp-api/vpe.api
 
 BUILT_SOURCES += vpp-api/vpe.api.h app/version.h
+
+lib_LIBRARIES = libvppversion.a
+libvppversion_a_SOURCES =	\
+	app/version.c app/version.h
+
+BUILT_SOURCES += app/version.h
 
 app/version.o:	app/version.h
 
@@ -94,7 +99,7 @@ vpp_plugin_configure:
 	@echo "    fi" >> $@
 	@echo "fi" >> $@
 
-vpp_LDADD = -lvlibapi -lvlibmemory  -lvlib_unix -lvlib
+vpp_LDADD = libvppversion.a -lvlibapi -lvlibmemory  -lvlib_unix -lvlib
 
 vpp_LDADD += -lvnet
 
@@ -154,3 +159,5 @@ bin_PROGRAMS += vpp_get_metrics
 vpp_get_metrics_SOURCES = vpp-api/vpp_get_metrics.c
 vpp_get_metrics_LDADD = -lsvmdb -lsvm -lvppinfra \
 		-lpthread -lm -lrt
+
+

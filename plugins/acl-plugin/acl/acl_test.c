@@ -80,6 +80,15 @@ _(acl_interface_add_del_reply)
 foreach_standard_reply_retval_handler;
 #undef _
 
+static void vl_api_acl_plugin_get_version_reply_t_handler 
+    (vl_api_acl_plugin_get_version_reply_t * mp)
+    {
+        vat_main_t * vam = acl_test_main.vat_main;
+        clib_warning("ACL plugin version: %d.%d", ntohl(mp->major), ntohl(mp->minor)); 
+        vam->result_ready = 1; 
+    }
+
+
 /*
  * Table of message reply handlers, must include boilerplate handlers
  * we just generated
@@ -87,7 +96,8 @@ foreach_standard_reply_retval_handler;
 #define foreach_vpe_api_reply_msg                                       \
 _(ACL_ADD_REPLACE_REPLY, acl_add_replace_reply) \
 _(ACL_DEL_REPLY, acl_del_reply) \
-_(ACL_INTERFACE_ADD_DEL_REPLY, acl_interface_add_del_reply)
+_(ACL_INTERFACE_ADD_DEL_REPLY, acl_interface_add_del_reply)  \
+_(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
 
@@ -125,9 +135,26 @@ do {                                            \
     return -99;                                 \
 } while(0);
 
-void
-check_api_message( vl_api_acl_add_replace_t * mp)
+static int api_acl_plugin_get_version (vat_main_t * vam)
 {
+    acl_test_main_t * sm = &acl_test_main;
+    vl_api_acl_plugin_get_version_t * mp;
+    u32 msg_size = sizeof(*mp);
+    f64 timeout;
+
+    vam->result_ready = 0;
+    mp = vl_msg_api_alloc_as_if_client(msg_size);
+    memset (mp, 0, msg_size);
+    mp->_vl_msg_id = ntohs (VL_API_ACL_PLUGIN_GET_VERSION + sm->msg_id_base);
+    mp->client_index = vam->my_client_index;
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+
+    return 0;
 }
 
 static int api_acl_add_replace (vat_main_t * vam)
@@ -266,8 +293,6 @@ static int api_acl_add_replace (vat_main_t * vam)
     mp->acl_index = ntohl(acl_index);
     mp->count = htonl(n_rules);
 
-    check_api_message(mp);
-
     /* send it... */
     S;
 
@@ -339,6 +364,7 @@ static int api_acl_interface_add_del (vat_main_t * vam)
  * and that the data plane plugin processes
  */
 #define foreach_vpe_api_msg \
+_(acl_plugin_get_version, "") \
 _(acl_add_replace, "<acl-idx> ") \
 _(acl_del, "<acl-idx>") \
 _(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> acl_index <acl-idx> [out] [del]")

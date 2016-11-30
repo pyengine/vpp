@@ -142,9 +142,10 @@ static int api_acl_add_replace (vat_main_t * vam)
     vl_api_acl_rule_t *rules = 0;
     int rule_idx = 0;
     int n_rules = 0;
-    u32 is_ipv6 = 0;
-    u32 is_permit = 0;
     u32 proto = 0;
+    u32 port1 = 0;
+    u32 port2 = 0;
+    u32 tcpflags, tcpmask;
     u32 src_prefix_length = 0, dst_prefix_length = 0;
     ip4_address_t src_v4address, dst_v4address;
     ip6_address_t src_v6address, dst_v6address;
@@ -156,39 +157,82 @@ static int api_acl_add_replace (vat_main_t * vam)
 
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
     {
-        if (unformat (i, "is_ipv6 %d", &is_ipv6))
+        if (unformat (i, "ipv6"))
           {
             vec_validate(rules, rule_idx);
-            rules[rule_idx].is_ipv6 = is_ipv6;
+            rules[rule_idx].is_ipv6 = 1;
           }
-        else if (unformat (i, "is_permit %d", &is_permit))
+        else if (unformat (i, "permit+reflect"))
           {
             vec_validate(rules, rule_idx);
-            rules[rule_idx].is_permit = is_permit;
+            rules[rule_idx].is_permit = 2;
+          }
+        else if (unformat (i, "permit"))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].is_permit = 1;
           }
         else if (unformat (i, "src_ip %U/%d",
          unformat_ip4_address, &src_v4address, &src_prefix_length))
           {
             vec_validate(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
+            rules[rule_idx].src_ip_prefix_len = src_prefix_length;
+            rules[rule_idx].is_ipv6 = 0;
           }
         else if (unformat (i, "src_ip %U/%d",
          unformat_ip6_address, &src_v6address, &src_prefix_length))
           {
             vec_validate(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v6address, 16);
+            rules[rule_idx].src_ip_prefix_len = src_prefix_length;
+            rules[rule_idx].is_ipv6 = 1;
           }
         else if (unformat (i, "dst_ip %U/%d",
          unformat_ip4_address, &dst_v4address, &dst_prefix_length))
           {
             vec_validate(rules, rule_idx);
             memcpy (rules[rule_idx].dst_ip_addr, &dst_v4address, 4);
+            rules[rule_idx].dst_ip_prefix_len = dst_prefix_length;
+            rules[rule_idx].is_ipv6 = 0;
           }
         else if (unformat (i, "dst_ip %U/%d",
          unformat_ip6_address, &dst_v6address, &dst_prefix_length))
           {
             vec_validate(rules, rule_idx);
             memcpy (rules[rule_idx].dst_ip_addr, &dst_v6address, 16);
+            rules[rule_idx].dst_ip_prefix_len = dst_prefix_length;
+            rules[rule_idx].is_ipv6 = 1;
+          }
+        else if (unformat (i, "sport %d-%d", &port1, &port2))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].srcport_or_icmptype_first = htons(port1);
+            rules[rule_idx].srcport_or_icmptype_last = htons(port2);
+          }
+        else if (unformat (i, "sport %d", &port1))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].srcport_or_icmptype_first = htons(port1);
+            rules[rule_idx].srcport_or_icmptype_last = htons(port1);
+          }
+        else if (unformat (i, "dport %d-%d", &port1, &port2))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].dstport_or_icmpcode_first = htons(port1);
+            rules[rule_idx].dstport_or_icmpcode_last = htons(port2);
+          }
+        else if (unformat (i, "dport %d", &port1))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].dstport_or_icmpcode_first = htons(port1);
+            rules[rule_idx].dstport_or_icmpcode_last = htons(port1);
+          }
+        else if (unformat (i, "tcpflags %d %d", &tcpflags, &tcpmask))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].tcp_flags_value = tcpflags;
+            rules[rule_idx].tcp_flags_mask = tcpmask;
           }
         else if (unformat (i, "proto %d", &proto))
           {
@@ -202,24 +246,6 @@ static int api_acl_add_replace (vat_main_t * vam)
         else
     break;
     }
-
-    // Create rule
-/*
-u8 is_permit;
-u8 is_ipv6;
-u8 src_ip_addr[16];
-u8 src_ip_prefix_len;
-u8 dst_ip_addr[16];
-u8 dst_ip_prefix_len;
-u8 proto;
-u16 srcport_or_icmptype_first;
-u16 srcport_or_icmptype_last;
-u16 dstport_or_icmpcode_first;
-u16 dstport_or_icmpcode_last;
-u8 tcp_flags_mask;
-u8 tcp_flags_value;
-*/
-
 
     /* Construct the API message */
     vam->result_ready = 0;

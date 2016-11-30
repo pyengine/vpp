@@ -1247,6 +1247,7 @@ static int
 macip_acl_interface_del_acl (acl_main_t * am, u32 sw_if_index)
 {
   int rv;
+  vec_validate_init_empty (am->macip_acl_by_sw_if_index, sw_if_index, ~0);
   am->macip_acl_by_sw_if_index[sw_if_index] = ~0;
   /* remove the classifier tables off the interface L2 ACL */
   rv = vnet_set_input_acl_intfc (am->vlib_main, sw_if_index, ~0, ~0, ~0, 0);

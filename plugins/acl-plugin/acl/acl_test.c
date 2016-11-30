@@ -120,6 +120,18 @@ static void vl_api_acl_interface_list_details_t_handler
         vam->result_ready = 1;
     }
 
+static void vl_api_acl_details_t_handler
+    (vl_api_acl_details_t * mp)
+    {
+        int i;
+        vat_main_t * vam = acl_test_main.vat_main;
+	clib_warning("acl_index: %d, tag: '%s', count: %d", ntohl(mp->acl_index), mp->tag, ntohl(mp->count));
+	for(i=0; i<ntohl(mp->count); i++) {
+          // FIXME!!!
+	}
+        vam->result_ready = 1;
+    }
+
 
 /*
  * Table of message reply handlers, must include boilerplate handlers
@@ -131,6 +143,7 @@ _(ACL_DEL_REPLY, acl_del_reply) \
 _(ACL_INTERFACE_ADD_DEL_REPLY, acl_interface_add_del_reply)  \
 _(ACL_INTERFACE_SET_ACL_LIST_REPLY, acl_interface_set_acl_list_reply) \
 _(ACL_INTERFACE_LIST_DETAILS, acl_interface_list_details)  \
+_(ACL_DETAILS, acl_details)  \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
@@ -514,6 +527,33 @@ static int api_acl_interface_list_dump (vat_main_t * vam)
     W;
 }
 
+static int api_acl_dump (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    unformat_input_t * i = vam->input;
+    f64 timeout;
+    u32 acl_index = ~0;
+    vl_api_acl_dump_t * mp;
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%d", &acl_index))
+            ;
+        else
+            break;
+    }
+
+    /* Construct the API message */
+    M(ACL_DUMP, acl_dump);
+    mp->acl_index = ntohl (acl_index);
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+}
+
 
 
 /*
@@ -524,6 +564,7 @@ static int api_acl_interface_list_dump (vat_main_t * vam)
 _(acl_plugin_get_version, "") \
 _(acl_add_replace, "<acl-idx> ") \
 _(acl_del, "<acl-idx>") \
+_(acl_dump, "[<acl-idx>]") \
 _(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>") \
 _(acl_interface_set_acl_list, "<intfc> | sw_if_index <if-idx> input [acl-idx list] output [acl-idx list]") \
 _(acl_interface_list_dump, "[<intfc> | sw_if_index <if-idx>]")

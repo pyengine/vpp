@@ -349,14 +349,11 @@ static int api_acl_interface_add_del (vat_main_t * vam)
     unformat_input_t * i = vam->input;
     f64 timeout;
     vl_api_acl_interface_add_del_t * mp;
+    u32 sw_if_index = ~0;
     u32 acl_index = ~0;
-/*
-    vl_api_acl_rule_t rule;
-    u8 is_ipv6 = 0;
-    u32 src_address_length = 0, dst_address_length = 0;
-    ip4_address_t src_v4address, dst_v4address;
-    ip6_address_t src_v6address, dst_v6address;
-*/
+    u8 is_input = 0;
+    u8 is_add = 0;
+
 //    acl_interface_add_del <intfc> | sw_if_index <if-idx> acl_index <acl-idx> [out] [del]
 
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
@@ -367,9 +364,45 @@ static int api_acl_interface_add_del (vat_main_t * vam)
     break;
     }
 
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
+            ;
+        else if (unformat (i, "sw_if_index %d", &sw_if_index))
+            ;
+        else if (unformat (i, "add"))
+            is_add = 1;
+        else if (unformat (i, "del"))
+            is_add = 0;
+        else if (unformat (i, "acl %d", &acl_index))
+            ;
+        else if (unformat (i, "input"))
+            is_input = 1;
+        else if (unformat (i, "output"))
+            is_input = 0;
+        else
+            break;
+    }
+
+    if (sw_if_index == ~0) {
+        errmsg ("missing interface name / explicit sw_if_index number \n");
+        return -99;
+    }
+
+    if (acl_index == ~0) {
+        errmsg ("missing ACL index\n");
+        return -99;
+    }
+
+
+
     /* Construct the API message */
     M(ACL_INTERFACE_ADD_DEL, acl_interface_add_del);
     mp->acl_index = ntohl(acl_index);
+    mp->sw_if_index = ntohl(sw_if_index);
+    mp->is_add = is_add;
+    mp->is_input = is_input;
 
     /* send it... */
     S;
@@ -386,7 +419,7 @@ static int api_acl_interface_add_del (vat_main_t * vam)
 _(acl_plugin_get_version, "") \
 _(acl_add_replace, "<acl-idx> ") \
 _(acl_del, "<acl-idx>") \
-_(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> acl_index <acl-idx> [out] [del]")
+_(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>")
 
 void vat_api_hookup (vat_main_t *vam)
 {

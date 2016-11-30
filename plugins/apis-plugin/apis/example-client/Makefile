@@ -15,15 +15,18 @@ endif
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
-
+PYTHON = python
 PROTOS_PATH = ../protos
 
 vpath %.proto $(PROTOS_PATH)
 
-all: vppcore_client
+all: vppcore_client vppcore_pb2.py
 
 vppcore_client: vppcore.pb.o vppcore.grpc.pb.o vppcore_client.o
 	$(CXX) $^ $(LDFLAGS) -o $@
+
+vppcore_pb2.py: ../protos/vppcore.proto
+	$(PYTHON) -m grpc.tools.protoc -I $(PROTOS_PATH) --python_out=. --grpc_python_out=. $<
 
 .PRECIOUS: %.grpc.pb.cc
 %.grpc.pb.cc: %.proto
@@ -34,7 +37,7 @@ vppcore_client: vppcore.pb.o vppcore.grpc.pb.o vppcore_client.o
 	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=. $<
 
 clean:
-	rm -f *.o *.pb.cc *.pb.h vppcore_client
+	rm -f *.o *.pb.cc *.pb.h vppcore_client *_pb2.py *.pyc
 
 
 # The following is to test your system and ensure a smoother experience.

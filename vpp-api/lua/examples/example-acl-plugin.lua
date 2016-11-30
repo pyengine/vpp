@@ -28,6 +28,30 @@ vpp:consume_api(root_dir .. "/build-root/install-vpp_debug-native/vpp/vpp-api/vp
 vpp:connect("aytest")
 vpp:consume_api(root_dir .. "/plugins/acl-plugin/acl/acl.api", "acl")
 
+ffi = require "ffi"
+ffi.cdef([[
+int inet_pton(int af, const char *src, void *dst);
+
+]])
+
+
+function ip46(addr_text)
+  local out = ffi.new("char [200]")
+  local AF_INET6 = 10
+  local AF_INET = 2
+  local is_ip6 = ffi.C.inet_pton(AF_INET6, vpp.c_str(addr_text), out)
+  if is_ip6 == 1 then
+    return ffi.string(out, 16), true
+  end
+  local is_ip4 = ffi.C.inet_pton(AF_INET, vpp.c_str(addr_text), out)
+  if is_ip4 then
+    return (string.rep("4", 12).. ffi.string(out, 4)), false
+  end
+end
+
+
+
+
 -- api calls
 reply = vpp:api_call("show_version")
 print("Version: ", reply[1].version)
@@ -47,12 +71,12 @@ reply = vpp:api_call("acl_del", { context = 42, acl_index = 15 })
 print(vpp.dump(reply))
 print("---")
 
-reply = vpp:api_call("acl_add", { context = 42, count = 2, r = { { is_permit = 1, is_ipv6 = 1 }, { is_permit = 0, is_ipv6 = 1 } } })
+reply = vpp:api_call("acl_add_replace", { context = 42, acl_index = -1, count = 2, r = { { is_permit = 1, is_ipv6 = 1 }, { is_permit = 0, is_ipv6 = 1 } } })
 print(vpp.dump(reply))
 print("---")
 interface_acl_in = reply[1].acl_index
 
-reply = vpp:api_call("acl_add", { context = 42, count = 3, r = { { is_permit = 1, is_ipv6 = 1 }, { is_permit = 0, is_ipv6 = 1 }, { is_permit = 1, is_ipv6 = 0 } } })
+reply = vpp:api_call("acl_add_replace", { context = 42, acl_index = -1, count = 3, r = { { is_permit = 1, is_ipv6 = 1 }, { is_permit = 0, is_ipv6 = 1 }, { is_permit = 1, is_ipv6 = 0 } } })
 print(vpp.dump(reply))
 print("---")
 interface_acl_out = reply[1].acl_index
@@ -72,7 +96,7 @@ reply = vpp:api_call("acl_interface_add_del", { context = 42, sw_if_index = 0, i
 print(vpp.dump(reply))
 print("---")
 
-reply = vpp:api_call("acl_add", { context = 42, count = 0 })
+reply = vpp:api_call("acl_add_replace", { context = 42, count = 0, acl_index = -1 })
 print(vpp.dump(reply))
 print("---")
 
@@ -82,7 +106,7 @@ reply = vpp:api_call("acl_del", { context = 42, acl_index = acl_index_to_delete 
 print(vpp.dump(reply))
 print("---")
 
-reply = vpp:api_call("acl_dump", { context = 42, sw_if_index = 0})
+reply = vpp:api_call("acl_dump", { context = 42, acl_index = 0})
 for ri, rv in ipairs(reply) do 
   print("Reply message #" .. tostring(ri))
   print(vpp.dump(rv))
@@ -100,7 +124,21 @@ reply = vpp:api_call("acl_del", { context = 42, acl_index = interface_acl_in })
 print(vpp.dump(reply))
 print("---")
 
-reply = vpp:api_call("acl_dump", { context = 42, sw_if_index = 0})
+r1 = {
+  { is_permit = 1, is_ipv6 = 1, src_ip_addr = ip46("2001:db8:1::1"), src_ip_prefix_len = 128, dst_ip_addr = ip46("2001:db8:1::2"), dst_ip_prefix_len = 128 },
+  { is_permit = 0, is_ipv6 = 1, src_ip_addr = ip46("2001:db8:1::1"), src_ip_prefix_len = 128, dst_ip_addr = ip46("2001:db8:1::4"), dst_ip_prefix_len = 128 },
+  { is_permit = 2, is_ipv6 = 0, dst_ip_addr = ip46("192.0.2.2"), proto = 6, dstport_or_icmpcode_first = 22, dstport_or_icmpcode_last = 22,
+                                                                            srcport_or_icmptype_first = 0, srcport_or_icmptype_last = 65535 },
+  { is_permit = 1, is_ipv6 = 0 }
+
+}
+
+reply = vpp:api_call("acl_add_replace", { context = 42, acl_index = -1, count = 4, r = r1 })
+print(vpp.dump(reply))
+print("---")
+
+
+reply = vpp:api_call("acl_dump", { context = 42, acl_index = -1})
 print(vpp.dump(reply))
 print("---")
 

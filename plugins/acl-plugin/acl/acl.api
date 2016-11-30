@@ -153,7 +153,7 @@ define acl_interface_list_dump
   u32 sw_if_index; /* ~0 for all interfaces */
 };
 
-manual_print manual_endian define acl_interface_list_details
+define acl_interface_list_details
 {
   u32 context;
   u32 sw_if_index;

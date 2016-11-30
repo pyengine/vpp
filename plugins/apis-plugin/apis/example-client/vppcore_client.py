@@ -14,7 +14,11 @@ class vppShell(cmd.Cmd):
     intro = 'Welcome to the VPP shell.\n'
     prompt = 'vpp# '
     file = None
-    
+
+    def default(self, arg):
+        global stub
+        response = stub.ExecCli(vppcore_pb2.vppCommand(command=arg))
+        print(response.cliout)    
     def do_exec(self, arg):
         'execute vpp command'
         global stub

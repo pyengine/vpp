@@ -125,6 +125,11 @@ do {                                            \
     return -99;                                 \
 } while(0);
 
+void
+check_api_message( vl_api_acl_add_replace_t * mp)
+{
+}
+
 static int api_acl_add_replace (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
@@ -133,39 +138,70 @@ static int api_acl_add_replace (vat_main_t * vam)
     vl_api_acl_add_replace_t * mp;
     u32 acl_index = ~0;
 
-    vl_api_acl_rule_t rule;
-    u8 is_ipv6 = 0;
-    u32 src_address_length = 0, dst_address_length = 0;
+    vl_api_acl_rule_t *rules = 0;
+    int rule_idx = 0;
+    int n_rules = 0;
+    u32 is_ipv6 = 0;
+    u32 is_permit = 0;
+    u32 proto = 0;
+    u32 src_prefix_length = 0, dst_prefix_length = 0;
     ip4_address_t src_v4address, dst_v4address;
     ip6_address_t src_v6address, dst_v6address;
 
+    if (!unformat (i, "%d", &acl_index)) {
+      clib_warning("Need ACL#");
+      return -1;
+    }
+
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
     {
-        if (unformat (i, "%d", &acl_index))
-    ;
-        else if (unformat (i, "ipv6"))
-    is_ipv6 = 1;
+        if (unformat (i, "is_ipv6 %d", &is_ipv6))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].is_ipv6 = is_ipv6;
+          }
+        else if (unformat (i, "is_permit %d", &is_permit))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].is_permit = is_permit;
+          }
         else if (unformat (i, "src_ip %U/%d",
-         unformat_ip4_address, &src_v4address, &src_address_length))
-    ;
+         unformat_ip4_address, &src_v4address, &src_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
+          }
         else if (unformat (i, "src_ip %U/%d",
-         unformat_ip6_address, &src_v6address, &src_address_length))
-    ;
+         unformat_ip6_address, &src_v6address, &src_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].src_ip_addr, &src_v6address, 16);
+          }
         else if (unformat (i, "dst_ip %U/%d",
-         unformat_ip4_address, &dst_v4address, &dst_address_length))
-    ;
+         unformat_ip4_address, &dst_v4address, &dst_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].dst_ip_addr, &dst_v4address, 4);
+          }
         else if (unformat (i, "dst_ip %U/%d",
-         unformat_ip6_address, &dst_v6address, &dst_address_length))
-    ;
-//        else if (!unformat (i, "src_port %d", &src_port))
-//    ;
-//        else if (!unformat (i, "dstc_port %d", &dst_port))
-//    ;
+         unformat_ip6_address, &dst_v6address, &dst_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].dst_ip_addr, &dst_v6address, 16);
+          }
+        else if (unformat (i, "proto %d", &proto))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].proto = proto;
+          }
+        else if (unformat (i, ","))
+          {
+            rule_idx++;
+          }
         else
     break;
     }
 
-    memset(&rule, 0, sizeof(rule));
     // Create rule
 /*
 u8 is_permit;
@@ -181,38 +217,27 @@ u16 dstport_or_icmpcode_first;
 u16 dstport_or_icmpcode_last;
 u8 tcp_flags_mask;
 u8 tcp_flags_value;
-
-{ is_permit = 0, is_ipv6 = 0, dst_ip_addr = ip46("192.0.2.3"), dst_ip_prefix_len = 32 }
 */
-    rule.is_permit = 1;
-    rule.is_ipv6 = is_ipv6;
-    rule.src_ip_prefix_len = src_address_length;
-    if (src_address_length>0)
-    {
-      if (is_ipv6)
-        memcpy (rule.src_ip_addr, &src_v6address, 16);
-      else
-        memcpy (rule.src_ip_addr, &src_v4address, 4);
-    }
-    rule.dst_ip_prefix_len = dst_address_length;
-    if (dst_address_length>0)
-    {
-      if (is_ipv6)
-        memcpy (rule.dst_ip_addr, &dst_v6address, 16);
-      else
-        memcpy (rule.dst_ip_addr, &dst_v4address, 4);
-    }
+
 
     /* Construct the API message */
     vam->result_ready = 0;
 
+    if(rules)
+      n_rules = rule_idx + 1;
+    else
+      n_rules = 0;
+
     mp = vl_msg_api_alloc_as_if_client(4 * sizeof(32) + sizeof (vl_api_acl_rule_t));
-    memset (mp, 0, sizeof (*mp));
+    memset (mp, 0, sizeof (*mp) + n_rules*sizeof(rules[0]));
     mp->_vl_msg_id = ntohs (VL_API_ACL_ADD_REPLACE + sm->msg_id_base);
     mp->client_index = vam->my_client_index;
-    clib_memcpy(mp->r, &rule, sizeof (vl_api_acl_rule_t));
+    if (n_rules > 0)
+      clib_memcpy(mp->r, rules, n_rules*sizeof (vl_api_acl_rule_t));
     mp->acl_index = ntohl(acl_index);
-    mp->count = ntohl(1);
+    mp->count = htonl(n_rules);
+
+    check_api_message(mp);
 
     /* send it... */
     S;

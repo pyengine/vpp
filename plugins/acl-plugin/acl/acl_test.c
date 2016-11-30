@@ -65,7 +65,8 @@ _(acl_interface_add_del_reply) \
 _(acl_interface_set_acl_list_reply)
 
 #define foreach_reply_retval_aclindex_handler  \
-_(acl_add_replace_reply)
+_(acl_add_replace_reply) \
+_(macip_acl_add_reply)
 
 #define _(n)                                            \
     static void vl_api_##n##_t_handler                  \
@@ -144,6 +145,7 @@ _(ACL_INTERFACE_ADD_DEL_REPLY, acl_interface_add_del_reply)  \
 _(ACL_INTERFACE_SET_ACL_LIST_REPLY, acl_interface_set_acl_list_reply) \
 _(ACL_INTERFACE_LIST_DETAILS, acl_interface_list_details)  \
 _(ACL_DETAILS, acl_details)  \
+_(MACIP_ACL_ADD_REPLY, macip_acl_add_reply) \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
@@ -554,7 +556,81 @@ static int api_acl_dump (vat_main_t * vam)
     W;
 }
 
+static int api_macip_acl_add (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    unformat_input_t * i = vam->input;
+    f64 timeout;
+    vl_api_macip_acl_add_t * mp;
+    u32 msg_size = sizeof (*mp); /* without the rules */
 
+    vl_api_macip_acl_rule_t *rules = 0;
+    int rule_idx = 0;
+    int n_rules = 0;
+    u32 src_prefix_length = 0;
+    ip4_address_t src_v4address;
+    ip6_address_t src_v6address;
+
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
+    {
+        if (unformat (i, "ipv6"))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].is_ipv6 = 1;
+          }
+        else if (unformat (i, "permit"))
+          {
+            vec_validate(rules, rule_idx);
+            rules[rule_idx].is_permit = 1;
+          }
+        else if (unformat (i, "src_ip %U/%d",
+         unformat_ip4_address, &src_v4address, &src_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
+            rules[rule_idx].src_ip_prefix_len = src_prefix_length;
+            rules[rule_idx].is_ipv6 = 0;
+          }
+        else if (unformat (i, "src_ip %U/%d",
+         unformat_ip6_address, &src_v6address, &src_prefix_length))
+          {
+            vec_validate(rules, rule_idx);
+            memcpy (rules[rule_idx].src_ip_addr, &src_v6address, 16);
+            rules[rule_idx].src_ip_prefix_len = src_prefix_length;
+            rules[rule_idx].is_ipv6 = 1;
+          }
+        else if (unformat (i, ","))
+          {
+            rule_idx++;
+          }
+        else
+    break;
+    }
+
+    /* Construct the API message */
+    vam->result_ready = 0;
+
+    if(rules)
+      n_rules = rule_idx + 1;
+    else
+      n_rules = 0;
+
+    msg_size += n_rules*sizeof(rules[0]);
+
+    mp = vl_msg_api_alloc_as_if_client(msg_size);
+    memset (mp, 0, msg_size);
+    mp->_vl_msg_id = ntohs (VL_API_MACIP_ACL_ADD + sm->msg_id_base);
+    mp->client_index = vam->my_client_index;
+    if (n_rules > 0)
+      clib_memcpy(mp->r, rules, n_rules*sizeof (mp->r[0]));
+    mp->count = htonl(n_rules);
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+}
 
 /*
  * List of messages that the api test plugin sends,
@@ -562,12 +638,13 @@ static int api_acl_dump (vat_main_t * vam)
  */
 #define foreach_vpe_api_msg \
 _(acl_plugin_get_version, "") \
-_(acl_add_replace, "<acl-idx> ") \
+_(acl_add_replace, "<acl-idx> ...") \
 _(acl_del, "<acl-idx>") \
 _(acl_dump, "[<acl-idx>]") \
 _(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>") \
 _(acl_interface_set_acl_list, "<intfc> | sw_if_index <if-idx> input [acl-idx list] output [acl-idx list]") \
-_(acl_interface_list_dump, "[<intfc> | sw_if_index <if-idx>]")
+_(acl_interface_list_dump, "[<intfc> | sw_if_index <if-idx>]") \
+_(macip_acl_add, "...") \
 
 void vat_api_hookup (vat_main_t *vam)
 {

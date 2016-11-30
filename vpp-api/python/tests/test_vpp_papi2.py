@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
-import unittest, sys, time, threading, struct, logging, os
-from vpp_papi2 import VPP
+import unittest, sys, threading, struct, logging, os
+from vpp_papi import VPP
 from ipaddress import *
 import glob, json
 
 papi_event = threading.Event()
+import glob
+jsondir = '../../.././build-root/build-vpp_lite_debug-native/vpp-api/vpp-api/'
 
 class TestPAPI(unittest.TestCase):
     show_version_msg = '''["show_version",
@@ -273,7 +275,7 @@ class TestPAPI(unittest.TestCase):
         rv = msglist.decode(msgdef, b)
         self.assertEqual(6, rv.length)
         self.assertEqual(1, rv.name)
-import time
+
 class TestConnectedPAPI(unittest.TestCase):
     def test_request_reply_function(self):
         vpp = VPP(['vpe.api.json'])
@@ -287,8 +289,7 @@ class TestConnectedPAPI(unittest.TestCase):
 
 
     def test_dump_details_function(self):
-        vpp = VPP(['vpe.api.json'])
-
+        vpp = VPP(glob.glob(jsondir + '*.api.json'))
         vpp.connect('test_vpp_papi3')
 
         rv = vpp.sw_interface_dump()
@@ -340,6 +341,48 @@ class TestConnectedPAPI(unittest.TestCase):
 def event_handler(result):
     print('IN EVENT HANDLER:', result)
     papi_event.set()
+
+class TestACL(unittest.TestCase):
+    def test_acl_create(self):
+        vpp = VPP(glob.glob(jsondir + '*.api.json'))
+
+        vpp.connect('acl-test')
+
+        rv = vpp.acl_plugin_get_version()
+        print('RV', rv)
+        self.assertEqual(rv.major, 0)
+        self.assertEqual(rv.minor, 1)
+
+        rv = vpp.acl_add_replace(acl_index = 0xFFFFFFFF,
+            r = [{
+                "is_permit" : 1,
+                "is_ipv6" : 0,
+                "proto" : 6,
+                "srcport_or_icmptype_first" : 80,
+                }],
+            count = 1)
+        print ('RV', rv)
+        rv = vpp.acl_add_replace(acl_index = 0xFFFFFFFF,
+            r = [{
+                "is_permit" : 1,
+                "is_ipv6" : 0,
+                "proto" : 6,
+                "srcport_or_icmptype_first" : 81,
+                }],
+            count = 1)
+        self.assertEqual(rv.retval, 0)
+        print ('RV', rv)
+        ai = rv.acl_index
+        rv = vpp.acl_dump()
+        print ('RV', rv)
+
+        #rv = vpp.acl_del(acl_index = ai)
+        #self.assertEqual(rv.retval, 0)
+
+        #rv = vpp.acl_dump()
+        #self.assertEqual([], vpp.acl_dump())
+
+        vpp.disconnect()
 
 if __name__ == '__main__':
     unittest.main()

@@ -227,13 +227,14 @@ class VPP():
         return lambda **kwargs: (self._call_vpp(i, msgdef, multipart, **kwargs))
 
     def _register_functions(self):
-        self.id_names = [None] * (len(self.vpp_dictionary) + 1)
-        self.id_msgdef = [None] * (len(self.vpp_dictionary) + 1)
+        self.id_names = [None] * (self.vpp_dictionary_maxid + 1)
+        self.id_msgdef = [None] * (self.vpp_dictionary_maxid + 1)
         for name, msgdef in self.messages.iteritems():
             if name in self.vpp_dictionary:
                 if self.messages[name]['crc'] != self.vpp_dictionary[name]['crc']:
-                    raise ValueError(3, 'Failed CRC checksum ' + name + ' ' + self.messages[name]['crc'] + ' ' + self.vpp_dictionary[name]['crc'])
-
+                    raise ValueError(3, 'Failed CRC checksum ' + name +
+                                     ' ' + self.messages[name]['crc'] +
+                                     ' ' + self.vpp_dictionary[name]['crc'])
                 i = self.vpp_dictionary[name]['id']
                 self.id_msgdef[i] = msgdef
                 self.id_names[i] = name
@@ -259,13 +260,17 @@ class VPP():
 
     def _load_dictionary(self):
         self.vpp_dictionary = {}
+        self.vpp_dictionary_maxid = 0
+
         d = vpp_api.msg_table()
+
         if not d:
             raise IOError(3, 'Cannot get VPP API dictionary')
         for i,n in d:
             name, crc =  n.rsplit('_', 1)
             crc = '0x' + crc
             self.vpp_dictionary[name] = { 'id' : i, 'crc' : crc }
+            self.vpp_dictionary_maxid = max(self.vpp_dictionary_maxid, i)
 
     def connect(self, name, chroot_prefix = None):
         if not chroot_prefix:
@@ -380,3 +385,4 @@ class VPP():
 
     def register_event_callback(self, callback):
         self.event_callback = callback
+

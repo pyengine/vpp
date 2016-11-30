@@ -1916,6 +1916,19 @@ acl_plugin_api_hookup (vlib_main_t * vm)
   return 0;
 }
 
+#define vl_msg_name_crc_list
+#include <acl/acl_all_api_h.h>
+#undef vl_msg_name_crc_list
+
+static void
+setup_message_id_table (acl_main_t * sm, api_main_t * am)
+{
+#define _(id,n,crc) \
+  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
+  foreach_vl_msg_name_crc_acl;
+#undef _
+}
+
 u32
 register_match_action_nexts (u32 next_in_ip4, u32 next_in_ip6,
 			     u32 next_out_ip4, u32 next_out_ip6)
@@ -1986,6 +1999,9 @@ acl_init (vlib_main_t * vm)
 
   error = acl_plugin_api_hookup (vm);
   acl_setup_nodes ();
+
+ /* Add our API messages to the global name_crc hash table */
+  setup_message_id_table (am, &api_main);
 
   vec_free (name);
 

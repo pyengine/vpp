@@ -314,7 +314,7 @@ class TestConnectedPAPI(unittest.TestCase):
         vpp.disconnect()
 
     def test_events(self):
-        vpp = VPP(['vpe.api.json'])
+        vpp = VPP(glob.glob(jsondir + '*.api.json'))
 
         vpp.connect('test_vpp_papi3')
 
@@ -338,8 +338,8 @@ class TestConnectedPAPI(unittest.TestCase):
 
         vpp.disconnect()
 
-def event_handler(result):
-    print('IN EVENT HANDLER:', result)
+def event_handler(msgname, result):
+    print('IN EVENT HANDLER:', msgname, result)
     papi_event.set()
 
 class TestACL(unittest.TestCase):

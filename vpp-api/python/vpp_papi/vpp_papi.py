@@ -19,6 +19,9 @@ import sys, os, logging, collections, struct, json, threading
 logging.basicConfig(level=logging.DEBUG)
 import vpp_api
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 class VPP():
     def __init__(self, apifiles):
         self.messages = {}
@@ -334,7 +337,7 @@ class VPP():
         #
         #if not is_waiting_for_reply():
         if r.context == 0 and self.event_callback:
-            self.event_callback(r)
+            self.event_callback(type(r).__name__, r)
             return
 
         #

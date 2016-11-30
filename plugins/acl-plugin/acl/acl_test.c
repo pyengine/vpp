@@ -137,6 +137,7 @@ static int api_acl_add_replace (vat_main_t * vam)
     f64 timeout;
     vl_api_acl_add_replace_t * mp;
     u32 acl_index = ~0;
+    u32 msg_size = sizeof (*mp); /* without the rules */
 
     vl_api_acl_rule_t *rules = 0;
     int rule_idx = 0;
@@ -228,8 +229,10 @@ u8 tcp_flags_value;
     else
       n_rules = 0;
 
-    mp = vl_msg_api_alloc_as_if_client(4 * sizeof(32) + sizeof (vl_api_acl_rule_t));
-    memset (mp, 0, sizeof (*mp) + n_rules*sizeof(rules[0]));
+    msg_size += n_rules*sizeof(rules[0]);
+
+    mp = vl_msg_api_alloc_as_if_client(msg_size);
+    memset (mp, 0, msg_size);
     mp->_vl_msg_id = ntohs (VL_API_ACL_ADD_REPLACE + sm->msg_id_base);
     mp->client_index = vam->my_client_index;
     if (n_rules > 0)

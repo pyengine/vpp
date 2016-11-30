@@ -154,6 +154,29 @@ vl_api_macip_acl_add_t_print (vl_api_macip_acl_add_t * a, void *handle)
   return handle;
 }
 
+static inline void *vl_api_macip_acl_details_t_print (vl_api_macip_acl_details_t *a,void *handle)
+{
+    int i;
+    vl_print(handle, "vl_api_macip_acl_details_t:\n");
+    vl_print(handle, "_vl_msg_id: %u\n", (unsigned) a->_vl_msg_id);
+    vl_print(handle, "context: %u\n", (unsigned) a->context);
+    vl_print(handle, "acl_index: %u\n", (unsigned) a->acl_index);
+    {
+        int _i;
+        for (_i = 0; _i < 64; _i++) {
+            vl_print(handle, "tag[%d]: %u\n", _i, a->tag[_i]);
+        }
+    }
+    vl_print(handle, "count: %u\n", (unsigned) a->count);
+    vl_print(handle, "r ----- \n");
+    for (i = 0; i < a->count; i++)
+      {
+        vl_print (handle, "  r[%d]:\n", i);
+        vl_api_macip_acl_rule_t_print (&a->r[i], handle);
+      }
+    vl_print(handle, "r ----- END \n");
+    return handle;
+}
 
 #endif /* vl_printfun */
 
@@ -248,6 +271,21 @@ vl_api_macip_acl_add_t_endian (vl_api_macip_acl_add_t * a)
       vl_api_macip_acl_rule_t_endian (&a->r[i]);
     }
 }
+
+static inline void vl_api_macip_acl_details_t_endian (vl_api_macip_acl_details_t *a)
+{
+    int i;
+    a->_vl_msg_id = clib_net_to_host_u16(a->_vl_msg_id);
+    a->context = clib_net_to_host_u32(a->context);
+    a->acl_index = clib_net_to_host_u32(a->acl_index);
+    /* a->tag[0..63] = a->tag[0..63] (no-op) */
+    a->count = clib_net_to_host_u32(a->count);
+    for (i = 0; i < a->count; i++)
+      {
+        vl_api_macip_acl_rule_t_endian (&a->r[i]);
+      }
+}
+
 
 
 

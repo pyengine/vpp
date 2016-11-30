@@ -147,6 +147,18 @@ static void vl_api_macip_acl_details_t_handler
         vam->result_ready = 1;
     }
 
+static void vl_api_macip_acl_interface_get_reply_t_handler
+    (vl_api_macip_acl_interface_get_reply_t * mp)
+    {
+        int i;
+        vat_main_t * vam = acl_test_main.vat_main;
+	clib_warning("count: %d", ntohl(mp->count));
+	for(i=0; i<ntohl(mp->count); i++) {
+          clib_warning("sw_if_index %d: macip acl %d", i, ntohl(mp->acls[i]));
+	}
+        vam->result_ready = 1;
+    }
+
 
 /*
  * Table of message reply handlers, must include boilerplate handlers
@@ -163,6 +175,7 @@ _(MACIP_ACL_ADD_REPLY, macip_acl_add_reply) \
 _(MACIP_ACL_DEL_REPLY, macip_acl_del_reply) \
 _(MACIP_ACL_DETAILS, macip_acl_details)  \
 _(MACIP_ACL_INTERFACE_ADD_DEL_REPLY, macip_acl_interface_add_del_reply)  \
+_(MACIP_ACL_INTERFACE_GET_REPLY, macip_acl_interface_get_reply)  \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
 /* M: construct, but don't yet send a message */
@@ -212,6 +225,28 @@ static int api_acl_plugin_get_version (vat_main_t * vam)
     mp = vl_msg_api_alloc_as_if_client(msg_size);
     memset (mp, 0, msg_size);
     mp->_vl_msg_id = ntohs (VL_API_ACL_PLUGIN_GET_VERSION + sm->msg_id_base);
+    mp->client_index = vam->my_client_index;
+
+    /* send it... */
+    S;
+
+    /* Wait for a reply... */
+    W;
+
+    return 0;
+}
+
+static int api_macip_acl_interface_get (vat_main_t * vam)
+{
+    acl_test_main_t * sm = &acl_test_main;
+    vl_api_acl_plugin_get_version_t * mp;
+    u32 msg_size = sizeof(*mp);
+    f64 timeout;
+
+    vam->result_ready = 0;
+    mp = vl_msg_api_alloc_as_if_client(msg_size);
+    memset (mp, 0, msg_size);
+    mp->_vl_msg_id = ntohs (VL_API_MACIP_ACL_INTERFACE_GET + sm->msg_id_base);
     mp->client_index = vam->my_client_index;
 
     /* send it... */
@@ -767,6 +802,7 @@ _(macip_acl_add, "...") \
 _(macip_acl_del, "<acl-idx>")\
 _(macip_acl_dump, "[<acl-idx>]") \
 _(macip_acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] acl <acl-idx>") \
+_(macip_acl_interface_get, "")
 
 
 

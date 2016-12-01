@@ -874,7 +874,7 @@ acl_packet_match (acl_main_t * am, u32 acl_index, vlib_buffer_t * b0,
 	  tcp_flags = *(u8 *) get_ptr_to_offset (b0, 14 + 20 + 13);
 	}
     }
-  if (is_ip6)
+  else /* is_ipv6 implicitly */
     {
       clib_memcpy (&src, get_ptr_to_offset (b0, 22), 16);
       clib_memcpy (&dst, get_ptr_to_offset (b0, 38), 16);

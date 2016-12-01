@@ -557,7 +557,7 @@ l2sess_node_fn (vlib_main_t * vm,
 	    u32 node_index = 0;
 	    u32 session_tables[2] = { ~0, ~0 };
 	    u32 session_nexts[2] = { ~0, ~0 };
-	    l2_output_next_nodes_st *next_nodes;
+	    l2_output_next_nodes_st *next_nodes = 0;
 	    u32 *input_feat_next_node_index;
 	    u8 l4_proto;
 	    u64 now = clib_cpu_time_now ();

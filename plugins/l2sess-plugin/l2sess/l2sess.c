@@ -170,136 +170,6 @@ l2sess_setup_nodes (void)
 
 }
 
-
-
-static clib_error_t *
-show_l2sess_bind_command_fn (vlib_main_t * vm,
-			     unformat_input_t * input,
-			     vlib_cli_command_t * cmd)
-{
-  l2sess_main_t *sm = &l2sess_main;
-  u32 fwd_table_index = ~0;
-
-  if (unformat (input, "%d", &fwd_table_index))
-    {
-      if (fwd_table_index < vec_len (sm->fwd_to_rev_by_table_index))
-	{
-	  vlib_cli_output (vm, "l2sess bind %d %d\n", fwd_table_index,
-			   sm->fwd_to_rev_by_table_index[fwd_table_index]);
-	}
-      else
-	{
-	  vlib_cli_output (vm, "l2sess bind %d -1\n");
-	}
-    }
-  for (fwd_table_index = 0;
-       fwd_table_index < vec_len (sm->fwd_to_rev_by_table_index);
-       fwd_table_index++)
-    {
-      vlib_cli_output (vm, "l2sess bind %d %d\n", fwd_table_index,
-		       sm->fwd_to_rev_by_table_index[fwd_table_index]);
-    }
-  return 0;
-}
-
-VLIB_CLI_COMMAND (show_l2sess_bind_command, static) =
-{
-.path = "show l2sess bind",.short_help =
-    "show l2sess bind [<table-index>]",.function =
-    show_l2sess_bind_command_fn,};
-
-/* Action function shared between message handler and debug CLI */
-
-int
-l2sess_bind_tables (l2sess_main_t * sm, u32 fwd_table_index,
-		    u32 rev_table_index, u8 bind_type)
-{
-  int rv = 0;
-  u32 old_fwd_table_index;
-  u32 old_rev_table_index;
-
-  if (~0 == fwd_table_index)
-    {
-      /* The first argument MUST be a valid table index */
-      return -1;
-    }
-  vec_validate_init_empty (sm->fwd_to_rev_by_table_index, fwd_table_index,
-			   ~0);
-
-  if (~0 != rev_table_index)
-    {
-      vec_validate_init_empty (sm->fwd_to_rev_by_table_index, rev_table_index,
-			       ~0);
-
-      /* Both tables might already be potential members of other two bindings, break that first. */
-      old_fwd_table_index = sm->fwd_to_rev_by_table_index[rev_table_index];
-      old_rev_table_index = sm->fwd_to_rev_by_table_index[fwd_table_index];
-
-      /* The validity of old_fwd_table_index and old_rev_table_index was verified when someone assigned them */
-      if (~0 != old_fwd_table_index)
-	{
-	  sm->fwd_to_rev_by_table_index[old_fwd_table_index] = ~0;
-	}
-      if (~0 != old_rev_table_index)
-	{
-	  sm->fwd_to_rev_by_table_index[old_rev_table_index] = ~0;
-	}
-
-      sm->fwd_to_rev_by_table_index[fwd_table_index] = rev_table_index;
-      sm->fwd_to_rev_by_table_index[rev_table_index] = fwd_table_index;
-    }
-  else
-    {
-      /* Break up the binding */
-      rev_table_index = sm->fwd_to_rev_by_table_index[fwd_table_index];
-
-      sm->fwd_to_rev_by_table_index[fwd_table_index] = ~0;
-      sm->fwd_to_rev_by_table_index[rev_table_index] = ~0;
-    }
-  return rv;
-}
-
-static clib_error_t *
-macswap_enable_disable_command_fn (vlib_main_t * vm,
-				   unformat_input_t * input,
-				   vlib_cli_command_t * cmd)
-{
-  l2sess_main_t *sm = &l2sess_main;
-  int rv;
-  u32 fwd_table_index;
-  u32 rev_table_index;
-  u8 bind_type = 0;
-
-  if (!unformat (input, "%d", &fwd_table_index))
-    {
-      return clib_error_return (0, "forward table index required");
-    }
-  if (!unformat (input, "%d", &rev_table_index))
-    {
-      return clib_error_return (0, "reverse table index required");
-    }
-
-  rv = l2sess_bind_tables (sm, fwd_table_index, rev_table_index, bind_type);
-
-  switch (rv)
-    {
-    case 0:
-      break;
-
-    default:
-      return clib_error_return (0, "l2sess_bind_tables returned %d", rv);
-    }
-  return 0;
-}
-
-/* *INDENT-OFF* */
-VLIB_CLI_COMMAND (l2sess_bind_command, static) = {
-    .path = "l2sess bind",
-    .short_help = "l2sess bind <table-fwd> <table-rev>",
-    .function = macswap_enable_disable_command_fn,
-};
-/* *INDENT-ON* */
-
 static char *
 get_l4_proto_str (int is_ip6, uint8_t l4_proto)
 {
@@ -423,38 +293,6 @@ VLIB_CLI_COMMAND (l2sess_show_count_command, static) = {
 };
 /* *INDENT-OFF* */
 
-/* API message handler */
-static void vl_api_l2sess_bind_tables_t_handler
-(vl_api_l2sess_bind_tables_t * mp)
-{
-  vl_api_l2sess_bind_tables_reply_t * rmp;
-  l2sess_main_t * sm = &l2sess_main;
-  int rv;
-
-  rv = l2sess_bind_tables (sm, ntohl(mp->fwd_table_index), ntohl(mp->rev_table_index), mp->bind_type);
-
-  REPLY_MACRO(VL_API_L2SESS_BIND_TABLES_REPLY);
-}
-
-/* Set up the API message handling tables */
-static clib_error_t *
-l2sess_plugin_api_hookup (vlib_main_t *vm)
-{
-  l2sess_main_t * sm = &l2sess_main;
-#define _(N,n)                                                  \
-    vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
-                           #n,					\
-                           vl_api_##n##_t_handler,              \
-                           vl_noop_handler,                     \
-                           vl_api_##n##_t_endian,               \
-                           vl_api_##n##_t_print,                \
-                           sizeof(vl_api_##n##_t), 1);
-    foreach_l2sess_plugin_api_msg;
-#undef _
-
-    return 0;
-}
-
 static inline u64
 time_sec_to_clock( clib_time_t *ct, f64 sec)
 {
@@ -479,8 +317,6 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
   /* Ask for a correctly-sized block of API message decode slots */
   sm->msg_id_base = vl_msg_api_get_msg_ids
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
-
-  error = l2sess_plugin_api_hookup (vm);
 
   /* The min sched time of 10e-1 causes erroneous behavior... */
   sm->timing_wheel.min_sched_time = 10e-2;

@@ -128,6 +128,7 @@ foreach_l2sess_node
     timing_wheel_t timing_wheel;
     u32 *data_from_advancing_timing_wheel;
     u64 timer_wheel_next_expiring_time;
+    u64 timer_wheel_tick;
 
     /* convenience */
     vlib_main_t * vlib_main;

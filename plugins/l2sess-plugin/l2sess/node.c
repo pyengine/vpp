@@ -442,15 +442,24 @@ session_get_timeout (l2sess_main_t * sm, l2s_session_t * sess, u64 now)
   return timeout;
 }
 
-static int
-session_is_alive (l2sess_main_t * sm, l2s_session_t * sess, u64 now)
+static inline u64
+get_session_last_active_time(l2s_session_t * sess)
 {
   u64 last_active =
     sess->side[0].active_time >
     sess->side[1].active_time ? sess->side[0].active_time : sess->side[1].
     active_time;
+  return last_active;
+}
+
+static int
+session_is_alive (l2sess_main_t * sm, l2s_session_t * sess, u64 now, u64 *last_active_cache)
+{
+  u64 last_active = get_session_last_active_time(sess);
   u64 timeout = session_get_timeout (sm, sess, now);
   int is_alive = ((now - last_active) < timeout);
+  if (last_active_cache)
+    *last_active_cache = last_active;
   return is_alive;
 }
 
@@ -463,7 +472,7 @@ check_idle_sessions (l2sess_main_t * sm, u32 sw_if_index, u64 now)
     timing_wheel_advance (&sm->timing_wheel, now,
 			  sm->data_from_advancing_timing_wheel,
 			  &sm->timer_wheel_next_expiring_time);
-#ifdef DEBUG_SESSIONS
+#ifdef DEBUG_SESSIONS_VERBOSE
   {
     clib_time_t *ct = &sm->vlib_main->clib_time;
     f64 ctime;
@@ -476,6 +485,8 @@ check_idle_sessions (l2sess_main_t * sm, u32 sw_if_index, u64 now)
   }
 #endif
 
+  sm->timer_wheel_next_expiring_time = now + sm->timer_wheel_tick;
+
   if (PREDICT_FALSE (_vec_len (sm->data_from_advancing_timing_wheel) > 0))
     {
       uword i;
@@ -484,10 +495,26 @@ check_idle_sessions (l2sess_main_t * sm, u32 sw_if_index, u64 now)
 	  u32 session_index = sm->data_from_advancing_timing_wheel[i];
 	  if (!pool_is_free_index (sm->sessions, session_index))
 	    {
+	      l2s_session_t *sess = sm->sessions + session_index;
+              u64 last_active;
+              if (session_is_alive (sm, sess, now, &last_active))
+                {
+#ifdef DEBUG_SESSIONS
+	      clib_warning ("Restarting timer for session %d", (int) session_index);
+#endif
+                    /* Pretend we did this in the past, at last_active moment */
+                    timing_wheel_insert (&sm->timing_wheel,
+                                         last_active + session_get_timeout (sm, sess,
+                                                                    last_active),
+                                         session_index);
+                }
+              else
+                {
 #ifdef DEBUG_SESSIONS
 	      clib_warning ("Deleting session %d", (int) session_index);
 #endif
 	      delete_session (sm, sw_if_index, session_index);
+                }
 	    }
 	}
       _vec_len (sm->data_from_advancing_timing_wheel) = 0;
@@ -594,10 +621,9 @@ if(node_var.index == node->node_index)                                   \
 	      {
 		u32 sess_index = vnet_buffer (b0)->l2_classify.opaque_index;
 		l2s_session_t *sess = sm->sessions + sess_index;
-		timing_wheel_delete (&sm->timing_wheel, sess_index);
 		l4_proto = sess->l4_proto;
 
-		if (session_is_alive (sm, sess, now))
+		if (session_is_alive (sm, sess, now, 0))
 		  {
 		    if (6 == l4_proto)
 		      {
@@ -609,13 +635,10 @@ if(node_var.index == node->node_index)                                   \
 			udp_session_account_buffer (b0, sess, node_is_out,
 						    now);
 		      }
-		    timing_wheel_insert (&sm->timing_wheel,
-					 now + session_get_timeout (sm, sess,
-								    now),
-					 sess_index);
 		  }
 		else
 		  {
+		    timing_wheel_delete (&sm->timing_wheel, sess_index);
 		    delete_session (sm, sw_if_index0, sess_index);
 		    /* FIXME: drop the packet that hit the obsolete node, for now. We really ought to recycle it. */
 		    next0 = 0;

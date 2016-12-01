@@ -323,6 +323,7 @@ static clib_error_t * l2sess_init (vlib_main_t * vm)
   sm->timing_wheel.max_sched_time = 3600.0*48.0;
   timing_wheel_init (&sm->timing_wheel, cpu_time_now, vm->clib_time.clocks_per_second);
   sm->timer_wheel_next_expiring_time = 0;
+  sm->timer_wheel_tick = time_sec_to_clock(ct, sm->timing_wheel.min_sched_time);
   /* Pre-allocate expired nodes. */
   vec_alloc (sm->data_from_advancing_timing_wheel, 32);
 

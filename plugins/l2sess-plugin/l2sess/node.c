@@ -595,9 +595,11 @@ if(node_var.index == node->node_index)                                   \
 		u32 sess_index = vnet_buffer (b0)->l2_classify.opaque_index;
 		l2s_session_t *sess = sm->sessions + sess_index;
 		timing_wheel_delete (&sm->timing_wheel, sess_index);
+		l4_proto = sess->l4_proto;
+
 		if (session_is_alive (sm, sess, now))
 		  {
-		    if (6 == sess->l4_proto)
+		    if (6 == l4_proto)
 		      {
 			tcp_session_account_buffer (b0, sess, node_is_out,
 						    now);

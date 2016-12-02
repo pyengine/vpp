@@ -277,6 +277,7 @@ static int api_acl_add_replace (vat_main_t * vam)
     u32 src_prefix_length = 0, dst_prefix_length = 0;
     ip4_address_t src_v4address, dst_v4address;
     ip6_address_t src_v6address, dst_v6address;
+    u8 *tag = 0;
 
     if (!unformat (i, "%d", &acl_index)) {
       clib_warning("Need ACL#");
@@ -367,6 +368,9 @@ static int api_acl_add_replace (vat_main_t * vam)
             vec_validate(rules, rule_idx);
             rules[rule_idx].proto = proto;
           }
+        else if (unformat (i, "tag %s", &tag))
+          {
+          }
         else if (unformat (i, ","))
           {
             rule_idx++;
@@ -391,6 +395,15 @@ static int api_acl_add_replace (vat_main_t * vam)
     mp->client_index = vam->my_client_index;
     if (n_rules > 0)
       clib_memcpy(mp->r, rules, n_rules*sizeof (vl_api_acl_rule_t));
+    if (tag)
+      {
+        if (vec_len(tag) >= sizeof(mp->tag))
+          {
+            tag[sizeof(mp->tag)-1] = 0;
+            _vec_len(tag) = sizeof(mp->tag);
+          }
+        clib_memcpy(mp->tag, tag, vec_len(tag));
+      }
     mp->acl_index = ntohl(acl_index);
     mp->count = htonl(n_rules);
 

@@ -123,6 +123,10 @@ define acl_interface_add_del
   u32 client_index;
   u32 context;
   u8 is_add;
+/*
+ * is_input = 0 => ACL applied on interface egress
+ * is_input = 1 => ACL applied on interface ingress
+ */
   u8 is_input;
   u32 sw_if_index;
   u32 acl_index;
@@ -216,7 +220,7 @@ define macip_acl_interface_add_del
   u32 client_index;
   u32 context;
   u8 is_add;
-  /* u8 is_input; macip ACLs are always input */
+  /* macip ACLs are always input */
   u32 sw_if_index;
   u32 acl_index;
 };

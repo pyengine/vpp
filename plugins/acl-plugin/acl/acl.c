@@ -402,6 +402,9 @@ acl_classify_add_del_table_big (vnet_classify_main_t * cm, u8 * mask,
   u32 current_data_flag = 0;
   int current_data_offset = 0;
 
+  if (0 == match)
+    match = 1;
+
   return vnet_classify_add_del_table (cm, skip_mask_ptr, nbuckets,
 				      memory_size, skip, match,
 				      next_table_index, miss_next_index,
@@ -422,6 +425,9 @@ acl_classify_add_del_table_small (vnet_classify_main_t * cm, u8 * mask,
   u8 *skip_mask_ptr = mask + 16 * skip;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
+
+  if (0 == match)
+    match = 1;
 
   return vnet_classify_add_del_table (cm, skip_mask_ptr, nbuckets,
 				      memory_size, skip, match,

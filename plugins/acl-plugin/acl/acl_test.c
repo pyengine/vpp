@@ -905,7 +905,7 @@ static int api_macip_acl_add (vat_main_t * vam)
     vam->result_ready = 0;
 
     if(rules)
-      n_rules = rule_idx + 1;
+      n_rules = vec_len(rules);
     else
       n_rules = 0;
 

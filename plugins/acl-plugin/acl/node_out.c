@@ -170,6 +170,6 @@ VLIB_REGISTER_NODE (acl_out_node) =
   {
   [ACL_OUT_ERROR_DROP] = "error-drop",
       [ACL_OUT_INTERFACE_OUTPUT] = "interface-output",
-      [ACL_OUT_L2S_OUTPUT_IP4_ADD] = "l2s-output-ip4-add",
-      [ACL_OUT_L2S_OUTPUT_IP6_ADD] = "l2s-output-ip6-add",}
+      [ACL_OUT_L2S_OUTPUT_IP4_ADD] = "aclp-l2s-output-ip4-add",
+      [ACL_OUT_L2S_OUTPUT_IP6_ADD] = "aclp-l2s-output-ip6-add",}
 ,};

@@ -26,6 +26,9 @@ acl_plugin_la_SOURCES =				\
 	acl/acl.c				\
 	acl/node_in.c				\
 	acl/node_out.c				\
+	acl/l2sess.c				\
+	acl/l2sess_node.c			\
+	acl/l2sess.h				\
 	acl/acl_plugin.api.h
 
 BUILT_SOURCES = acl/acl.api.h

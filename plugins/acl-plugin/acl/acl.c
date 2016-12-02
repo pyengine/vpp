@@ -16,6 +16,7 @@
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 #include <acl/acl.h>
+#include <acl/l2sess.h>
 
 #include <vnet/l2/l2_classify.h>
 #include <vnet/classify/input_acl.h>
@@ -159,6 +160,8 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
   am->vlib_main = vm;
   am->vnet_main = h->vnet_main;
   am->ethernet_main = h->ethernet_main;
+
+  l2sess_vlib_plugin_register(vm, h, from_early_init);
 
   return error;
 }

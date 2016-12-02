@@ -163,6 +163,6 @@ VLIB_REGISTER_NODE (acl_in_node) =
   {
   [ACL_IN_ERROR_DROP] = "error-drop",
       [ACL_IN_ETHERNET_INPUT] = "ethernet-input",
-      [ACL_IN_L2S_INPUT_IP4_ADD] = "l2s-input-ip4-add",
-      [ACL_IN_L2S_INPUT_IP6_ADD] = "l2s-input-ip6-add",}
+      [ACL_IN_L2S_INPUT_IP4_ADD] = "aclp-l2s-input-ip4-add",
+      [ACL_IN_L2S_INPUT_IP6_ADD] = "aclp-l2s-input-ip6-add",}
 ,};

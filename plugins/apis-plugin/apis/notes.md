@@ -17,6 +17,7 @@ Today to support VPP clients for Java, Python, lua language bindings libraries a
 The .proto in this plugin is manually written and currently supports only cli_inband equivalent API. There is also example clients in example-client directory with a remote shell implemented.
 
 **Before building VPP**
+```sh
     git clone https://github.com/grpc/grpc.git
     git submodule update --init
     sudo apt-get install pkg-config
@@ -25,6 +26,7 @@ The .proto in this plugin is manually written and currently supports only cli_in
     cd grpc/third_party/protobuf
     make
     sudo make install
+```
 
 Build and run VPP and the api-server plugin will listen on 50051 port (insecure channel).
 ```sh
@@ -43,9 +45,10 @@ ID     Name      Type     LWP     Sched Policy (Priority)  lcore  Core   Socket 
 Example clients – C++ and python are in : plugins/apis-plugin/apis/example-client
 
 * For python client pre-install packages:
+```sh
     sudo python -m pip install --upgrade pip
     sudo python -m pip install grpc grpcio grpcio-tools
-
+```
 * Run “make” to build c++ client and python client
 
 * Run: python vppcore_client.py. Modify the server name and port in this to connect to a remote vpp instance. This will give a remote shell for vpp.

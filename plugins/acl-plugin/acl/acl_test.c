@@ -830,7 +830,7 @@ static int api_macip_acl_add (vat_main_t * vam)
     ip4_address_t src_v4address;
     ip6_address_t src_v6address;
     u8 src_mac[6];
-    u8 *tag;
+    u8 *tag = 0;
     u8 mac_mask_all_1[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)

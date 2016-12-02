@@ -230,10 +230,13 @@ static void vl_api_macip_acl_interface_get_reply_t_handler
     {
         int i;
         vat_main_t * vam = acl_test_main.vat_main;
-	clib_warning("count: %d", ntohl(mp->count));
+        u8 *out = format(0, "sw_if_index with MACIP ACL count: %d\n", ntohl(mp->count));
 	for(i=0; i<ntohl(mp->count); i++) {
-          clib_warning("sw_if_index %d: macip acl %d", i, ntohl(mp->acls[i]));
+          out = format(out, "  macip_acl_interface_add_del sw_if_index %d add acl %d\n", i, ntohl(mp->acls[i]));
 	}
+        out = format(out, "\n");
+        clib_warning("%s", out);
+        vec_free(out);
         vam->result_ready = 1;
     }
 

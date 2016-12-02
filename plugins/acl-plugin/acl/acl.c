@@ -381,6 +381,10 @@ _(ether) __ __ __ __ __ __ v __ __ __ __ __ __ v __ __ v
      static int count_skip (u8 * p, u32 size)
 {
   u64 *p64 = (u64 *) p;
+  /* Be tolerant to null pointer */
+  if (0 == p)
+    return 0;
+
   while ((0ULL == *p64) && ((u8 *) p64 - p) < size)
     {
       p64++;

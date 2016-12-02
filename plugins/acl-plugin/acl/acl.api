@@ -31,13 +31,6 @@ define acl_plugin_get_version_reply
 
 /*
  * Access List Rule entry
- *
- * Future considerations:
- * u32 proto_flags;
- * u8 traffic_class;
- * u32 flow_label;
- * u32 extension_header_present;
- * u8 port_range_operator
  */
 typeonly manual_print manual_endian define acl_rule
 {
@@ -47,11 +40,29 @@ typeonly manual_print manual_endian define acl_rule
   u8 src_ip_prefix_len;
   u8 dst_ip_addr[16];
   u8 dst_ip_prefix_len;
+/*
+ * L4 protocol. IANA number. 1 = ICMP, 58 = ICMPv6, 6 = TCP, 17 = UDP.
+ * 0 => ignore L4 and ignore the ports/tcpflags when matching.
+ */
   u8 proto;
+/*
+ * If the L4 protocol is TCP or UDP, the below
+ * hold ranges of ports, else if the L4 is ICMP/ICMPv6
+ * they hold ranges of ICMP(v6) types/codes.
+ *
+ * Ranges are inclusive, i.e. to match "any" TCP/UDP port,
+ * use first=0,last=65535. For ICMP(v6),
+ * use first=0,last=255.
+ */
   u16 srcport_or_icmptype_first;
   u16 srcport_or_icmptype_last;
   u16 dstport_or_icmpcode_first;
   u16 dstport_or_icmpcode_last;
+/*
+ * for proto = 6, this matches if the
+ * TCP flags in the packet, ANDed with tcp_flags_mask,
+ * is equal to tcp_flags_value.
+ */
   u8 tcp_flags_mask;
   u8 tcp_flags_value;
 };

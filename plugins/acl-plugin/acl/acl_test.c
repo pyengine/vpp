@@ -847,7 +847,7 @@ static int api_macip_acl_add (vat_main_t * vam)
  */
 #define foreach_vpe_api_msg \
 _(acl_plugin_get_version, "") \
-_(acl_add_replace, "<acl-idx> ...") \
+_(acl_add_replace, "<acl-idx> [<ipv4|ipv6> <permit|permit+reflect|deny|action N> [src IP/plen] [dst IP/plen] [sport X-Y] [dport X-Y] [proto P] [tcpflags FL MASK], ... , ...") \
 _(acl_del, "<acl-idx>") \
 _(acl_dump, "[<acl-idx>]") \
 _(acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] [input|output] acl <acl-idx>") \

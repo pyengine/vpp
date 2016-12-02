@@ -68,17 +68,24 @@ cli_handler (const char *cli, u32 cli_length,
 {
   vlib_main_t *vm = api_server_get_vlib_main ();
   unformat_input_t input;
+
   /*
    * CLI input/output functions are looked up from
    * current process node. This is run in thread context.
    * So setting the current node index here
    */
+
+  while (__sync_lock_test_and_set (vm->main_lockp, 1))
+    ;
+
   vm->node_main.current_process_index = api_server_process_node_index();
 
   *reply = 0;
   unformat_init_string (&input, (char *)cli, cli_length);
   vlib_cli_input (vm, &input, inband_cli_output, (uword) reply);
+  vm->node_main.current_process_index = ~0;
   *reply_length = vec_len (*reply);
+  *vm->main_lockp = 0;
   return(0);
 }
 

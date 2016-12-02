@@ -1275,6 +1275,9 @@ dispatch_process (vlib_main_t * vm,
   vlib_elog_main_loop_event (vm, node_runtime->node_index, t,
 			     f ? f->n_vectors : 0, /* is_after */ 0);
 
+  while (__sync_lock_test_and_set (vm->main_lockp, 1))
+    ;
+
   /* Save away current process for suspend. */
   nm->current_process_index = node->runtime_index;
 
@@ -1314,7 +1317,7 @@ dispatch_process (vlib_main_t * vm,
 			     /* n_calls */ !is_suspend,
 			     /* n_vectors */ n_vectors,
 			     /* n_clocks */ t - last_time_stamp);
-
+  *vm->main_lockp = 0;
   return t;
 }
 
@@ -1358,6 +1361,9 @@ dispatch_suspended_process (vlib_main_t * vm,
   vlib_elog_main_loop_event (vm, node_runtime->node_index, t,
 			     f ? f->n_vectors : 0, /* is_after */ 0);
 
+  while (__sync_lock_test_and_set (vm->main_lockp, 1))
+    ;
+
   /* Save away current process for suspend. */
   nm->current_process_index = node->runtime_index;
 
@@ -1392,7 +1398,7 @@ dispatch_suspended_process (vlib_main_t * vm,
 			     /* n_calls */ !is_suspend,
 			     /* n_vectors */ n_vectors,
 			     /* n_clocks */ t - last_time_stamp);
-
+  *vm->main_lockp = 0;
   return t;
 }
 
@@ -1663,6 +1669,10 @@ vlib_main (vlib_main_t * volatile vm, unformat_input_t * input)
       error = vm->main_loop_error;
       goto done;
     }
+
+  vm->main_lockp = clib_mem_alloc_aligned (CLIB_CACHE_LINE_BYTES,
+					   CLIB_CACHE_LINE_BYTES);
+  memset ((void *) vm->main_lockp, 0, CLIB_CACHE_LINE_BYTES);
 
   if ((error = vlib_call_all_config_functions (vm, input, 0 /* is_early */ )))
     goto done;

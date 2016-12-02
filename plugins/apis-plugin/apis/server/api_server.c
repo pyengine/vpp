@@ -36,7 +36,7 @@ vpp_core_api_main_t vpp_core_api_main;
 
 vlib_main_t *api_server_get_vlib_main(void)
 {
-	return(vpp_core_api_main.vlib_main);
+  return(vpp_core_api_main.vlib_main);
 }
 
 u32 api_server_process_node_index (void)
@@ -58,7 +58,7 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 	vpp_core_api_main_t *am = &vpp_core_api_main;
 	clib_error_t *error = 0;
 
-	memset(am, 0, sizeof(vpp_core_api_main));	
+	memset(am, 0, sizeof(vpp_core_api_main));
 	am->vlib_main = vm;
 	am->vnet_main = h->vnet_main;
 
@@ -72,20 +72,21 @@ api_server_thread (void *arg)
 {
   vlib_thread_main_t *tm = vlib_get_thread_main ();
   vlib_worker_thread_t *w = (vlib_worker_thread_t *) arg;
-	/* stats thread wants no signals. */
-	{
-	  sigset_t s;
-	  sigfillset (&s);
-	  pthread_sigmask (SIG_SETMASK, &s, 0);
-        }
-	if (vec_len (tm->thread_prefix))
-	  vlib_set_thread_name ((char *)
-				format (0, "%v_grpc_api_server%c", tm->thread_prefix, '\0'));
-	clib_mem_set_heap(w->thread_mheap);
-	while (1)
-	{
-		RunServer();
-	}
+
+  /* stats thread wants no signals. */
+  {
+    sigset_t s;
+    sigfillset (&s);
+    pthread_sigmask (SIG_SETMASK, &s, 0);
+  }
+  if (vec_len (tm->thread_prefix))
+    vlib_set_thread_name ((char *)
+			  format (0, "%v_grpc_svr%c", tm->thread_prefix, '\0'));
+  clib_mem_set_heap(w->thread_mheap);
+  while (1)
+    {
+      RunServer();
+    }
 }
 static vlib_node_registration_t api_server_dummy_process_node;
 
@@ -122,7 +123,6 @@ VLIB_REGISTER_THREAD (api_server_thread_node, static) =
   .count = 1,
   .no_data_structure_clone = 1,
   .use_pthreads = 1,
-
 };
 
 /* *INDENT-ON* */

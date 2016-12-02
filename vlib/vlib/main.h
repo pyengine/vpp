@@ -172,6 +172,10 @@ typedef struct vlib_main_t
   volatile u32 queue_signal_pending;
   volatile u32 api_queue_nonempty;
   void (*queue_signal_callback) (struct vlib_main_t *);
+  /* Temporarily adding this to sync b/n main thread for 
+   * process node dispatch and grpc threads for processing
+   * incoming requests */
+  volatile u32 *main_lockp;
   u8 **argv;
 } vlib_main_t;
 

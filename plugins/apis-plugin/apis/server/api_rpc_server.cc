@@ -59,7 +59,7 @@ class vppServiceImpl final : public vpp::Service {
 		if (0 == cli_handler(command_c, command.length(), &output, &out_len))
 		{
 			cli_out->set_cliout((char *)output, out_len);
-            vector_free (output);
+                        vector_free (output);
 		}
 
 		return Status::OK;

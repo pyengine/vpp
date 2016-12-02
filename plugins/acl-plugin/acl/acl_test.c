@@ -117,10 +117,18 @@ static void vl_api_acl_interface_list_details_t_handler
     {
         int i;
         vat_main_t * vam = acl_test_main.vat_main;
-	clib_warning("sw_if_index: %d, count: %d, n_input: %d", ntohl(mp->sw_if_index), mp->count, mp->n_input);
+        u8 *out = 0;
+        vl_api_acl_interface_list_details_t_endian(mp);
+	out = format(out, "sw_if_index: %d, count: %d, n_input: %d\n", ntohl(mp->sw_if_index), mp->count, mp->n_input);
+        out = format(out, "   input ");
 	for(i=0; i<mp->count; i++) {
-          clib_warning("%d : %s", ntohl(mp->acls[i]), i < mp->n_input ? "input" : "output");
+          out = format(out, "%d ", mp->acls[i]);
+          if (i == mp->n_input-1)
+            out = format(out, "\n  output ");
 	}
+        out = format(out, "\n");
+        clib_warning("%s", out);
+        vec_free(out);
         vam->result_ready = 1;
     }
 

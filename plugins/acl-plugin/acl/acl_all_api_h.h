@@ -247,6 +247,33 @@ static inline void vl_api_acl_details_t_endian (vl_api_acl_details_t *a)
     }
 }
 
+static inline void vl_api_acl_interface_list_details_t_endian (vl_api_acl_interface_list_details_t *a)
+{
+    int i;
+    a->_vl_msg_id = clib_net_to_host_u16(a->_vl_msg_id);
+    a->context = clib_net_to_host_u32(a->context);
+    a->sw_if_index = clib_net_to_host_u32(a->sw_if_index);
+    /* a->count = a->count (no-op) */
+    /* a->n_input = a->n_input (no-op) */
+    for(i=0; i<a->count; i++) {
+      a->acls[i] = clib_net_to_host_u32(a->acls[i]);
+    }
+}
+
+static inline void vl_api_acl_interface_set_acl_list_t_endian (vl_api_acl_interface_set_acl_list_t *a)
+{
+    int i;
+    a->_vl_msg_id = clib_net_to_host_u16(a->_vl_msg_id);
+    a->client_index = clib_net_to_host_u32(a->client_index);
+    a->context = clib_net_to_host_u32(a->context);
+    a->sw_if_index = clib_net_to_host_u32(a->sw_if_index);
+    /* a->count = a->count (no-op) */
+    /* a->n_input = a->n_input (no-op) */
+    for(i=0; i<a->count; i++) {
+      a->acls[i] = clib_net_to_host_u32(a->acls[i]);
+    }
+}
+
 static inline void
 vl_api_macip_acl_rule_t_endian (vl_api_macip_acl_rule_t * a)
 {

@@ -339,6 +339,17 @@ static int api_macip_acl_interface_get (vat_main_t * vam)
     return 0;
 }
 
+#define vec_validate_acl_rules(v, idx) \
+  do {                                 \
+    if (vec_len(v) < idx+1) {  \
+      vec_validate(v, idx); \
+      v[idx].is_permit = 0x1; \
+      v[idx].srcport_or_icmptype_last = 0xffff; \
+      v[idx].dstport_or_icmpcode_last = 0xffff; \
+    } \
+  } while (0)
+
+
 static int api_acl_add_replace (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
@@ -362,41 +373,40 @@ static int api_acl_add_replace (vat_main_t * vam)
     u8 *tag = 0;
 
     if (!unformat (i, "%d", &acl_index)) {
-      clib_warning("Need ACL#");
-      return -1;
+	/* Just assume -1 */
     }
 
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
     {
         if (unformat (i, "ipv6"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_ipv6 = 1;
           }
         else if (unformat (i, "ipv4"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_ipv6 = 0;
           }
         else if (unformat (i, "permit+reflect"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 2;
           }
         else if (unformat (i, "permit"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 1;
           }
         else if (unformat (i, "action %d", &action))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = action;
           }
         else if (unformat (i, "src %U/%d",
          unformat_ip4_address, &src_v4address, &src_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
             rules[rule_idx].src_ip_prefix_len = src_prefix_length;
             rules[rule_idx].is_ipv6 = 0;
@@ -404,7 +414,7 @@ static int api_acl_add_replace (vat_main_t * vam)
         else if (unformat (i, "src %U/%d",
          unformat_ip6_address, &src_v6address, &src_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v6address, 16);
             rules[rule_idx].src_ip_prefix_len = src_prefix_length;
             rules[rule_idx].is_ipv6 = 1;
@@ -412,7 +422,7 @@ static int api_acl_add_replace (vat_main_t * vam)
         else if (unformat (i, "dst %U/%d",
          unformat_ip4_address, &dst_v4address, &dst_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].dst_ip_addr, &dst_v4address, 4);
             rules[rule_idx].dst_ip_prefix_len = dst_prefix_length;
             rules[rule_idx].is_ipv6 = 0;
@@ -420,44 +430,44 @@ static int api_acl_add_replace (vat_main_t * vam)
         else if (unformat (i, "dst %U/%d",
          unformat_ip6_address, &dst_v6address, &dst_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].dst_ip_addr, &dst_v6address, 16);
             rules[rule_idx].dst_ip_prefix_len = dst_prefix_length;
             rules[rule_idx].is_ipv6 = 1;
           }
         else if (unformat (i, "sport %d-%d", &port1, &port2))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].srcport_or_icmptype_first = htons(port1);
             rules[rule_idx].srcport_or_icmptype_last = htons(port2);
           }
         else if (unformat (i, "sport %d", &port1))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].srcport_or_icmptype_first = htons(port1);
             rules[rule_idx].srcport_or_icmptype_last = htons(port1);
           }
         else if (unformat (i, "dport %d-%d", &port1, &port2))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].dstport_or_icmpcode_first = htons(port1);
             rules[rule_idx].dstport_or_icmpcode_last = htons(port2);
           }
         else if (unformat (i, "dport %d", &port1))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].dstport_or_icmpcode_first = htons(port1);
             rules[rule_idx].dstport_or_icmpcode_last = htons(port1);
           }
         else if (unformat (i, "tcpflags %d %d", &tcpflags, &tcpmask))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].tcp_flags_value = tcpflags;
             rules[rule_idx].tcp_flags_mask = tcpmask;
           }
         else if (unformat (i, "proto %d", &proto))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].proto = proto;
           }
         else if (unformat (i, "tag %s", &tag))
@@ -466,7 +476,7 @@ static int api_acl_add_replace (vat_main_t * vam)
         else if (unformat (i, ","))
           {
             rule_idx++;
-            vec_validate(rules, rule_idx);
+            vec_validate_acl_rules(rules, rule_idx);
           }
         else
     break;
@@ -817,6 +827,15 @@ static int api_macip_acl_dump (vat_main_t * vam)
     W;
 }
 
+#define vec_validate_macip_acl_rules(v, idx) \
+  do {                                 \
+    if (vec_len(v) < idx+1) {  \
+      vec_validate(v, idx); \
+      v[idx].is_permit = 0x1; \
+    } \
+  } while (0)
+
+
 static int api_macip_acl_add (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
@@ -840,33 +859,33 @@ static int api_macip_acl_add (vat_main_t * vam)
     {
         if (unformat (i, "ipv6"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_ipv6 = 1;
           }
         else if (unformat (i, "ipv4"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_ipv6 = 1;
           }
         else if (unformat (i, "permit"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 1;
           }
         else if (unformat (i, "deny"))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 0;
           }
         else if (unformat (i, "action %d", &action))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = action;
           }
         else if (unformat (i, "ip %U/%d",
          unformat_ip4_address, &src_v4address, &src_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
             rules[rule_idx].src_ip_prefix_len = src_prefix_length;
             rules[rule_idx].is_ipv6 = 0;
@@ -874,7 +893,7 @@ static int api_macip_acl_add (vat_main_t * vam)
         else if (unformat (i, "ip %U/%d",
          unformat_ip6_address, &src_v6address, &src_prefix_length))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_ip_addr, &src_v6address, 16);
             rules[rule_idx].src_ip_prefix_len = src_prefix_length;
             rules[rule_idx].is_ipv6 = 1;
@@ -882,14 +901,14 @@ static int api_macip_acl_add (vat_main_t * vam)
         else if (unformat (i, "mac %U",
          my_unformat_mac_address, &src_mac))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_mac, &src_mac, 6);
             memcpy (rules[rule_idx].src_mac_mask, &mac_mask_all_1, 6);
           }
         else if (unformat (i, "mask %U",
          my_unformat_mac_address, &src_mac))
           {
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
             memcpy (rules[rule_idx].src_mac_mask, &src_mac, 6);
           }
         else if (unformat (i, "tag %s", &tag))
@@ -898,7 +917,7 @@ static int api_macip_acl_add (vat_main_t * vam)
         else if (unformat (i, ","))
           {
             rule_idx++;
-            vec_validate(rules, rule_idx);
+            vec_validate_macip_acl_rules(rules, rule_idx);
           }
         else
     break;

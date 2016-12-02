@@ -45,7 +45,7 @@ function ip46(addr_text)
   end
   local is_ip4 = ffi.C.inet_pton(AF_INET, vpp.c_str(addr_text), out)
   if is_ip4 then
-    return (string.rep("4", 12).. ffi.string(out, 4)), false
+    return (ffi.string(out, 4).. string.rep("4", 12)), false
   end
 end
 

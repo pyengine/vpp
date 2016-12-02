@@ -77,6 +77,7 @@ typedef struct {
   u16 tcp_flags_seen; /* u16 because of two sides */
 } l2s_session_t;
 
+#define PROD
 #ifdef PROD
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
 #define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*24)

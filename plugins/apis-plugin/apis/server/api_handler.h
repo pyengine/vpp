@@ -16,8 +16,10 @@
 #ifndef API_HANDLER_H
 #define API_HANDLER_H
 
-typedef uint8_t u8;
-typedef uint32_t u32;
+#include <vppinfra/types.h>
+#define vl_typedefs             /* define message structures */
+#include <vpp-api/vpe_all_api_h.h>
+#undef vl_typedefs
 
 extern "C" int
 cli_handler(const char *cli, u32 cli_length,
@@ -27,5 +29,5 @@ extern "C" void vector_free(u8 *vector);
 extern "C" char *vpe_api_get_build_directory (void);
 extern "C" char *vpe_api_get_version (void);
 extern "C" char *vpe_api_get_build_date (void);
-
+extern "C" void ip6_fib_dump_handler (void *writer);
 #endif

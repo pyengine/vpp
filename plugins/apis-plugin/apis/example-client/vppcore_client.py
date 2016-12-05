@@ -3,7 +3,7 @@
 from __future__ import print_function
 import cmd, sys
 import grpc
-
+import ipaddr
 import vppcore_pb2
 
 global stub
@@ -33,6 +33,17 @@ def run():
   stub = vppcore_pb2.vppStub(channel)
   response = stub.ShowVersion(vppcore_pb2.vppClientContext(name='example_vpp_client'))
   print("VPP client received: ", response)
+
+  print("Testing ip6 fib dump..")
+
+  ip6_fib = stub.ip6_fib_dump(vppcore_pb2.vppClientContext(name='example_vpp_client'))
+
+  for entry in ip6_fib:
+     print(ipaddr.IPv6Address(ipaddr.Bytes((entry.address))), '/', entry.address_length, "fib table:", entry.table_id)
+     for path in entry.path:
+       print("sw if index:", path.sw_if_index, "weight", path.weight, "is_local[%s]" % path.is_local)
+       print(ipaddr.IPv6Address(ipaddr.Bytes((path.next_hop))))
+
   vppShell().cmdloop()
 
 if __name__ == '__main__':

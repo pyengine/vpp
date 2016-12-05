@@ -10,6 +10,7 @@ package vppcore;
 service vpp {
   rpc  ShowVersion (vppClientContext) returns (ShowVersionReply) {}
   rpc  ExecCli (vppCommand) returns (vppCommandOutput) {}
+  rpc  ip6_fib_dump (vppClientContext) returns (stream ip6_fib_details) {}
 }
 
 message vppClientContext {
@@ -30,4 +31,23 @@ message vppCommand {
 
 message vppCommandOutput {
   string cliout = 1;
+}
+
+message fib_path {
+    uint32 sw_if_index = 1;
+    uint32 weight = 2;
+    bool is_local = 3;
+    bool is_drop = 4;
+    bool is_unreach = 5;
+    bool is_prohibit = 6;
+    uint32 afi = 7;
+    bytes next_hop = 8;
+}
+
+message ip6_fib_details
+{
+  uint32 table_id = 1;
+  uint32  address_length = 2;
+  bytes  address = 3;
+  repeated fib_path path = 4;
 }

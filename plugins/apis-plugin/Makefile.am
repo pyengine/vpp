@@ -18,7 +18,7 @@ AM_LDFLAGS = -module -shared -avoid-version
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
-CPPFLAGS += -g -I/usr/local/include -pthread
+CPPFLAGS += -g -I/usr/local/include -I$(prefix)/../vpp/include -pthread
 CXXFLAGS = -std=c++11
 
 LDFLAGS += -L/usr/local/lib `pkg-config --libs grpc++ grpc`       \

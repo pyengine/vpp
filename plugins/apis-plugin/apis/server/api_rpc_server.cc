@@ -30,11 +30,13 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::ServerWriter;
 using vppcore::vppClientContext;
 using vppcore::ShowVersionReply;
 using vppcore::vppCommand;
 using vppcore::vppCommandOutput;
 using vppcore::vpp;
+using vppcore::ip6_fib_details;
 
 // Logic and data behind the server's behavior.
 class vppServiceImpl final : public vpp::Service {
@@ -64,7 +66,41 @@ class vppServiceImpl final : public vpp::Service {
 
 		return Status::OK;
 	}
+	Status ip6_fib_dump (ServerContext* context,
+			   const vppClientContext* request,
+			     ServerWriter<ip6_fib_details>* writer) override {
+	  ip6_fib_dump_handler(writer);
+	  return Status::OK;
+	}
+ 
 };
+extern "C" void ip6_fib_writer (void *writer, vl_api_ip6_fib_details_t *mp,
+                                vl_api_fib_path_t *path)
+{
+  ip6_fib_details fb;
+  vppcore::fib_path *fp;
+  
+  fb.set_table_id(mp->table_id);
+  fb.clear_address();
+  fb.set_address(mp->address, 16);
+  fb.set_address_length((u32) mp->address_length);
+
+  for (int i = 0; i < mp->count; i++)
+    {
+      fp = fb.add_path();
+      fp->set_is_drop(path[i].is_drop);
+      fp->set_is_local(path[i].is_local);
+      fp->set_is_prohibit(path[i].is_prohibit);
+      fp->set_is_unreach(path[i].is_unreach);
+      fp->set_next_hop(path[i].next_hop, 16);
+      fp->set_sw_if_index(path[i].sw_if_index);
+      fp->set_afi(path[i].afi);
+      fp->set_weight(path[i].weight);
+
+    }
+
+  static_cast<ServerWriter<ip6_fib_details>*>(writer)->Write(fb);
+}
 
 extern "C" void RunServer() {
 	std::string server_address("0.0.0.0:50051");

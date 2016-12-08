@@ -24,7 +24,7 @@ def run (argv):
    except getopt.GetoptError:
      print (argv[0], ' -t <target vpp host> -p <port> -n <number of calls>')
      sys.exit (2)
-     for opt,arg in opts:
+   for opt,arg in opts:
         if opt == '-h':
            print (argv[0], ' -t <target vpp host> -p <port> -n <number of calls>')
            sys.exit ()

@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.fd.vpp.core";
+option java_outer_classname = "Core";
+
+package vppcore;
+
+// Service to setup and query VPP core
+service vpp {
+  rpc  ShowVersion (vppClientContext) returns (ShowVersionReply) {}
+  rpc  ExecCli (vppCommand) returns (vppCommandOutput) {}
+  rpc  ip6_fib_dump (vppClientContext) returns (stream ip6_fib_details) {}
+}
+
+message vppClientContext {
+  string name = 1;
+} 
+
+// The response message containing the show version response
+message ShowVersionReply {
+  string version = 1;
+  string program = 2;
+  string build_date = 3;
+  string build_directory = 4;
+}
+
+message vppCommand {
+  string command = 1;
+}
+
+message vppCommandOutput {
+  string cliout = 1;
+}
+
+message fib_path {
+    uint32 sw_if_index = 1;
+    uint32 weight = 2;
+    bool is_local = 3;
+    bool is_drop = 4;
+    bool is_unreach = 5;
+    bool is_prohibit = 6;
+    uint32 afi = 7;
+    bytes next_hop = 8;
+}
+
+message ip6_fib_details
+{
+  uint32 table_id = 1;
+  uint32  address_length = 2;
+  bytes  address = 3;
+  repeated fib_path path = 4;
+}

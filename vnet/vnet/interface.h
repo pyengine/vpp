@@ -180,8 +180,8 @@ typedef struct _vnet_device_class
   /* Link-list of all device classes set up by constructors created below */
   struct _vnet_device_class *next_class_registration;
 
-  /* Do not splice vnet_interface_output_node into TX path */
-  u8 no_flatten_output_chains;
+  /* Splice vnet_interface_output_node into TX path */
+  u8 flatten_output_chains;
 
   /* Function to set mac address. */
   vnet_interface_set_mac_address_function_t *mac_addr_change_function;
@@ -292,6 +292,9 @@ typedef struct _vnet_hw_interface_class
 
   /* Function to call when link state changes. */
   vnet_interface_function_t *link_up_down_function;
+
+  /* Function to call when link MAC changes. */
+  vnet_interface_set_mac_address_function_t *mac_addr_change_function;
 
   /* Format function to display interface name. */
   format_function_t *format_interface_name;
@@ -503,6 +506,15 @@ typedef struct
   } eth;
 } vnet_sub_interface_t;
 
+typedef enum
+{
+  /* Always flood */
+  VNET_FLOOD_CLASS_NORMAL,
+  VNET_FLOOD_CLASS_TUNNEL_MASTER,
+  /* Does not flood when tunnel master is in the same L2 BD */
+  VNET_FLOOD_CLASS_TUNNEL_NORMAL
+} vnet_flood_class_t;
+
 /* Software-interface.  This corresponds to a Ethernet VLAN, ATM vc, a
    tunnel, etc.  Configuration (e.g. IP address) gets attached to
    software interface. */
@@ -545,6 +557,8 @@ typedef struct
     /* VNET_SW_INTERFACE_TYPE_SUB. */
     vnet_sub_interface_t sub;
   };
+
+  vnet_flood_class_t flood_class;
 } vnet_sw_interface_t;
 
 typedef enum
@@ -610,6 +624,8 @@ typedef struct
   u32 pcap_pkts_to_capture;
   uword *pcap_drop_filter_hash;
 
+  /* feature_arc_index */
+  u8 output_feature_arc_index;
 } vnet_interface_main_t;
 
 static inline void

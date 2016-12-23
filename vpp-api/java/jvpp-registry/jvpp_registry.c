@@ -19,6 +19,7 @@
 #include <vpp-api/vpe.api.h>
 #undef vl_api_version
 
+
 #include <jni.h>
 #include <jvpp-common/jvpp_common.h>
 #include "io_fd_vpp_jvpp_VppJNIConnection.h"
@@ -38,6 +39,9 @@
 #define vl_printfun
 #include <vpp-api/vpe_all_api_h.h>
 #undef vl_printfun
+
+vlib_main_t vlib_global_main;
+vlib_main_t **vlib_mains;
 
 /*
  * The Java runtime isn't compile w/ -fstack-protector,
@@ -216,9 +220,7 @@ static int connect_to_vpe(char *name) {
             vl_api_control_ping_reply_t_print,
             sizeof(vl_api_control_ping_reply_t), 1);
 
-    send_initial_control_ping();
-
-    return 0;
+    return send_initial_control_ping();
 }
 
 JNIEXPORT jobject JNICALL Java_io_fd_vpp_jvpp_VppJNIConnection_clientConnect(

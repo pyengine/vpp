@@ -80,7 +80,7 @@ extern vlib_node_registration_t handoff_dispatch_node;
   _ ("net_enic", ENIC)            \
   _ ("net_vmxnet3", VMXNET3)      \
   _ ("net_af_packet", AF_PACKET)  \
-  _ ("net_bonding", BOND)         \
+  _ ("rte_bond_pmd", BOND)        \
   _ ("net_fm10k", FM10K)          \
   _ ("net_cxgbe", CXGBE)          \
   _ ("net_dpaa2", DPAA2)
@@ -189,13 +189,13 @@ typedef struct
   i8 cpu_socket;
 
   u16 flags;
-#define DPDK_DEVICE_FLAG_ADMIN_UP       (1 << 0)
-#define DPDK_DEVICE_FLAG_PROMISC        (1 << 1)
-#define DPDK_DEVICE_FLAG_PMD            (1 << 2)
-#define DPDK_DEVICE_FLAG_MAYBE_MULTISEG (1 << 3)
-
-#define DPDK_DEVICE_FLAG_HAVE_SUBIF     (1 << 5)
-#define DPDK_DEVICE_FLAG_HQOS           (1 << 6)
+#define DPDK_DEVICE_FLAG_ADMIN_UP           (1 << 0)
+#define DPDK_DEVICE_FLAG_PROMISC            (1 << 1)
+#define DPDK_DEVICE_FLAG_PMD                (1 << 2)
+#define DPDK_DEVICE_FLAG_PMD_SUPPORTS_PTYPE (1 << 3)
+#define DPDK_DEVICE_FLAG_MAYBE_MULTISEG     (1 << 4)
+#define DPDK_DEVICE_FLAG_HAVE_SUBIF         (1 << 5)
+#define DPDK_DEVICE_FLAG_HQOS               (1 << 6)
 
   u16 nb_tx_desc;
     CLIB_CACHE_LINE_ALIGN_MARK (cacheline1);
@@ -467,7 +467,6 @@ struct rte_mbuf *dpdk_zerocopy_replicate_packet_mb (vlib_buffer_t * b);
   _(NONE, "no error")							\
   _(RX_PACKET_ERROR, "Rx packet errors")				\
   _(RX_BAD_FCS, "Rx bad fcs")						\
-  _(L4_CHECKSUM_ERROR, "Rx L4 checksum errors")				\
   _(IP_CHECKSUM_ERROR, "Rx ip checksum errors")				\
   _(RX_ALLOC_FAIL, "rx buf alloc from free list failed")		\
   _(RX_ALLOC_NO_PHYSMEM, "rx buf alloc failed no physmem")		\

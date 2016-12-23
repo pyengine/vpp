@@ -43,6 +43,9 @@
 #include <vpp-api/vpe_all_api_h.h>
 #undef vl_endianfun
 
+vlib_main_t vlib_global_main;
+vlib_main_t **vlib_mains;
+
 typedef struct {
   u8 rx_thread_jmpbuf_valid;
   u8 connected_to_vlib;
@@ -247,4 +250,10 @@ pneum_write (char *p, int l)
     pneum_free(mp);
   }
   return (rv);
+}
+
+uint32_t
+pneum_get_msg_index (unsigned char * name)
+{
+  return vl_api_get_msg_index (name);
 }

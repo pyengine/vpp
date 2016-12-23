@@ -44,6 +44,7 @@ device_input_next_node_advance[((VNET_DEVICE_INPUT_N_NEXT_NODES /
 				CLIB_CACHE_LINE_BYTES) +1) * CLIB_CACHE_LINE_BYTES] =
 {
       [VNET_DEVICE_INPUT_NEXT_IP4_INPUT] = sizeof (ethernet_header_t),
+      [VNET_DEVICE_INPUT_NEXT_IP4_NCS_INPUT] = sizeof (ethernet_header_t),
       [VNET_DEVICE_INPUT_NEXT_IP6_INPUT] = sizeof (ethernet_header_t),
       [VNET_DEVICE_INPUT_NEXT_MPLS_INPUT] = sizeof (ethernet_header_t),
 };
@@ -52,6 +53,7 @@ VNET_FEATURE_ARC_INIT (device_input, static) =
 {
   .arc_name  = "device-input",
   .start_nodes = VNET_FEATURES ("device-input"),
+  .end_node = "ethernet-input",
   .arc_index_ptr = &feature_main.device_input_feature_arc_index,
 };
 

@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 
 import unittest
-from logging import *
 from framework import VppTestCase, VppTestRunner
 from template_bd import BridgeDomain
 
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
-from scapy_handlers.vxlan import VXLAN
+from scapy.layers.vxlan import VXLAN
 
 
 class TestVxlan(BridgeDomain, VppTestCase):
@@ -25,13 +24,15 @@ class TestVxlan(BridgeDomain, VppTestCase):
         return (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
                 IP(src=self.pg0.remote_ip4, dst=self.pg0.local_ip4) /
                 UDP(sport=self.dport, dport=self.dport, chksum=0) /
-                VXLAN(vni=self.vni) /
+                VXLAN(vni=self.vni, flags=self.flags) /
                 pkt)
 
     def decapsulate(self, pkt):
         """
         Decapsulate the original payload frame by removing VXLAN header
         """
+        # check if is set I flag
+        self.assertEqual(pkt[VXLAN].flags, int('0x8', 16))
         return pkt[VXLAN].payload
 
     # Method for checking VXLAN encapsulation.
@@ -63,6 +64,7 @@ class TestVxlan(BridgeDomain, VppTestCase):
 
         try:
             cls.dport = 4789
+            cls.flags = 0x8
             cls.vni = 1
 
             # Create 2 pg interfaces.
@@ -94,7 +96,8 @@ class TestVxlan(BridgeDomain, VppTestCase):
     def tearDown(self):
         super(TestVxlan, self).tearDown()
         if not self.vpp_dead:
-            info(self.vapi.cli("show bridge-domain 1 detail"))
+            self.logger.info(self.vapi.cli("show bridge-domain 1 detail"))
+
 
 if __name__ == '__main__':
     unittest.main(testRunner=VppTestRunner)

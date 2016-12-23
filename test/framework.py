@@ -5,8 +5,7 @@ import unittest
 import tempfile
 import time
 import resource
-from time import sleep
-from Queue import Queue
+from collections import deque
 from threading import Thread
 from inspect import getdoc
 from hook import StepHook, PollHook
@@ -40,10 +39,17 @@ class _PacketInfo(object):
     #: Store the copy of the former packet.
     data = None
 
+    def __eq__(self, other):
+        index = self.index == other.index
+        src = self.src == other.src
+        dst = self.dst == other.dst
+        data = self.data == other.data
+        return index and src and dst and data
 
-def pump_output(out, queue):
+
+def pump_output(out, deque):
     for line in iter(out.readline, b''):
-        queue.put(line)
+        deque.append(line)
 
 
 class VppTestCase(unittest.TestCase):
@@ -174,7 +180,8 @@ class VppTestCase(unittest.TestCase):
         cls.logger.info("Temporary dir is %s, shm prefix is %s",
                         cls.tempdir, cls.shm_prefix)
         cls.setUpConstants()
-        cls.pg_streams = []
+        cls._captures = []
+        cls._zombie_captures = []
         cls.packet_infos = {}
         cls.verbose = 0
         cls.vpp_dead = False
@@ -185,15 +192,15 @@ class VppTestCase(unittest.TestCase):
         # doesn't get called and we might end with a zombie vpp
         try:
             cls.run_vpp()
-            cls.vpp_stdout_queue = Queue()
-            cls.vpp_stdout_reader_thread = Thread(
-                target=pump_output, args=(cls.vpp.stdout, cls.vpp_stdout_queue))
+            cls.vpp_stdout_deque = deque()
+            cls.vpp_stdout_reader_thread = Thread(target=pump_output, args=(
+                cls.vpp.stdout, cls.vpp_stdout_deque))
             cls.vpp_stdout_reader_thread.start()
-            cls.vpp_stderr_queue = Queue()
-            cls.vpp_stderr_reader_thread = Thread(
-                target=pump_output, args=(cls.vpp.stderr, cls.vpp_stderr_queue))
+            cls.vpp_stderr_deque = deque()
+            cls.vpp_stderr_reader_thread = Thread(target=pump_output, args=(
+                cls.vpp.stderr, cls.vpp_stderr_deque))
             cls.vpp_stderr_reader_thread.start()
-            cls.vapi = VppPapiProvider(cls.shm_prefix, cls.shm_prefix)
+            cls.vapi = VppPapiProvider(cls.shm_prefix, cls.shm_prefix, cls)
             if cls.step:
                 hook = StepHook(cls)
             else:
@@ -210,11 +217,12 @@ class VppTestCase(unittest.TestCase):
                                    "to 'continue' VPP from within gdb?", RED))
                 raise
         except:
+            t, v, tb = sys.exc_info()
             try:
                 cls.quit()
             except:
                 pass
-            raise
+            raise t, v, tb
 
     @classmethod
     def quit(cls):
@@ -231,33 +239,33 @@ class VppTestCase(unittest.TestCase):
                           " and finish running the testcase...")
 
         if hasattr(cls, 'vpp'):
-            cls.vapi.disconnect()
+            if hasattr(cls, 'vapi'):
+                cls.vapi.disconnect()
             cls.vpp.poll()
             if cls.vpp.returncode is None:
                 cls.vpp.terminate()
             del cls.vpp
 
-        if hasattr(cls, 'vpp_stdout_queue'):
+        if hasattr(cls, 'vpp_stdout_deque'):
             cls.logger.info(single_line_delim)
             cls.logger.info('VPP output to stdout while running %s:',
                             cls.__name__)
             cls.logger.info(single_line_delim)
             f = open(cls.tempdir + '/vpp_stdout.txt', 'w')
-            while not cls.vpp_stdout_queue.empty():
-                line = cls.vpp_stdout_queue.get_nowait()
-                f.write(line)
-                cls.logger.info('VPP stdout: %s' % line.rstrip('\n'))
+            vpp_output = "".join(cls.vpp_stdout_deque)
+            f.write(vpp_output)
+            cls.logger.info('\n%s', vpp_output)
+            cls.logger.info(single_line_delim)
 
-        if hasattr(cls, 'vpp_stderr_queue'):
+        if hasattr(cls, 'vpp_stderr_deque'):
             cls.logger.info(single_line_delim)
             cls.logger.info('VPP output to stderr while running %s:',
                             cls.__name__)
             cls.logger.info(single_line_delim)
             f = open(cls.tempdir + '/vpp_stderr.txt', 'w')
-            while not cls.vpp_stderr_queue.empty():
-                line = cls.vpp_stderr_queue.get_nowait()
-                f.write(line)
-                cls.logger.info('VPP stderr: %s' % line.rstrip('\n'))
+            vpp_output = "".join(cls.vpp_stderr_deque)
+            f.write(vpp_output)
+            cls.logger.info('\n%s', vpp_output)
             cls.logger.info(single_line_delim)
 
     @classmethod
@@ -276,6 +284,17 @@ class VppTestCase(unittest.TestCase):
 
     def setUp(self):
         """ Clear trace before running each test"""
+        if self.vpp_dead:
+            raise Exception("VPP is dead when setting up the test")
+        time.sleep(.1)
+        self.vpp_stdout_deque.append(
+            "--- test setUp() for %s.%s(%s) starts here ---\n" %
+            (self.__class__.__name__, self._testMethodName,
+             self._testMethodDoc))
+        self.vpp_stderr_deque.append(
+            "--- test setUp() for %s.%s(%s) starts here ---\n" %
+            (self.__class__.__name__, self._testMethodName,
+             self._testMethodDoc))
         self.vapi.cli("clear trace")
         # store the test instance inside the test class - so that objects
         # holding the class can access instance methods (like assertEqual)
@@ -293,17 +312,36 @@ class VppTestCase(unittest.TestCase):
             i.enable_capture()
 
     @classmethod
+    def register_capture(cls, cap_name):
+        """ Register a capture in the testclass """
+        # add to the list of captures with current timestamp
+        cls._captures.append((time.time(), cap_name))
+        # filter out from zombies
+        cls._zombie_captures = [(stamp, name)
+                                for (stamp, name) in cls._zombie_captures
+                                if name != cap_name]
+
+    @classmethod
     def pg_start(cls):
-        """
-        Enable the packet-generator and send all prepared packet streams
-        Remove the packet streams afterwards
-        """
+        """ Remove any zombie captures and enable the packet generator """
+        # how long before capture is allowed to be deleted - otherwise vpp
+        # crashes - 100ms seems enough (this shouldn't be needed at all)
+        capture_ttl = 0.1
+        now = time.time()
+        for stamp, cap_name in cls._zombie_captures:
+            wait = stamp + capture_ttl - now
+            if wait > 0:
+                cls.logger.debug("Waiting for %ss before deleting capture %s",
+                                 wait, cap_name)
+                time.sleep(wait)
+                now = time.time()
+            cls.logger.debug("Removing zombie capture %s" % cap_name)
+            cls.vapi.cli('packet-generator delete %s' % cap_name)
+
         cls.vapi.cli("trace add pg-input 50")  # 50 is maximum
         cls.vapi.cli('packet-generator enable')
-        sleep(1)  # give VPP some time to process the packets
-        for stream in cls.pg_streams:
-            cls.vapi.cli('packet-generator delete %s' % stream)
-        cls.pg_streams = []
+        cls._zombie_captures = cls._captures
+        cls._captures = []
 
     @classmethod
     def create_pg_interfaces(cls, interfaces):
@@ -459,6 +497,34 @@ class VppTestCase(unittest.TestCase):
                 return None
             if info.dst == dst_index:
                 return info
+
+    def assert_equal(self, real_value, expected_value, name_or_class=None):
+        if name_or_class is None:
+            self.assertEqual(real_value, expected_value, msg)
+            return
+        try:
+            msg = "Invalid %s: %d('%s') does not match expected value %d('%s')"
+            msg = msg % (getdoc(name_or_class).strip(),
+                         real_value, str(name_or_class(real_value)),
+                         expected_value, str(name_or_class(expected_value)))
+        except:
+            msg = "Invalid %s: %s does not match expected value %s" % (
+                name_or_class, real_value, expected_value)
+
+        self.assertEqual(real_value, expected_value, msg)
+
+    def assert_in_range(
+            self,
+            real_value,
+            expected_min,
+            expected_max,
+            name=None):
+        if name is None:
+            msg = None
+        else:
+            msg = "Invalid %s: %s out of range <%s,%s>" % (
+                name, real_value, expected_min, expected_max)
+        self.assertTrue(expected_min <= real_value <= expected_max, msg)
 
 
 class VppTestResult(unittest.TestResult):

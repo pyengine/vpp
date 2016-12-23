@@ -1,5 +1,4 @@
 import socket
-from logging import *
 
 from scapy.layers.inet import IP, UDP
 from scapy.layers.inet6 import IPv6
@@ -7,6 +6,7 @@ from scapy.layers.l2 import Ether, GRE
 from scapy.packet import Raw
 
 from framework import VppTestCase
+from util import ppp
 
 """ TestLB is a subclass of  VPPTestCase classes.
 
@@ -57,7 +57,7 @@ class TestLB(VppTestCase):
     def tearDown(self):
         super(TestLB, self).tearDown()
         if not self.vpp_dead:
-            info(self.vapi.cli("show lb vip verbose"))
+            self.logger.info(self.vapi.cli("show lb vip verbose"))
 
     def getIPv4Flow(self, id):
         return (IP(dst="90.0.%u.%u" % (id / 255, id % 255),
@@ -95,10 +95,7 @@ class TestLB(VppTestCase):
         self.assertEqual(str(inner), str(self.info.data[IPver]))
 
     def checkCapture(self, gre4, isv4):
-        out = self.pg0.get_capture()
-        # This check is edited because RA appears in output, maybe disable RA?
-        # self.assertEqual(len(out), 0)
-        self.assertLess(len(out), 20)
+        self.pg0.assert_nothing_captured()
         out = self.pg1.get_capture()
         self.assertEqual(len(out), len(self.packets))
 
@@ -139,8 +136,7 @@ class TestLB(VppTestCase):
                 self.checkInner(gre, isv4)
                 load[asid] += 1
             except:
-                error("Unexpected or invalid packet:")
-                p.show()
+                self.logger.error(ppp("Unexpected or invalid packet:", p))
                 raise
 
         # This is just to roughly check that the balancing algorithm

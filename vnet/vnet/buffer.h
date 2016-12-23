@@ -67,8 +67,11 @@
 #define LOG2_BUFFER_HANDOFF_NEXT_VALID LOG2_VLIB_BUFFER_FLAG_USER(6)
 #define BUFFER_HANDOFF_NEXT_VALID (1 << LOG2_BUFFER_HANDOFF_NEXT_VALID)
 
-#define LOG2_VNET_BUFFER_RTE_MBUF_IS_VALID LOG2_VLIB_BUFFER_FLAG_USER(7)
-#define VNET_BUFFER_RTE_MBUF_IS_VALID (1 << LOG2_VNET_BUFFER_RTE_MBUF_IS_VALID)
+#define LOG2_VNET_BUFFER_LOCALLY_ORIGINATED LOG2_VLIB_BUFFER_FLAG_USER(7)
+#define VNET_BUFFER_LOCALLY_ORIGINATED (1 << LOG2_VNET_BUFFER_LOCALLY_ORIGINATED)
+
+#define LOG2_VNET_BUFFER_SPAN_CLONE LOG2_VLIB_BUFFER_FLAG_USER(8)
+#define VNET_BUFFER_SPAN_CLONE (1 << LOG2_VNET_BUFFER_SPAN_CLONE)
 
 #define foreach_buffer_opaque_union_subtype     \
 _(ethernet)                                     \
@@ -140,8 +143,24 @@ typedef struct
 	  u8 code;
 	  u32 data;
 	} icmp;
+
+	/* IP header offset from vlib_buffer.data - saved by ip*_local nodes */
+	i32 start_of_ip_header;
       };
+
     } ip;
+
+    /*
+     * MPLS:
+     * data copied from the MPLS header that was popped from the packet
+     * during the look-up.
+     */
+    struct
+    {
+      u8 ttl;
+      u8 exp;
+      u8 first;
+    } mpls;
 
     /* Multicast replication */
     struct
@@ -330,6 +349,14 @@ typedef struct
     u32 unused[6];
   };
 } vnet_buffer_opaque_t;
+
+/*
+ * The opaque field of the vlib_buffer_t is intepreted as a
+ * vnet_buffer_opaque_t. Hence it should be big enough to accommodate one.
+ */
+STATIC_ASSERT (sizeof (vnet_buffer_opaque_t) <= STRUCT_SIZE_OF (vlib_buffer_t,
+								opaque),
+	       "VNET buffer meta-data too large for vlib_buffer");
 
 #define vnet_buffer(b) ((vnet_buffer_opaque_t *) (b)->opaque)
 

@@ -160,12 +160,13 @@ dpdk_validate_rte_mbuf (vlib_main_t * vm, vlib_buffer_t * b,
      rte_mbuf header */
   if (PREDICT_FALSE ((b->flags & VNET_BUFFER_RTE_MBUF_VALID) == 0))
     {
-      last_mb = mb = rte_mbuf_from_vlib_buffer (b);
+      vlib_buffer_t *b2 = b;
+      last_mb = mb = rte_mbuf_from_vlib_buffer (b2);
       rte_pktmbuf_reset (mb);
-      while (maybe_multiseg && (b->flags & VLIB_BUFFER_NEXT_PRESENT))
+      while (maybe_multiseg && (b2->flags & VLIB_BUFFER_NEXT_PRESENT))
 	{
-	  b = vlib_get_buffer (vm, b->next_buffer);
-	  mb = rte_mbuf_from_vlib_buffer (b);
+	  b2 = vlib_get_buffer (vm, b2->next_buffer);
+	  mb = rte_mbuf_from_vlib_buffer (b2);
 	  last_mb->next = mb;
 	  last_mb = mb;
 	  rte_pktmbuf_reset (mb);
@@ -260,6 +261,8 @@ static_always_inline
 	  /* no wrap, transmit in one burst */
 	  dpdk_device_hqos_per_worker_thread_t *hqos =
 	    &xd->hqos_wt[vm->cpu_index];
+
+	  ASSERT (hqos->swq != NULL);
 
 	  dpdk_hqos_metadata_set (hqos,
 				  &tx_vector[tx_tail], tx_head - tx_tail);
@@ -768,7 +771,6 @@ VNET_DEVICE_CLASS (dpdk_device_class) = {
   .admin_up_down_function = dpdk_interface_admin_up_down,
   .subif_add_del_function = dpdk_subif_add_del_function,
   .rx_redirect_to_node = dpdk_set_interface_next_node,
-  .no_flatten_output_chains = 1,
   .mac_addr_change_function = dpdk_set_mac_address,
 };
 

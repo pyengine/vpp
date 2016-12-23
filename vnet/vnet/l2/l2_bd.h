@@ -67,12 +67,24 @@ typedef struct
   /* bridge domain id, not to be confused with bd_index */
   u32 bd_id;
 
-  /* Vector of members in the replication group */
+  /* Vector of member ports */
   l2_flood_member_t *members;
+
+  /* First flood_count member ports are flooded */
+  u32 flood_count;
+
+  /* Tunnel Master (Multicast vxlan) are always flooded */
+  u32 tun_master_count;
+
+  /* Tunnels (Unicast vxlan) are flooded if there are no masters */
+  u32 tun_normal_count;
 
   /* hash ip4/ip6 -> mac for arp/nd termination */
   uword *mac_by_ip4;
   uword *mac_by_ip6;
+
+  /* mac aging */
+  u8 mac_age;
 
 } l2_bridge_domain_t;
 
@@ -100,6 +112,7 @@ u32 bd_remove_member (l2_bridge_domain_t * bd_config, u32 sw_if_index);
 #define L2_ARP_TERM (1<<4)
 
 u32 bd_set_flags (vlib_main_t * vm, u32 bd_index, u32 flags, u32 enable);
+void bd_set_mac_age (vlib_main_t * vm, u32 bd_index, u8 age);
 
 /**
  * \brief Get or create a bridge domain.

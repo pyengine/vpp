@@ -426,14 +426,14 @@ vlib_buffer_copy (vlib_main_t * vm, vlib_buffer_t * b)
   /* 1st segment */
   s = b;
   fd = d = vlib_get_buffer (vm, new_buffers[0]);
-  clib_memcpy (vlib_buffer_get_current (d),
-	       vlib_buffer_get_current (s), s->current_length);
   d->current_data = s->current_data;
   d->current_length = s->current_length;
   d->flags = s->flags & flag_mask;
   d->total_length_not_including_first_buffer =
     s->total_length_not_including_first_buffer;
   clib_memcpy (d->opaque, s->opaque, sizeof (s->opaque));
+  clib_memcpy (vlib_buffer_get_current (d),
+	       vlib_buffer_get_current (s), s->current_length);
 
   /* next segments */
   for (i = 1; i < n_buffers; i++)
@@ -676,9 +676,9 @@ vlib_buffer_init_two_for_free_list (vlib_buffer_t * _dst0,
 }
 
 #if CLIB_DEBUG > 0
-u32 *vlib_buffer_state_validation_lock;
-uword *vlib_buffer_state_validation_hash;
-void *vlib_buffer_state_heap;
+extern u32 *vlib_buffer_state_validation_lock;
+extern uword *vlib_buffer_state_validation_hash;
+extern void *vlib_buffer_state_heap;
 #endif
 
 static inline void

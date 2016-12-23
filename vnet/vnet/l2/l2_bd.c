@@ -23,6 +23,7 @@
 #include <vnet/l2/l2_input.h>
 #include <vnet/l2/feat_bitmap.h>
 #include <vnet/l2/l2_bd.h>
+#include <vnet/l2/l2_learn.h>
 #include <vnet/l2/l2_fib.h>
 #include <vnet/l2/l2_vtr.h>
 #include <vnet/ip/ip4_packet.h>
@@ -54,6 +55,9 @@ bd_validate (l2_bridge_domain_t * bd_config)
       bd_config->feature_bitmap = ~L2INPUT_FEAT_ARP_TERM;
       bd_config->bvi_sw_if_index = ~0;
       bd_config->members = 0;
+      bd_config->flood_count = 0;
+      bd_config->tun_master_count = 0;
+      bd_config->tun_normal_count = 0;
       bd_config->mac_by_ip4 = 0;
       bd_config->mac_by_ip6 = hash_create_mem (0, sizeof (ip6_address_t),
 					       sizeof (uword));
@@ -114,31 +118,48 @@ bd_delete_bd_index (bd_main_t * bdm, u32 bd_id)
   return 0;
 }
 
+static void
+update_flood_count (l2_bridge_domain_t * bd_config)
+{
+  bd_config->flood_count = vec_len (bd_config->members) -
+    (bd_config->tun_master_count ? bd_config->tun_normal_count : 0);
+}
+
 void
 bd_add_member (l2_bridge_domain_t * bd_config, l2_flood_member_t * member)
 {
+  u32 ix;
+  vnet_sw_interface_t *sw_if = vnet_get_sw_interface
+    (vnet_get_main (), member->sw_if_index);
+
   /*
    * Add one element to the vector
-   *
+   * vector is ordered [ bvi, normal/tun_masters..., tun_normals... ]
    * When flooding, the bvi interface (if present) must be the last member
    * processed due to how BVI processing can change the packet. To enable
    * this order, we make the bvi interface the first in the vector and
    * flooding walks the vector in reverse.
    */
-  if ((member->flags == L2_FLOOD_MEMBER_NORMAL) ||
-      (vec_len (bd_config->members) == 0))
+  switch (sw_if->flood_class)
     {
-      vec_add1 (bd_config->members, *member);
+    case VNET_FLOOD_CLASS_TUNNEL_MASTER:
+      bd_config->tun_master_count++;
+      /* Fall through */
+    default:
+      /* Fall through */
+    case VNET_FLOOD_CLASS_NORMAL:
+      ix = (member->flags & L2_FLOOD_MEMBER_BVI) ? 0 :
+	vec_len (bd_config->members) - bd_config->tun_normal_count;
+      break;
+    case VNET_FLOOD_CLASS_TUNNEL_NORMAL:
+      ix = vec_len (bd_config->members);
+      bd_config->tun_normal_count++;
+      break;
+    }
 
-    }
-  else
-    {
-      /* Move 0th element to the end */
-      vec_add1 (bd_config->members, bd_config->members[0]);
-      bd_config->members[0] = *member;
-    }
+  vec_insert_elts (bd_config->members, member, 1, ix);
+  update_flood_count (bd_config);
 }
-
 
 #define BD_REMOVE_ERROR_OK        0
 #define BD_REMOVE_ERROR_NOT_FOUND 1
@@ -151,9 +172,22 @@ bd_remove_member (l2_bridge_domain_t * bd_config, u32 sw_if_index)
   /* Find and delete the member */
   vec_foreach_index (ix, bd_config->members)
   {
-    if (vec_elt (bd_config->members, ix).sw_if_index == sw_if_index)
+    l2_flood_member_t *m = vec_elt_at_index (bd_config->members, ix);
+    if (m->sw_if_index == sw_if_index)
       {
+	vnet_sw_interface_t *sw_if = vnet_get_sw_interface
+	  (vnet_get_main (), sw_if_index);
+
+	if (sw_if->flood_class != VNET_FLOOD_CLASS_NORMAL)
+	  {
+	    if (sw_if->flood_class == VNET_FLOOD_CLASS_TUNNEL_MASTER)
+	      bd_config->tun_master_count--;
+	    else if (sw_if->flood_class == VNET_FLOOD_CLASS_TUNNEL_NORMAL)
+	      bd_config->tun_normal_count--;
+	  }
 	vec_del1 (bd_config->members, ix);
+	update_flood_count (bd_config);
+
 	return BD_REMOVE_ERROR_OK;
       }
   }
@@ -229,6 +263,29 @@ bd_set_flags (vlib_main_t * vm, u32 bd_index, u32 flags, u32 enable)
     }
 
   return 0;
+}
+
+/**
+    Set the mac age for the bridge domain.
+*/
+void
+bd_set_mac_age (vlib_main_t * vm, u32 bd_index, u8 age)
+{
+  l2_bridge_domain_t *bd_config;
+  int enable = 0;
+
+  vec_validate (l2input_main.bd_configs, bd_index);
+  bd_config = vec_elt_at_index (l2input_main.bd_configs, bd_index);
+  bd_config->mac_age = age;
+
+  /* check if there is at least one bd with mac aging enabled */
+  vec_foreach (bd_config, l2input_main.bd_configs)
+    if (bd_config->bd_id != ~0 && bd_config->mac_age != 0)
+    enable = 1;
+
+  vlib_process_signal_event (vm, l2fib_mac_age_scanner_process_node.index,
+			     enable ? L2_MAC_AGE_PROCESS_EVENT_START :
+			     L2_MAC_AGE_PROCESS_EVENT_STOP, 0);
 }
 
 /**
@@ -538,6 +595,71 @@ bd_arp_term (vlib_main_t * vm,
 done:
   return error;
 }
+
+static clib_error_t *
+bd_mac_age (vlib_main_t * vm,
+	    unformat_input_t * input, vlib_cli_command_t * cmd)
+{
+  bd_main_t *bdm = &bd_main;
+  clib_error_t *error = 0;
+  u32 bd_index, bd_id;
+  u32 age;
+  uword *p;
+
+  if (!unformat (input, "%d", &bd_id))
+    {
+      error = clib_error_return (0, "expecting bridge-domain id but got `%U'",
+				 format_unformat_error, input);
+      goto done;
+    }
+
+  p = hash_get (bdm->bd_index_by_bd_id, bd_id);
+
+  if (p == 0)
+    return clib_error_return (0, "No such bridge domain %d", bd_id);
+
+  bd_index = p[0];
+
+  if (!unformat (input, "%u", &age))
+    {
+      error =
+	clib_error_return (0, "expecting ageing time in minutes but got `%U'",
+			   format_unformat_error, input);
+      goto done;
+    }
+
+  /* set the bridge domain flag */
+  if (age > 255)
+    {
+      error =
+	clib_error_return (0, "mac aging time cannot be bigger than 255");
+      goto done;
+    }
+  bd_set_mac_age (vm, bd_index, (u8) age);
+
+done:
+  return error;
+}
+
+/*?
+ * Layer 2 mac aging can be enabled and disabled on each
+ * bridge-domain. Use this command to set or disable mac aging
+ * on specific bridge-domains. It is disabled by default.
+ *
+ * @cliexpar
+ * Example of how to set mac aging (where 200 is the bridge-domain-id and
+ * 5 is aging time in minutes):
+ * @cliexcmd{set bridge-domain mac-age 200 5}
+ * Example of how to disable mac aging (where 200 is the bridge-domain-id):
+ * @cliexcmd{set bridge-domain flood 200 0}
+?*/
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (bd_mac_age_cli, static) = {
+  .path = "set bridge-domain mac-age",
+  .short_help = "set bridge-domain mac-age <bridge-domain-id> <mins>",
+  .function = bd_mac_age,
+};
+/* *INDENT-ON* */
 
 /*?
  * Modify whether or not an existing bridge-domain should terminate and respond
@@ -854,28 +976,27 @@ bd_show (vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd)
 	  if (detail || intf)
 	    {
 	      /* Show all member interfaces */
-
-	      l2_flood_member_t *member;
-	      u32 header = 0;
-
-	      vec_foreach (member, bd_config->members)
+	      int i;
+	      vec_foreach_index (i, bd_config->members)
 	      {
+		l2_flood_member_t *member =
+		  vec_elt_at_index (bd_config->members, i);
 		u32 vtr_opr, dot1q, tag1, tag2;
-		if (!header)
+		if (i == 0)
 		  {
-		    header = 1;
-		    vlib_cli_output (vm, "\n%=30s%=7s%=5s%=5s%=30s",
+		    vlib_cli_output (vm, "\n%=30s%=7s%=5s%=5s%=9s%=30s",
 				     "Interface", "Index", "SHG", "BVI",
-				     "VLAN-Tag-Rewrite");
+				     "TxFlood", "VLAN-Tag-Rewrite");
 		  }
 		l2vtr_get (vm, vnm, member->sw_if_index, &vtr_opr, &dot1q,
 			   &tag1, &tag2);
-		vlib_cli_output (vm, "%=30U%=7d%=5d%=5s%=30U",
+		vlib_cli_output (vm, "%=30U%=7d%=5d%=5s%=9s%=30U",
 				 format_vnet_sw_if_index_name, vnm,
 				 member->sw_if_index, member->sw_if_index,
 				 member->shg,
 				 member->flags & L2_FLOOD_MEMBER_BVI ? "*" :
-				 "-", format_vtr, vtr_opr, dot1q, tag1, tag2);
+				 "-", i < bd_config->flood_count ? "*" : "-",
+				 format_vtr, vtr_opr, dot1q, tag1, tag2);
 	      }
 	    }
 

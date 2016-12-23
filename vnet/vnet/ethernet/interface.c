@@ -168,6 +168,26 @@ ethernet_update_adjacency (vnet_main_t * vnm, u32 sw_if_index, u32 ai)
     }
 }
 
+static clib_error_t *
+ethernet_mac_change (vnet_hw_interface_t * hi, char *mac_address)
+{
+  ethernet_interface_t *ei;
+  ethernet_main_t *em;
+
+  em = &ethernet_main;
+  ei = pool_elt_at_index (em->interfaces, hi->hw_instance);
+
+  vec_validate (hi->hw_address,
+		STRUCT_SIZE_OF (ethernet_header_t, src_address) - 1);
+  clib_memcpy (hi->hw_address, mac_address, vec_len (hi->hw_address));
+
+  clib_memcpy (ei->address, (u8 *) mac_address, sizeof (ei->address));
+  ethernet_arp_change_mac (hi->sw_if_index);
+  ethernet_ndp_change_mac (hi->sw_if_index);
+
+  return (NULL);
+}
+
 /* *INDENT-OFF* */
 VNET_HW_INTERFACE_CLASS (ethernet_hw_interface_class) = {
   .name = "Ethernet",
@@ -177,6 +197,7 @@ VNET_HW_INTERFACE_CLASS (ethernet_hw_interface_class) = {
   .unformat_header = unformat_ethernet_header,
   .build_rewrite = ethernet_build_rewrite,
   .update_adjacency = ethernet_update_adjacency,
+  .mac_addr_change_function = ethernet_mac_change,
 };
 /* *INDENT-ON* */
 
@@ -409,7 +430,6 @@ VNET_DEVICE_CLASS (ethernet_simulated_device_class) = {
   .format_device_name = format_simulated_ethernet_name,
   .tx_function = simulated_ethernet_interface_tx,
   .admin_up_down_function = simulated_ethernet_admin_up_down,
-  .no_flatten_output_chains = 1,
 };
 /* *INDENT-ON* */
 

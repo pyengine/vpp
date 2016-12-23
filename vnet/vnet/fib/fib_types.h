@@ -32,11 +32,7 @@ typedef u32 fib_node_index_t;
  * Protocol Type. packed so it consumes a u8 only
  */
 typedef enum fib_protocol_t_ {
-#if CLIB_DEBUG > 0
-    FIB_PROTOCOL_IP4 = 1,
-#else
     FIB_PROTOCOL_IP4 = 0,
-#endif
     FIB_PROTOCOL_IP6,
     FIB_PROTOCOL_MPLS,
 }  __attribute__ ((packed)) fib_protocol_t;
@@ -206,6 +202,13 @@ extern int fib_prefix_is_cover(const fib_prefix_t *p1,
  */
 extern int fib_prefix_is_host(const fib_prefix_t *p);
 
+
+/**
+ * \brief Host prefix from ip
+ */
+extern void fib_prefix_from_ip46_addr (const ip46_address_t *addr,
+			   fib_prefix_t *pfx);
+
 extern u8 * format_fib_prefix(u8 * s, va_list * args);
 extern u8 * format_fib_forw_chain_type(u8 * s, va_list * args);
 
@@ -285,13 +288,22 @@ typedef struct fib_route_path_t_ {
      * zeros address is ambiguous.
      */
     fib_protocol_t frp_proto;
-    /**
-     * The next-hop address.
-     * Will be NULL for attached paths.
-     * Will be all zeros for attached-next-hop paths on a p2p interface
-     * Will be all zeros for a deag path.
-     */
-    ip46_address_t frp_addr;
+
+    union {
+	/**
+	 * The next-hop address.
+	 * Will be NULL for attached paths.
+	 * Will be all zeros for attached-next-hop paths on a p2p interface
+	 * Will be all zeros for a deag path.
+	 */
+	ip46_address_t frp_addr;
+
+	/**
+	 * The MPLS local Label to reursively resolve through.
+	 * This is valid when the path type is MPLS.
+	 */
+	mpls_label_t frp_local_label;
+    };
     /**
      * The interface.
      * Will be invalid for recursive paths.
@@ -311,9 +323,9 @@ typedef struct fib_route_path_t_ {
      */
     fib_route_path_flags_t frp_flags;
     /**
-     * The outgoing MPLS label. INVALID implies no label.
+     * The outgoing MPLS label Stack. NULL implies no label.
      */
-    mpls_label_t frp_label;
+    mpls_label_t *frp_label_stack;
 } fib_route_path_t;
 
 /**

@@ -26,7 +26,7 @@ License: MIT
 Version: %{_version}
 Release: %{_release}
 Requires: vpp-lib = %{_version}-%{_release}, net-tools, pciutils, python
-BuildRequires: systemd
+BuildRequires: systemd, chrpath
 
 Source: %{name}-%{_version}-%{_release}.tar.gz
 
@@ -74,7 +74,7 @@ This package contains VPP plugins
 %package python-api
 Summary: VPP api python bindings
 Group: Development/Libraries
-Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}
+Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}, python-setuptools
 
 %description python-api
 This package contains the python bindings for the vpp api
@@ -98,7 +98,12 @@ mkdir -p -m755 %{buildroot}%{_bindir}
 mkdir -p -m755 %{buildroot}%{_unitdir}
 install -p -m 755 %{_mu_build_dir}/%{_vpp_install_dir}/*/bin/* %{buildroot}%{_bindir}
 install -p -m 755 %{_mu_build_dir}/%{_vpp_build_dir}/vppapigen/vppapigen %{buildroot}%{_bindir}
-install -p -m 755 %{_mu_build_dir}/../vppapigen/pyvppapigen.py %{buildroot}%{_bindir}
+
+# core api
+mkdir -p -m755 %{buildroot}/usr/share/vpp/api
+install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/vpp/vpp-api/vpe.api.json %{buildroot}/usr/share/vpp/api
+install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/vlib-api/vlibmemory/memclnt.api.json %{buildroot}/usr/share/vpp/api
+
 #
 # configs
 #
@@ -123,13 +128,14 @@ do
 	( cd %{buildroot}%{_libdir} && 
           ln -fs $file $(echo $file | sed -e 's/\(\.so\)\.[0-9]\+.*/\1/') )
 done
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/vnet -type f -name '*.api.json' -print )
+do
+	install -p -m 644 $file %{buildroot}/usr/share/vpp/api
+done
 
 # Python bindings
-mkdir -p -m755 %{buildroot}%{python2_sitelib}/vpp_papi
-for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/*/lib/python2.7/site-packages/ -type f -print | grep -v pyc | grep -v pyo)
-do
-	install -p -m 666 $file %{buildroot}%{python2_sitelib}/vpp_papi/
-done
+mkdir -p -m755 %{buildroot}%{python2_sitelib}
+install -p -m 666 %{_mu_build_dir}/%{_vpp_install_dir}/*/lib/python2.7/site-packages/vpp_papi-*.egg %{buildroot}%{python2_sitelib}
 
 #
 # devel
@@ -154,9 +160,9 @@ done;
 
 # sample plugin
 mkdir -p -m755 %{buildroot}/usr/share/doc/vpp/examples/sample-plugin/sample
-for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/../../sample-plugin && find -type f -print)
+for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/../../plugins/sample-plugin && git ls-files .)
 do
-	install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/../../sample-plugin/$file \
+	install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/../../plugins/sample-plugin/$file \
 	   %{buildroot}/usr/share/doc/vpp/examples/sample-plugin/$file
 done
 
@@ -178,12 +184,28 @@ do
            %{buildroot}/usr/lib/vpp_api_test_plugins/$file
 done
 
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/plugins -type f -name '*.api.json' -print )
+do
+	install -p -m 644 $file %{buildroot}/usr/share/vpp/api
+done
+
+#
+# remove RPATH from ELF binaries
+#
+%{_mu_build_dir}/scripts/remove-rpath %{buildroot}
+
 %post
 sysctl --system
 %systemd_post vpp.service
 
+%post python-api
+easy_install -z %{python2_sitelib}/vpp_papi-*.egg
+
 %preun
 %systemd_preun vpp.service
+
+%preun python-api
+easy_install -mxNq vpp_papi
 
 %postun
 %systemd_postun
@@ -214,22 +236,23 @@ fi
 /usr/bin/elftool
 %config /etc/sysctl.d/80-vpp.conf
 %config /etc/vpp/startup.conf
+/usr/share/vpp/api/*
 
 %files lib
 %defattr(-,bin,bin)
 %exclude %{_libdir}/vpp_plugins
 %exclude %{_libdir}/vpp_api_test_plugins
 %{_libdir}/*
+/usr/share/vpp/api/*
 
 %files python-api
 %defattr(644,root,root)
-%{python2_sitelib}/vpp_papi/*
+%{python2_sitelib}/vpp_papi-*.egg
 
 %files devel
 %defattr(-,bin,bin)
 /usr/bin/vppapigen
 /usr/bin/jvpp_gen.py
-/usr/bin/pyvppapigen.py
 %{_includedir}/*
 %{python2_sitelib}/jvppgen/*
 /usr/share/doc/vpp/examples/sample-plugin
@@ -238,3 +261,4 @@ fi
 %defattr(-,bin,bin)
 /usr/lib/vpp_plugins/*
 /usr/lib/vpp_api_test_plugins/*
+/usr/share/vpp/api/*

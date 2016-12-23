@@ -36,25 +36,6 @@
 
 void vl_api_rpc_call_main_thread (void *fp, u8 * data, u32 data_length);
 
-typedef struct
-{
-  u32 sw_if_index;
-  ip4_address_t ip4_address;
-
-  u8 ethernet_address[6];
-
-  u16 flags;
-#define ETHERNET_ARP_IP4_ENTRY_FLAG_STATIC  (1 << 0)
-#define ETHERNET_ARP_IP4_ENTRY_FLAG_DYNAMIC (1 << 1)
-
-  u64 cpu_time_last_updated;
-
-  /**
-   * The index of the adj-fib entry created
-   */
-  fib_node_index_t fib_entry_index;
-} ethernet_arp_ip4_entry_t;
-
 /**
  * @brief Per-interface ARP configuration and state
  */
@@ -252,7 +233,7 @@ format_ethernet_arp_header (u8 * s, va_list * va)
   return s;
 }
 
-static u8 *
+u8 *
 format_ethernet_arp_ip4_entry (u8 * s, va_list * va)
 {
   vnet_main_t *vnm = va_arg (*va, vnet_main_t *);
@@ -393,13 +374,15 @@ arp_mk_complete (adj_index_t ai, ethernet_arp_ip4_entry_t * e)
 }
 
 static void
-arp_mk_incomplete (adj_index_t ai, ethernet_arp_ip4_entry_t * e)
+arp_mk_incomplete (adj_index_t ai)
 {
+  ip_adjacency_t *adj = adj_get (ai);
+
   adj_nbr_update_rewrite
     (ai,
      ADJ_NBR_REWRITE_FLAG_INCOMPLETE,
      ethernet_build_rewrite (vnet_get_main (),
-			     e->sw_if_index,
+			     adj->rewrite_header.sw_if_index,
 			     VNET_LINK_ARP,
 			     VNET_REWRITE_FOR_SW_INTERFACE_ADDRESS_BROADCAST));
 }
@@ -436,9 +419,7 @@ arp_mk_complete_walk (adj_index_t ai, void *ctx)
 static adj_walk_rc_t
 arp_mk_incomplete_walk (adj_index_t ai, void *ctx)
 {
-  ethernet_arp_ip4_entry_t *e = ctx;
-
-  arp_mk_incomplete (ai, e);
+  arp_mk_incomplete (ai);
 
   return (ADJ_WALK_RC_CONTINUE);
 }
@@ -557,9 +538,7 @@ vnet_arp_set_ip4_over_ethernet_internal (vnet_main_t * vnm,
 					 &pfx.fp_addr,
 					 e->sw_if_index,
 					 ~0,
-					 1,
-					 MPLS_LABEL_INVALID,
-					 FIB_ROUTE_PATH_FLAG_NONE);
+					 1, NULL, FIB_ROUTE_PATH_FLAG_NONE);
     }
   else
     {
@@ -812,7 +791,7 @@ unset_random_arp_entry (void)
   vnet_arp_unset_ip4_over_ethernet (vnm, e->sw_if_index, &delme);
 }
 
-static void
+static int
 arp_unnumbered (vlib_buffer_t * p0,
 		u32 pi0, ethernet_header_t * eth0, u32 sw_if_index)
 {
@@ -849,7 +828,10 @@ arp_unnumbered (vlib_buffer_t * p0,
   }));
   /* *INDENT-ON* */
 
-  ASSERT (vec_len (broadcast_swifs));
+  /* If there are no interfaces un-unmbered to this interface,
+     we are done  here. */
+  if (0 == vec_len (broadcast_swifs))
+    return 0;
 
   /* Allocate buffering if we need it */
   if (vec_len (broadcast_swifs) > 1)
@@ -954,6 +936,8 @@ arp_unnumbered (vlib_buffer_t * p0,
 
   vec_free (broadcast_swifs);
   vec_free (buffers);
+
+  return !0;
 }
 
 static uword
@@ -1154,7 +1138,10 @@ arp_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 		  goto drop2;
 		}
 	      if (is_unnum0)
-		arp_unnumbered (p0, pi0, eth0, conn_sw_if_index0);
+		{
+		  if (!arp_unnumbered (p0, pi0, eth0, conn_sw_if_index0))
+		    goto drop2;
+		}
 	      else
 		vlib_buffer_advance (p0, -adj0->rewrite_header.data_bytes);
 	    }
@@ -1278,6 +1265,25 @@ ip4_arp_entry_sort (void *a1, void *a2)
   return cmp;
 }
 
+ethernet_arp_ip4_entry_t *
+ip4_neighbor_entries (u32 sw_if_index)
+{
+  ethernet_arp_main_t *am = &ethernet_arp_main;
+  ethernet_arp_ip4_entry_t *n, *ns = 0;
+
+  /* *INDENT-OFF* */
+  pool_foreach (n, am->ip4_entry_pool, ({
+    if (sw_if_index != ~0 && n->sw_if_index != sw_if_index)
+      continue;
+    vec_add1 (ns, n[0]);
+  }));
+  /* *INDENT-ON* */
+
+  if (ns)
+    vec_sort_with_function (ns, ip4_arp_entry_sort);
+  return ns;
+}
+
 static clib_error_t *
 show_ip4_arp (vlib_main_t * vm,
 	      unformat_input_t * input, vlib_cli_command_t * cmd)
@@ -1293,22 +1299,12 @@ show_ip4_arp (vlib_main_t * vm,
   sw_if_index = ~0;
   (void) unformat_user (input, unformat_vnet_sw_interface, vnm, &sw_if_index);
 
-  es = 0;
-  /* *INDENT-OFF* */
-  pool_foreach (e, am->ip4_entry_pool,
-  ({
-    vec_add1 (es, e[0]);
-  }));
-  /* *INDENT-ON* */
-
+  es = ip4_neighbor_entries (sw_if_index);
   if (es)
     {
-      vec_sort_with_function (es, ip4_arp_entry_sort);
       vlib_cli_output (vm, "%U", format_ethernet_arp_ip4_entry, vnm, 0);
       vec_foreach (e, es)
       {
-	if (sw_if_index != ~0 && e->sw_if_index != sw_if_index)
-	  continue;
 	vlib_cli_output (vm, "%U", format_ethernet_arp_ip4_entry, vnm, e);
       }
       vec_free (es);
@@ -1624,9 +1620,10 @@ vnet_arp_unset_ip4_over_ethernet_internal (vnet_main_t * vnm,
 
   if (NULL != e)
     {
-      adj_nbr_walk_nh4 (e->sw_if_index,
-			&e->ip4_address, arp_mk_incomplete_walk, e);
       arp_entry_free (eai, e);
+
+      adj_nbr_walk_nh4 (e->sw_if_index,
+			&e->ip4_address, arp_mk_incomplete_walk, NULL);
     }
 
   return 0;
@@ -2336,7 +2333,7 @@ change_arp_mac (u32 sw_if_index, ethernet_arp_ip4_entry_t * e)
 }
 
 void
-ethernet_arp_change_mac (vnet_main_t * vnm, u32 sw_if_index)
+ethernet_arp_change_mac (u32 sw_if_index)
 {
   ethernet_arp_main_t *am = &ethernet_arp_main;
   ethernet_arp_ip4_entry_t *e;

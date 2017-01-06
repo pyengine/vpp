@@ -32,7 +32,7 @@ endif
 
 DEB_DEPENDS  = curl build-essential autoconf automake bison libssl-dev ccache
 DEB_DEPENDS += debhelper dkms git libtool libganglia1-dev libapr1-dev dh-systemd
-DEB_DEPENDS += libconfuse-dev git-review exuberant-ctags cscope
+DEB_DEPENDS += libconfuse-dev git-review exuberant-ctags cscope pkg-config
 DEB_DEPENDS += python-dev python-virtualenv python-pip lcov chrpath autoconf
 ifeq ($(OS_VERSION_ID),14.04)
 	DEB_DEPENDS += openjdk-8-jdk-headless
@@ -57,7 +57,7 @@ endif
 
 .PHONY: help bootstrap wipe wipe-release build build-release rebuild rebuild-release
 .PHONY: run run-release debug debug-release build-vat run-vat pkg-deb pkg-rpm
-.PHONY: ctags cscope plugins plugins-release build-vpp-api
+.PHONY: ctags cscope
 .PHONY: test test-debug retest retest-debug test-doc test-wipe-doc test-help test-wipe
 .PHONY: test-cov test-wipe-cov
 
@@ -69,8 +69,6 @@ help:
 	@echo " wipe-release        - wipe all products of release build "
 	@echo " build               - build debug binaries"
 	@echo " build-release       - build release binaries"
-	@echo " plugins             - build debug plugin binaries"
-	@echo " plugins-release     - build release plugin binaries"
 	@echo " rebuild             - wipe and build debug binares"
 	@echo " rebuild-release     - wipe and build release binares"
 	@echo " run                 - run debug binary"
@@ -83,8 +81,6 @@ help:
 	@echo " retest              - run functional tests"
 	@echo " retest-debug        - run functional tests (debug build)"
 	@echo " test-help           - show help on test framework"
-	@echo " build-vat           - build vpp-api-test tool"
-	@echo " build-vpp-api       - build vpp-api"
 	@echo " run-vat             - run vpp-api-test tool"
 	@echo " pkg-deb             - build DEB packages"
 	@echo " pkg-rpm             - build RPM packages"
@@ -147,7 +143,7 @@ else
 	@ln -s /usr/bin/ccache $(BR)/tools/ccache-bin/gcc
 	@ln -s /usr/bin/ccache $(BR)/tools/ccache-bin/g++
 endif
-	@make -C $(BR) V=$(V) is_build_tool=yes vppapigen-install
+	@make -C $(BR) V=$(V) is_build_tool=yes tools-install
 	@touch $@
 
 bootstrap: $(BR)/.bootstrap.ok
@@ -161,10 +157,10 @@ ifeq ($(OS_VERSION_ID),14.04)
 endif
 	@sudo -E apt-get $(CONFIRM) $(FORCE) install $(DEB_DEPENDS)
 else ifneq ("$(wildcard /etc/redhat-release)","")
-	@sudo yum groupinstall $(CONFIRM) $(RPM_DEPENDS_GROUPS)
-	@sudo yum install $(CONFIRM) $(RPM_DEPENDS)
-	@sudo yum install $(CONFIRM) --enablerepo=epel $(EPEL_DEPENDS)
-	@sudo debuginfo-install $(CONFIRM) glibc-2.17-106.el7_2.4.x86_64 openssl-libs-1.0.1e-51.el7_2.4.x86_64 zlib-1.2.7-15.el7.x86_64
+	@sudo -E yum groupinstall $(CONFIRM) $(RPM_DEPENDS_GROUPS)
+	@sudo -E yum install $(CONFIRM) $(RPM_DEPENDS)
+	@sudo -E yum install $(CONFIRM) --enablerepo=epel $(EPEL_DEPENDS)
+	@sudo -E debuginfo-install $(CONFIRM) glibc-2.17-106.el7_2.4.x86_64 openssl-libs-1.0.1e-51.el7_2.4.x86_64 zlib-1.2.7-15.el7.x86_64
 else
 	$(error "This option currently works only on Ubuntu or Centos systems")
 endif
@@ -206,27 +202,17 @@ wipe-release: $(BR)/.bootstrap.ok
 
 rebuild-release: wipe-release build-release
 
-plugins: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM)_debug,plugins-install)
-
-plugins-release: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM),plugins-install)
-
-build-vpp-api: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM)_debug,vpp-api-install)
-
 VPP_PYTHON_PREFIX=$(BR)/python
 
 define test
-	$(if $(filter-out $(3),retest),make -C $(BR) PLATFORM=$(1) TAG=$(2) vpp-api-install plugins-install vpp-install,)
+	$(if $(filter-out $(3),retest),make -C $(BR) PLATFORM=$(1) TAG=$(2) vpp-install,)
 	make -C test \
 	  BR=$(BR) \
 	  VPP_TEST_BUILD_DIR=$(BR)/build-$(2)-native \
 	  VPP_TEST_BIN=$(BR)/install-$(2)-native/vpp/bin/vpp \
-	  VPP_TEST_API_TEST_BIN=$(BR)/install-$(2)-native/vpp-api-test/bin/vpp_api_test \
-	  VPP_TEST_PLUGIN_PATH=$(BR)/install-$(2)-native/plugins/lib64/vpp_plugins \
+	  VPP_TEST_PLUGIN_PATH=$(BR)/install-$(2)-native/vpp/lib64/vpp_plugins \
 	  VPP_TEST_INSTALL_PATH=$(BR)/install-$(2)-native/ \
-	  LD_LIBRARY_PATH=$(BR)/install-$(2)-native/vpp-api/lib64/ \
+	  LD_LIBRARY_PATH=$(BR)/install-$(2)-native/vpp/lib64/ \
 	  WS_ROOT=$(WS_ROOT) V=$(V) TEST=$(TEST) VPP_PYTHON_PREFIX=$(VPP_PYTHON_PREFIX) $(3)
 endef
 
@@ -266,12 +252,12 @@ define run
 	@echo "WARNING: STARTUP_CONF not defined or file doesn't exist."
 	@echo "         Running with minimal startup config: $(MINIMAL_STARTUP_CONF)\n"
 	@cd $(STARTUP_DIR) && \
-	  sudo $(2) $(1)/vpp/bin/vpp $(MINIMAL_STARTUP_CONF) plugin_path $(1)/plugins/lib64/vpp_plugins
+	  sudo $(2) $(1)/vpp/bin/vpp $(MINIMAL_STARTUP_CONF) plugin_path $(1)/vpp/lib64/vpp_plugins
 endef
 else
 define run
 	@cd $(STARTUP_DIR) && \
-	  sudo $(2) $(1)/vpp/bin/vpp $(shell cat $(STARTUP_CONF) | sed -e 's/#.*//') plugin_path $(1)/plugins/lib64/vpp_plugins
+	  sudo $(2) $(1)/vpp/bin/vpp $(shell cat $(STARTUP_CONF) | sed -e 's/#.*//') plugin_path $(1)/vpp/lib64/vpp_plugins
 endef
 endif
 
@@ -298,7 +284,7 @@ build-vat:
 	$(call make,$(PLATFORM)_debug,vpp-api-test-install)
 
 run-vat:
-	@sudo $(BR)/install-$(PLATFORM)_debug-native/vpp-api-test/bin/vpp_api_test
+	@sudo $(BR)/install-$(PLATFORM)_debug-native/vpp/bin/vpp_api_test
 
 pkg-deb:
 	$(call make,$(PLATFORM),install-deb)

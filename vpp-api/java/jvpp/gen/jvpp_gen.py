@@ -24,6 +24,7 @@ from jvppgen import types_gen
 from jvppgen import callback_gen
 from jvppgen import notification_gen
 from jvppgen import dto_gen
+from jvppgen import proto_gen
 from jvppgen import jvpp_callback_facade_gen
 from jvppgen import jvpp_future_facade_gen
 from jvppgen import jvpp_impl_gen
@@ -43,6 +44,7 @@ from jvppgen import util
 parser = argparse.ArgumentParser(description='VPP Java API generator')
 parser.add_argument('-i', action="store", dest="inputfiles", nargs='+')
 parser.add_argument('--plugin_name', action="store", dest="plugin_name")
+parser.add_argument('--gen_proto', action="store", dest="gen_proto")
 args = parser.parse_args()
 
 sys.path.append(".")
@@ -51,6 +53,8 @@ print "Generating Java API for %s" % args.inputfiles
 print "inputfiles %s" % args.inputfiles
 plugin_name = args.plugin_name
 print "plugin_name %s" % plugin_name
+gen_proto = args.gen_proto
+print "generate proto %s" % gen_proto
 
 cfg = {}
 
@@ -64,7 +68,6 @@ for inputfile in args.inputfiles:
         cfg['messages'].extend(_cfg['messages'])
     else:
         cfg['messages'] = _cfg['messages']
-
 
 def is_request_field(field_name):
     return field_name not in {'_vl_msg_id', 'client_index', 'context'}
@@ -143,6 +146,7 @@ base_package = 'io.fd.vpp.jvpp'
 plugin_package = base_package + '.' + plugin_name
 types_package = 'types'
 dto_package = 'dto'
+proto_package = 'proto'
 callback_package = 'callback'
 notification_package = 'notification'
 future_package = 'future'
@@ -162,5 +166,7 @@ notification_gen.generate_notification_registry(func_list, base_package, plugin_
 jvpp_c_gen.generate_jvpp(func_list, plugin_name, args.inputfiles)
 jvpp_future_facade_gen.generate_jvpp(func_list, base_package, plugin_package, plugin_name.title(), dto_package, callback_package, notification_package, future_package, args.inputfiles)
 jvpp_callback_facade_gen.generate_jvpp(func_list, base_package, plugin_package, plugin_name.title(), dto_package, callback_package, notification_package, callback_facade_package, args.inputfiles)
+if(gen_proto == 'yes'):
+    proto_gen.generate_protos(func_list, base_package, plugin_package, plugin_name.title(), proto_package, args.inputfile)
 
 print "Java API for %s generated successfully" % args.inputfiles

@@ -218,7 +218,7 @@ $(jvpp_root)/io_fd_vpp_jvpp_ioamtrace_JVppIoamtraceImpl.h: ioam_trace.api.json
 	mkdir -p $(jvpp_root)/$(jvpp_trace_package_dir); 		\
 	cd $(jvpp_root)/$(jvpp_trace_package_dir);			\
 	mkdir -p dto future callfacade callback notification test; 	\
-	@srcdir@/$(jvpp_registry_root)/jvpp/gen/jvpp_gen.py -i $${dir}/ioam_trace.api.json --plugin_name ioamtrace;		\
+	@srcdir@/$(jvpp_registry_root)/jvpp/gen/jvpp_gen.py -i $${dir}/ioam_trace.api.json --plugin_name ioamtrace --gen_proto yes;		\
 	cd -;							\
 	mv -f $(jvpp_root)/$(jvpp_trace_package_dir)/jvpp_ioamtrace_gen.h $(jvpp_root)/jvpp_ioam_trace_gen.h;							\
 	cp $(srcdir)/$(jvpp_root)/$(jvpp_trace_package_dir)/test/*.java $(jvpp_root)/$(jvpp_trace_package_dir)/test/;				\

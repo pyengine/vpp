@@ -90,6 +90,26 @@ jni_2_java_type_mapping = {'u8': 'byte',
                            'f64[]': 'double[]'
                            }
 
+jni_2_proto_type_mapping = {'u8': 'uint32',
+                           'u8[]': 'bytes',
+                           'i8': 'int32',
+                           'i8[]': 'bytes',
+                           'u16': 'uint32',
+                           'u16[]': 'repeated uint32',
+                           'i16': 'int32',
+                           'i16[]': 'repeated int32',
+                           'u32': 'uint32',
+                           'u32[]': 'repeated uint32',
+                           'i32': 'int32',
+                           'i32[]': 'repeated int32',
+                           'u64': 'uint64',
+                           'u64[]': 'repeated uint64',
+                           'i64': 'int64',
+                           'i64[]': 'repeated int64',
+                           'f64': 'double',
+                           'f64[]': 'repeated double'
+                           }
+
 vpp_2_jni_type_mapping = {'u8': 'jbyte',
                           'u8[]': 'jbyteArray',
                           'i8': 'jbyte',

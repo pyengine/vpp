@@ -186,6 +186,6 @@ jvpp_c_gen.generate_jvpp(func_list, plugin_name, args.inputfiles, root_dir)
 jvpp_future_facade_gen.generate_jvpp(func_list, base_package, plugin_package, plugin_name.title(), dto_package, callback_package, notification_package, future_package, args.inputfiles)
 jvpp_callback_facade_gen.generate_jvpp(func_list, base_package, plugin_package, plugin_name.title(), dto_package, callback_package, notification_package, callback_facade_package, args.inputfiles)
 if(gen_proto == 'yes'):
-    proto_gen.generate_protos(func_list, base_package, plugin_package, plugin_name.title(), proto_package, args.inputfile)
+    proto_gen.generate_protos(func_list, base_package, plugin_package, plugin_name.title(), proto_package, args.inputfiles)
 
 print "Java API for %s generated successfully" % args.inputfiles

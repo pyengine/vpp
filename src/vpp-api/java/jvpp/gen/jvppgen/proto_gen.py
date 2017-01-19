@@ -53,7 +53,7 @@ def generate_protos(func_list, base_package, plugin_package, plugin_name, proto_
     description = "proto file"
     camel_case_plugin_name = util.underscore_to_camelcase_upper(plugin_name)
     if not os.path.exists(proto_package):
-        raise Exception("%s folder is missing" % proto_package)
+        os.mkdir(proto_package)
 
     proto_path = os.path.join(proto_package, camel_case_plugin_name + ".proto")
     print "PROTOs path: "+proto_path

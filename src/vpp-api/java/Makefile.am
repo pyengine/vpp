@@ -80,6 +80,19 @@ define japigen
 	  -d jvpp-$(1) io.fd.vpp.jvpp.$(1).$(2)
 endef
 
+define japiprotogen
+	@echo "  JAPIGEN  $@"
+	@rm -rf jvpp-$(1)/target
+	@ @srcdir@/jvpp/gen/jvpp_gen.py --plugin_name $(1) --root_dir jvpp-$(1) --gen_proto yes\
+	  -i $(jvpp_$(1)_json_files) > /dev/null
+	@find jvpp-$(1)/target -name \*.java > jvpp-$(1).files
+	@$(JAVAC) -classpath jvpp-registry/target \
+	  -d jvpp-$(1)/target @jvpp-$(1).files
+	@$(JAVAH) -force \
+	  -classpath jvpp-registry/target:jvpp-$(1)/target \
+	  -d jvpp-$(1) io.fd.vpp.jvpp.$(1).$(2)
+endef
+
 #
 # jvpp-core (Java wrapper for vpe.api)
 #
@@ -148,7 +161,7 @@ CLEANDIRS += jvpp-ioamtrace/target
 jvpp_ioamtrace_json_files = @top_builddir@/plugins/ioam/lib-trace/trace.api.json
 
 jvpp-ioamtrace/io_fd_vpp_jvpp_ioamtrace_JVppIoamtraceImpl.h: $(jvpp_registry_ok) $(jvpp_ioamtrace_json_files)
-	$(call japigen,ioamtrace,JVppIoamtraceImpl)
+	$(call japiprotogen,ioamtrace,JVppIoamtraceImpl)
 
 #
 # iOAM POT Plugin

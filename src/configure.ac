@@ -153,7 +153,6 @@ PLUGIN_ENABLED(ioam)
 PLUGIN_ENABLED(lb)
 PLUGIN_ENABLED(sixrd)
 PLUGIN_ENABLED(snat)
-PLUGIN_DISABLED(srv6sample)
 
 ###############################################################################
 # Dependency checks

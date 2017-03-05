@@ -1,5 +1,6 @@
-%define _vpp_install_dir ../%{_install_dir}
-%define _vpp_build_dir   ../build-tool-native
+%define _mu_build_dir    %{_mu_build_root_dir}
+%define _vpp_install_dir %{_install_dir}
+%define _vpp_build_dir   build-tool-native
 %define _unitdir         /lib/systemd/system
 %define _topdir          %(pwd)
 %define _builddir        %{_topdir}
@@ -25,7 +26,9 @@ License: MIT
 Version: %{_version}
 Release: %{_release}
 Requires: vpp-lib = %{_version}-%{_release}, net-tools, pciutils, python
-BuildRequires: systemd
+BuildRequires: systemd, chrpath
+
+Source: %{name}-%{_version}-%{_release}.tar.gz
 
 %description
 This package provides VPP executables: vpp, vpp_api_test, vpp_json_test
@@ -40,7 +43,6 @@ Group: System Environment/Libraries
 %description lib
 This package contains the VPP shared libraries, including:
 vppinfra - foundation library supporting vectors, hashes, bitmaps, pools, and string formatting.
-dpdk - Intel DPDK library
 svm - vm library
 vlib - vector processing library
 vlib-api - binary API library
@@ -68,13 +70,32 @@ Requires: vpp = %{_version}-%{_release}
 %description plugins
 This package contains VPP plugins
 
-%package python-api
-Summary: VPP api python bindings
+%package api-lua
+Summary: VPP api lua bindings
 Group: Development/Libraries
 Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}
 
-%description python-api
+%description api-lua
+This package contains the lua bindings for the vpp api
+
+%package api-java
+Summary: VPP api java bindings
+Group: Development/Libraries
+Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}
+
+%description api-java
+This package contains the java bindings for the vpp api
+
+%package api-python
+Summary: VPP api python bindings
+Group: Development/Libraries
+Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}, python-setuptools
+
+%description api-python
 This package contains the python bindings for the vpp api
+
+%prep
+%setup -q -n %{name}-%{_version}
 
 %pre
 # Add the vpp group
@@ -86,22 +107,26 @@ groupadd -f -r vpp
 #
 mkdir -p -m755 %{buildroot}%{_bindir}
 mkdir -p -m755 %{buildroot}%{_unitdir}
-install -p -m 755 %{_vpp_install_dir}/*/bin/* %{buildroot}%{_bindir}
-install -p -m 755 %{_vpp_build_dir}/vppapigen/vppapigen %{buildroot}%{_bindir}
-install -p -m 755 ../../vppapigen/pyvppapigen.py %{buildroot}%{_bindir}
+install -p -m 755 %{_mu_build_dir}/%{_vpp_install_dir}/vpp/bin/* %{buildroot}%{_bindir}
+
+# api
+mkdir -p -m755 %{buildroot}/usr/share/vpp/api
+
 #
 # configs
 #
 mkdir -p -m755 %{buildroot}/etc/vpp
 mkdir -p -m755 %{buildroot}/etc/sysctl.d
-install -p -m 644 vpp.service %{buildroot}%{_unitdir}
-install -p -m 644 ../../vpp/conf/startup.uiopcigeneric.conf %{buildroot}/etc/vpp/startup.conf
-install -p -m 644 ../../vpp/conf/80-vpp.conf %{buildroot}/etc/sysctl.d
+install -p -m 644 %{_mu_build_dir}/rpm/vpp.service %{buildroot}%{_unitdir}
+install -p -m 644 %{_mu_build_dir}/../src/vpp/conf/startup.conf %{buildroot}/etc/vpp/startup.conf
+install -p -m 644 %{_mu_build_dir}/../src/vpp/conf/80-vpp.conf %{buildroot}/etc/sysctl.d
 #
 # libraries
 #
 mkdir -p -m755 %{buildroot}%{_libdir}
-for file in $(find %{_vpp_install_dir}/*/lib* -type f -name '*.so.*.*.*' -print )
+mkdir -p -m755 %{buildroot}/etc/bash_completion.d
+mkdir -p -m755 %{buildroot}/usr/share/vpp
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/*/lib* -type f -name '*.so.*.*.*' -print )
 do
 	install -p -m 755 $file %{buildroot}%{_libdir}
 done
@@ -113,18 +138,37 @@ do
 	( cd %{buildroot}%{_libdir} && 
           ln -fs $file $(echo $file | sed -e 's/\(\.so\)\.[0-9]\+.*/\1/') )
 done
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/vpp/share/vpp/api  -type f -name '*.api.json' -print )
+do
+	install -p -m 644 $file %{buildroot}/usr/share/vpp/api
+done
+install -p -m 644 %{_mu_build_dir}/../src/scripts/vppctl_completion %{buildroot}/etc/bash_completion.d
+install -p -m 644 %{_mu_build_dir}/../src/scripts/vppctl-cmd-list %{buildroot}/usr/share/vpp
+
+# Lua bindings
+mkdir -p -m755 %{buildroot}/usr/share/doc/vpp/examples/lua/examples/cli
+mkdir -p -m755 %{buildroot}/usr/share/doc/vpp/examples/lua/examples/lute
+for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/../../src/vpp-api/lua && git ls-files .)
+do
+	install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/../../src/vpp-api/lua/$file \
+	   %{buildroot}/usr/share/doc/vpp/examples/lua/$file
+done
+
+# Java bindings
+mkdir -p -m755 %{buildroot}/usr/share/java
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/vpp/share/java -type f -name '*.jar' -print )
+do
+	install -p -m 644 $file %{buildroot}/usr/share/java
+done
 
 # Python bindings
-mkdir -p -m755 %{buildroot}%{python2_sitelib}/vpp_papi
-for file in $(find %{_vpp_install_dir}/*/lib/python2.7/site-packages/ -type f -print | grep -v pyc | grep -v pyo)
-do
-	install -p -m 666 $file %{buildroot}%{python2_sitelib}/vpp_papi/
-done
+mkdir -p -m755 %{buildroot}%{python2_sitelib}
+install -p -m 666 %{_mu_build_dir}/%{_vpp_install_dir}/*/lib/python2.7/site-packages/vpp_papi-*.egg %{buildroot}%{python2_sitelib}
 
 #
 # devel
 #
-for dir in $(find %{_vpp_install_dir}/*/include/ -maxdepth 0 -type d -print | grep -v dpdk)
+for dir in $(find %{_mu_build_dir}/%{_vpp_install_dir}/*/include/ -maxdepth 0 -type d -print | grep -v dpdk)
 do
 	for subdir in $(cd ${dir} && find . -type d -print)
 	do
@@ -137,16 +181,16 @@ do
 done
 
 mkdir -p -m755 %{buildroot}%{python2_sitelib}/jvppgen
-install -p -m755 ../../vpp-api/java/jvpp/gen/jvpp_gen.py %{buildroot}/usr/bin
-for i in $(ls ../../vpp-api/java/jvpp/gen/jvppgen/*.py); do
+install -p -m755 %{_mu_build_dir}/../src/vpp-api/java/jvpp/gen/jvpp_gen.py %{buildroot}/usr/bin
+for i in $(ls %{_mu_build_dir}/../src/vpp-api/java/jvpp/gen/jvppgen/*.py); do
    install -p -m666 ${i} %{buildroot}%{python2_sitelib}/jvppgen
 done;
 
 # sample plugin
 mkdir -p -m755 %{buildroot}/usr/share/doc/vpp/examples/sample-plugin/sample
-for file in $(cd %{_vpp_install_dir}/../../sample-plugin && find -type f -print)
+for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/../../src/examples/sample-plugin && git ls-files .)
 do
-	install -p -m 644 %{_vpp_install_dir}/../../sample-plugin/$file \
+	install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/../../src/examples/sample-plugin/$file \
 	   %{buildroot}/usr/share/doc/vpp/examples/sample-plugin/$file
 done
 
@@ -154,26 +198,42 @@ done
 #
 # vpp-plugins
 # 
-mkdir -p -m755 %{buildroot}%{_libdir}/vpp_plugins
-mkdir -p -m755 %{buildroot}%{_libdir}/vpp_api_test_plugins
-for file in $(cd %{_vpp_install_dir}/plugins/lib64/vpp_plugins && find -type f -print)
+mkdir -p -m755 %{buildroot}/usr/lib/vpp_plugins
+mkdir -p -m755 %{buildroot}/usr/lib/vpp_api_test_plugins
+for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/vpp/lib64/vpp_plugins && find -type f -print)
 do
-        install -p -m 644 %{_vpp_install_dir}/plugins/lib64/vpp_plugins/$file \
-           %{buildroot}%{_libdir}/vpp_plugins/$file
+        install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/vpp/lib64/vpp_plugins/$file \
+           %{buildroot}/usr/lib/vpp_plugins/$file
 done
 
-for file in $(cd %{_vpp_install_dir}/plugins/lib64/vpp_api_test_plugins && find -type f -print)
+for file in $(cd %{_mu_build_dir}/%{_vpp_install_dir}/vpp/lib64/vpp_api_test_plugins && find -type f -print)
 do
-        install -p -m 644 %{_vpp_install_dir}/plugins/lib64/vpp_api_test_plugins/$file \
-           %{buildroot}%{_libdir}/vpp_api_test_plugins/$file
+        install -p -m 644 %{_mu_build_dir}/%{_vpp_install_dir}/vpp/lib64/vpp_api_test_plugins/$file \
+           %{buildroot}/usr/lib/vpp_api_test_plugins/$file
 done
+
+for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/plugins -type f -name '*.api.json' -print )
+do
+	install -p -m 644 $file %{buildroot}/usr/share/vpp/api
+done
+
+#
+# remove RPATH from ELF binaries
+#
+%{_mu_build_dir}/scripts/remove-rpath %{buildroot}
 
 %post
 sysctl --system
 %systemd_post vpp.service
 
+%post api-python
+easy_install -z %{python2_sitelib}/vpp_papi-*.egg
+
 %preun
 %systemd_preun vpp.service
+
+%preun api-python
+easy_install -mxNq vpp_papi
 
 %postun
 %systemd_postun
@@ -184,7 +244,7 @@ pci_dirs=`find /sys/bus/pci/drivers -type d -name igb_uio -o -name uio_pci_gener
 for d in $pci_dirs; do
     for f in ${d}/*; do
         [ -e "${f}/config" ] || continue
-        echo 1 > ${f}/remove
+        echo ${f##*/} > ${d}/unbind
         basename `dirname ${f}` | xargs echo -n "Removing driver"; echo " for PCI ID" `basename ${f}`
         removed=y
     done
@@ -204,27 +264,39 @@ fi
 /usr/bin/elftool
 %config /etc/sysctl.d/80-vpp.conf
 %config /etc/vpp/startup.conf
+/usr/share/vpp/api/*
 
 %files lib
 %defattr(-,bin,bin)
 %exclude %{_libdir}/vpp_plugins
 %exclude %{_libdir}/vpp_api_test_plugins
 %{_libdir}/*
+/usr/share/vpp/api/*
+/etc/bash_completion.d/vppctl_completion
+/usr/share/vpp/vppctl-cmd-list
 
-%files python-api
+%files api-lua
+%defattr(644,root,root,644)
+/usr/share/doc/vpp/examples/lua
+
+%files api-java
 %defattr(644,root,root)
-%{python2_sitelib}/vpp_papi/*
+/usr/share/java/*
+
+%files api-python
+%defattr(644,root,root)
+%{python2_sitelib}/vpp_papi-*.egg
 
 %files devel
 %defattr(-,bin,bin)
 /usr/bin/vppapigen
 /usr/bin/jvpp_gen.py
-/usr/bin/pyvppapigen.py
 %{_includedir}/*
 %{python2_sitelib}/jvppgen/*
 /usr/share/doc/vpp/examples/sample-plugin
 
 %files plugins
 %defattr(-,bin,bin)
-%{_libdir}/vpp_plugins/*
-%{_libdir}/vpp_api_test_plugins/*
+/usr/lib/vpp_plugins/*
+/usr/lib/vpp_api_test_plugins/*
+/usr/share/vpp/api/*

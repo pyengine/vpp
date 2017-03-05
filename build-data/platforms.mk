@@ -25,8 +25,12 @@ install-deb: $(patsubst %,%-find-source,$(ROOT_PACKAGES))
 									\
 	: generate file manifests ;					\
 	find $(INSTALL_PREFIX)$(ARCH)/*/bin -type f -print		\
-	  | sed -e 's:.*:../& /usr/bin:'				\
+	  | sed -e 's:.*:../& /usr/bin:' | grep -v vppapigen		\
 	    > deb/debian/vpp.install ;					\
+									\
+	: core api definitions ;					\
+	./scripts/find-api-core-contents $(INSTALL_PREFIX)$(ARCH)	\
+	 deb/debian/vpp.install ;					\
 									\
 	: need symbolic links in the lib pkg ; 				\
 	find $(INSTALL_PREFIX)$(ARCH)/*/lib* \( -type f -o  -type l \)  \
@@ -34,6 +38,10 @@ install-deb: $(patsubst %,%-find-source,$(ROOT_PACKAGES))
 	  | grep -v plugins\/						\
 	  | sed -e 's:.*:../& /usr/lib/x86_64-linux-gnu:'		\
 	    > deb/debian/vpp-lib.install ;				\
+									\
+	: vnet api definitions ;					\
+	./scripts/find-api-lib-contents $(INSTALL_PREFIX)$(ARCH)	\
+	 deb/debian/vpp-lib.install ;					\
 									\
 	: dev package ;							\
 	./scripts/find-dev-contents $(INSTALL_PREFIX)$(ARCH)		\
@@ -43,30 +51,40 @@ install-deb: $(patsubst %,%-find-source,$(ROOT_PACKAGES))
 	./scripts/find-plugins-contents $(INSTALL_PREFIX)$(ARCH)	\
 	 deb/debian/vpp-plugins.install ;				\
 									\
-	: python-api package ;						\
-	./scripts/find-python-api-contents $(INSTALL_PREFIX)$(ARCH)	\
-	 deb/debian/vpp-python-api.install ;				\
+	: vpp-api-lua package ;						\
+	./scripts/find-vpp-api-lua-contents $(INSTALL_PREFIX)$(ARCH)	\
+	 deb/debian/vpp-api-lua.install ;				\
 									\
-	: dpdk headers ;						\
-	./scripts/find-dpdk-contents $(INSTALL_PREFIX)$(ARCH)		\
-	 deb/debian/vpp-dpdk-dev.install ;				\
+	: vpp-api-java package ;					\
+	./scripts/find-vpp-api-java-contents $(INSTALL_PREFIX)$(ARCH)	\
+	 deb/debian/vpp-api-java.install ;				\
+									\
+	: vpp-api-python package ;					\
+	./scripts/find-vpp-api-python-contents $(INSTALL_PREFIX)$(ARCH)	\
+	 deb/debian/vpp-api-python.install ;				\
 									\
 	: bin package needs startup config ; 				\
-	echo ../../vpp/conf/startup.conf /etc/vpp 			\
+	echo ../../src/vpp/conf/startup.conf /etc/vpp 			\
 	   >> deb/debian/vpp.install ;					\
 									\
 	: and sysctl config ; 						\
-	echo ../../vpp/conf/80-vpp.conf /etc/sysctl.d 			\
+	echo ../../src/vpp/conf/80-vpp.conf /etc/sysctl.d 		\
+	   >> deb/debian/vpp.install ;					\
+									\
+	: bash completion for vppctl ;					\
+	echo ../../src/scripts/vppctl_completion /etc/bash_completion.d	\
+	   >> deb/debian/vpp.install ;					\
+									\
+	: move dictionary of vppctl commands ;				\
+	echo ../../src/scripts/vppctl-cmd-list /usr/share/vpp		\
 	   >> deb/debian/vpp.install ;					\
 									\
 	: dev package needs a couple of additions ;			\
-	echo ../build-tool-native/vppapigen/vppapigen /usr/bin		\
+	echo ../$(INSTALL_PREFIX)$(ARCH)/vpp/bin/vppapigen /usr/bin	\
 	   >> deb/debian/vpp-dev.install ;				\
-	echo ../../vppapigen/pyvppapigen.py /usr/bin			\
-           >> deb/debian/vpp-dev.install ;				\
-	echo ../../vpp-api/java/jvpp/gen/jvpp_gen.py /usr/bin		\
+	echo ../../src/vpp-api/java/jvpp/gen/jvpp_gen.py /usr/bin	\
 	   >> deb/debian/vpp-dev.install ;				\
-	for i in $$(ls ../vpp-api/java/jvpp/gen/jvppgen/*.py); do	\
+	for i in $$(ls ../src/vpp-api/java/jvpp/gen/jvppgen/*.py); do	\
 	   echo ../$${i} /usr/lib/python2.7/dist-packages/jvppgen	\
 	       >> deb/debian/vpp-dev.install;				\
 	done;								\
@@ -89,7 +107,11 @@ install-rpm: $(patsubst %,%-find-source,$(ROOT_PACKAGES))
 	      $(ROOT_PACKAGES))	|| exit 1;				\
 									\
 	cd rpm ;							\
+	mkdir -p SOURCES ;                                              \
+	if test -f *.tar.gz ; then mv *.tar.gz SOURCES ; fi ;           \
 	rpmbuild -bb --define "_topdir $$PWD" --define			\
-		"_install_dir $(INSTALL_PREFIX)$(ARCH)" vpp.spec ;	\
+		"_install_dir $(INSTALL_PREFIX)$(ARCH)"                 \
+		--define "_mu_build_root_dir $(MU_BUILD_ROOT_DIR)"      \
+		vpp.spec ;                                              \
 	mv $$(find RPMS -name \*.rpm -type f) ..
 

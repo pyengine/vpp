@@ -35,6 +35,7 @@ OS_ID ?= $(shell grep '^ID=' /etc/os-release | cut -f2- -d= | sed -e 's/\"//g')
 # Package dependencies
 DOC_DEB_DEPENDS = doxygen graphviz python-pyparsing python-jinja2
 DOC_RPM_DEPENDS = doxygen graphviz pyparsing python-jinja2
+DOC_SUSE_RPM_DEPENDS = doxygen graphviz python-pyparsing python-Jinja2
 DOC_MAC_BIN_DEPENDS = doxygen dot git
 DOC_MAC_PY_DEPENDS = pyparsing jinja2
 
@@ -42,21 +43,24 @@ DOC_MAC_PY_DEPENDS = pyparsing jinja2
 DOXY_DIR ?= $(WS_ROOT)/doxygen
 
 # Primary source directories
+DOXY_SRC ?= src
 DOXY_SRC_DIRECTORIES = \
-	vppinfra \
-	svm \
-	vlib \
-	vlib-api \
-	vnet \
-	vpp \
-	vpp-api
+	$(DOXY_SRC)/vppinfra \
+	$(DOXY_SRC)/svm \
+	$(DOXY_SRC)/vlib \
+	$(DOXY_SRC)/vlibapi \
+	$(DOXY_SRC)/vlibmemory \
+	$(DOXY_SRC)/vlibsocket \
+	$(DOXY_SRC)/vnet \
+	$(DOXY_SRC)/vpp \
+	$(DOXY_SRC)/vpp-api
 
 # Input directories and files
 DOXY_INPUT ?= \
 	$(wildcard $(WS_ROOT)/*.md) \
 	$(wildcard $(DOXY_DIR)/*.md) \
 	$(DOXY_SRC_DIRECTORIES) \
-	plugins
+	$(DOXY_SRC)/plugins
 
 # Strip leading workspace path from input names
 DOXY_INPUT := $(subst $(WS_ROOT)/,,$(DOXY_INPUT))
@@ -67,8 +71,9 @@ DOXY_INPUT := $(subst $(WS_ROOT)/,,$(DOXY_INPUT))
 # there's a DPDK equivalent that conflicts.
 # These must be left-anchored paths for the regexp below to work.
 DOXY_EXCLUDE ?= \
-	vlib/vlib/buffer.c \
-	vlib/example \
+	$(DOXY_SRC)/vlib/vlib/buffer.c \
+	$(DOXY_SRC)/vlib/example \
+	$(DOXY_SRC)/vpp-api/lua \
 	plugins/sample-plugin
 
 # Generate a regexp for filenames to exclude
@@ -76,10 +81,6 @@ DOXY_EXCLUDE_REGEXP = ($(subst .,\.,$(shell echo '$(strip $(DOXY_EXCLUDE))' | se
 
 # Include all the normal source directories in the include file path
 DOXY_INCLUDE_PATH = $(DOXY_SRC_DIRECTORIES)
-
-# Also include any plugin directories that exist
-DOXY_INCLUDE_PATH += \
-	$(shell find $(WS_ROOT)/plugins -maxdepth 1 -type d | sed -e 's@^$(WS_ROOT)/*@@')
 
 # Find API header directories and include them in the header path.
 # This is only useful if VPP and plugins are already built; nothing
@@ -121,6 +122,7 @@ SIPHONS ?= clicmd syscfg
 
 SIPHON_FILES = $(addprefix $(SIPHON_INPUT)/,$(addsuffix .siphon,$(SIPHONS)))
 SIPHON_DOCS = $(addprefix $(SIPHON_OUTPUT)/,$(addsuffix .md,$(SIPHONS)))
+SIPHON_ITEMLIST = $(addprefix $(SIPHON_OUTPUT)/,$(addsuffix .itemlist,$(filter clicmd,$(SIPHONS))))
 
 $(BR)/.doxygen-bootstrap.ok: Makefile
 	@echo "Checking whether dependencies for Doxygen are installed..."
@@ -134,7 +136,7 @@ ifeq ($(OS_ID),ubuntu)
 			sudo apt-get $(CONFIRM) $(FORCE) install $$inst; \
 		fi
 	@if [ ! -s /usr/lib/graphviz/config6a ]; then \
-		echo "Rebuidlding system Graphviz configuration."; \
+		echo "Rebuilding system Graphviz configuration."; \
 		sudo dot -c; \
 	fi
 else ifneq ("$(wildcard /etc/redhat-release)","")
@@ -154,8 +156,10 @@ else ifeq ($(OS_ID),darwin)
 			false; \
 		); \
 	done
+else ifeq ($(OS_ID),opensuse)
+	@sudo zypper install $(CONFIRM) $(DOC_SUSE_RPM_DEPENDS)
 else
-	$(error "Building documentation currently works only on Ubuntu, CentOS or MacOS systems.")
+	$(error "Building documentation currently works only on Ubuntu, CentOS, MacOS and OpenSUSE systems.")
 endif
 	@touch $@
 
@@ -163,9 +167,11 @@ endif
 bootstrap-doxygen: $(BR)/.doxygen-bootstrap.ok
 
 .DELETE_ON_ERROR: $(BR)/.doxygen-siphon.dep
-$(BR)/.doxygen-siphon.dep: Makefile
+$(BR)/.doxygen-siphon.dep: Makefile \
+		$(addprefix,$(WSROOT),$(DOXY_INPUT))
 	@echo "Building siphon dependencies..."
-	@set -e; rm -f "$@"; for input in $(DOXY_INPUT); do \
+	@rm -f "$@"; for input in $(DOXY_INPUT); do \
+		[ -e "$(WS_ROOT)/$$input" ] && \
 		find "$(WS_ROOT)/$$input" -type f \
 			\( -name '*.[ch]' -or -name '*.dox' \) -print \
 			| grep -v -E '^$(WS_ROOT)/$(DOXY_EXCLUDE_REGEXP)' \
@@ -181,7 +187,15 @@ $(BR)/.doxygen-siphon.dep: Makefile
 .NOTPARALLEL: $(SIPHON_FILES)
 $(SIPHON_FILES): $(BR)/.doxygen-bootstrap.ok \
 		$(DOXY_DIR)/siphon-generate \
+		$(addprefix,$(WSROOT),$(DOXY_INPUT)) \
 		$(wildcard $(DOXY_DIR)/siphon/*.py)
+	@echo "Validating source tree..."
+	@set -e; for input in $(DOXY_INPUT); do \
+		if [ ! -e "$(WS_ROOT)/$$input" ]; then \
+			echo "ERROR: Input path '$$input' does not exist." >&2; \
+			exit 1; \
+		fi; \
+	done
 	@rm -rf "$(SIPHON_INPUT)" "$(SIPHON_OUTPUT)"
 	@mkdir -p "$(SIPHON_INPUT)" "$(SIPHON_OUTPUT)"
 	@touch $(SIPHON_INPUT)/files
@@ -200,24 +214,37 @@ $(SIPHON_FILES): $(BR)/.doxygen-bootstrap.ok \
 		--output="$(SIPHON_INPUT)" \
 		"@$(SIPHON_INPUT)/files"
 
-# Process the .siphon source fragments and render them into doxygen flavored
-# markdown documentation
-.DELETE_ON_ERROR: $(SIPHON_DOCS)
-$(SIPHON_OUTPUT)/%.md: $(SIPHON_INPUT)/%.siphon \
+# Evaluate this to build a siphon doc output target for each desired
+# output type:
+# $(eval $(call siphon-process,file_extension,output_type_name))
+define siphon-process
+$(SIPHON_OUTPUT)/%.$(1): $(SIPHON_INPUT)/%.siphon \
 		$(DOXY_DIR)/siphon-process \
 		$(wildcard $(DOXY_DIR)/siphon/*.py) \
-		$(wildcard $(DOXY_DIR)/siphon_templates/*/*.md)
-	@echo "Processing siphon from $(notdir $<)..."
+		$(wildcard $(DOXY_DIR)/siphon_templates/$(2)/*/*.$(1))
+	@echo "Processing siphon for $(2) from $$(notdir $$<)..."
 	@set -e; \
 	cd "$(WS_ROOT)"; \
 	$(DOXY_DIR)/siphon-process \
-		--type=$(basename $(notdir $<)) \
-		--output="$@" \
-		"$<"
+		--type=$$(basename $$(notdir $$<)) \
+		--format=$(2) \
+		--output="$$@" \
+		"$$<"
+endef
 
-# This target can be used just to generate the siphoned docs
+# Process the .siphon source fragments and render them into doxygen flavored
+# markdown documentation
+.DELETE_ON_ERROR: $(SIPHON_DOCS)
+$(eval $(call siphon-process,md,markdown))
+
+# Process the .siphon source fragments and render them into a list of cli
+# commands.
+.DELETE_ON_ERROR: $(SIPHON_ITEMLIST)
+$(eval $(call siphon-process,itemlist,itemlist))
+
+# This target can be used just to generate the siphoned things
 .PHONY: doxygen-siphon
-doxygen-siphon: $(SIPHON_DOCS)
+doxygen-siphon: $(SIPHON_DOCS) $(SIPHON_ITEMLIST)
 
 # Generate the doxygen docs
 .PHONY: doxygen

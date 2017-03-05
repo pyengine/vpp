@@ -57,7 +57,6 @@ class PollHook(Hook):
     """ Hook which checks if the vpp subprocess is alive """
 
     def __init__(self, testcase):
-        self.vpp_dead = False
         self.testcase = testcase
         self.logger = testcase.logger
 
@@ -92,7 +91,7 @@ class PollHook(Hook):
         Poll the vpp status and throw an exception if it's not running
         :raises VppDiedError: exception if VPP is not running anymore
         """
-        if self.vpp_dead:
+        if self.testcase.vpp_dead:
             # already dead, nothing to do
             return
 
@@ -101,9 +100,13 @@ class PollHook(Hook):
             signaldict = dict(
                 (k, v) for v, k in reversed(sorted(signal.__dict__.items()))
                 if v.startswith('SIG') and not v.startswith('SIG_'))
-            msg = "VPP subprocess died unexpectedly with returncode %d [%s]" % (
-                self.testcase.vpp.returncode,
-                signaldict[abs(self.testcase.vpp.returncode)])
+
+            if self.testcase.vpp.returncode in signaldict:
+                s = signaldict[abs(self.testcase.vpp.returncode)]
+            else:
+                s = "unknown"
+            msg = "VPP subprocess died unexpectedly with returncode %d [%s]" %\
+                (self.testcase.vpp.returncode, s)
             self.logger.critical(msg)
             core_path = self.testcase.tempdir + '/core'
             if os.path.isfile(core_path):
@@ -111,27 +114,27 @@ class PollHook(Hook):
             self.testcase.vpp_dead = True
             raise VppDiedError(msg)
 
-    def after_api(self, api_name, api_args):
+    def before_api(self, api_name, api_args):
         """
-        Check if VPP died after executing an API
+        Check if VPP died before executing an API
 
         :param api_name: name of the API
         :param api_args: tuple containing the API arguments
         :raises VppDiedError: exception if VPP is not running anymore
 
         """
-        super(PollHook, self).after_api(api_name, api_args)
+        super(PollHook, self).before_api(api_name, api_args)
         self.poll_vpp()
 
-    def after_cli(self, cli):
+    def before_cli(self, cli):
         """
-        Check if VPP died after executing a CLI
+        Check if VPP died before executing a CLI
 
         :param cli: CLI string
         :raises Exception: exception if VPP is not running anymore
 
         """
-        super(PollHook, self).after_cli(cli)
+        super(PollHook, self).before_cli(cli)
         self.poll_vpp()
 
 

@@ -798,7 +798,7 @@ ip6_routes_add_del (ip6_sr_tunnel_t * t, int is_del)
 
   if (is_del)
     {
-      fib_table_entry_delete (t->rx_fib_index, &pfx, FIB_SOURCE_SR);
+      fib_table_entry_delete (t->rx_fib_index, &pfx, FIB_SOURCE_API);
     }
   else
     {
@@ -807,7 +807,7 @@ ip6_routes_add_del (ip6_sr_tunnel_t * t, int is_del)
       dpo_set (&dpo, sr_dpo_type, DPO_PROTO_IP6, t - sm->tunnels);
       fib_table_entry_special_dpo_add (t->rx_fib_index,
 				       &pfx,
-				       FIB_SOURCE_SR,
+				       FIB_SOURCE_API,
 				       FIB_ENTRY_FLAG_EXCLUSIVE, &dpo);
       dpo_reset (&dpo);
     }
@@ -3492,6 +3492,205 @@ VLIB_CLI_COMMAND (test_sr_debug, static) = {
     .function = test_sr_debug_fn,
 };
 /* *INDENT-ON* */
+
+
+typedef struct
+{
+  u32 next_index;
+} ip6_sr_dynamic_tunnel_trace_t;
+
+/* packet trace format function */
+static u8 *
+format_ip6_sr_dynamic_tunnel_trace (u8 * s, va_list * args)
+{
+  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
+  CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
+  ip6_sr_dynamic_tunnel_trace_t *t = va_arg (*args,
+					     ip6_sr_dynamic_tunnel_trace_t *);
+
+  s = format (s, "IP6_SR_DYNAMIC_TUNNEL: next index %d", t->next_index);
+  return s;
+}
+
+vlib_node_registration_t ip6_sr_dynamic_tunnel_node;
+
+#define foreach_ip6_sr_dynamic_tunnel_error \
+_(CREATED, "Dynamic SR tunnels created") \
+_(DELETED, "Dynamic SR tunnels deleted")
+
+typedef enum
+{
+#define _(sym,str) IP6_SR_DYNAMIC_TUNNEL_ERROR_##sym,
+  foreach_ip6_sr_dynamic_tunnel_error
+#undef _
+    IP6_SR_DYNAMIC_TUNNEL_N_ERROR,
+} ip6_sr_dynamic_tunnel_error_t;
+
+static char *ip6_sr_dynamic_tunnel_error_strings[] = {
+#define _(sym,string) string,
+  foreach_ip6_sr_dynamic_tunnel_error
+#undef _
+};
+
+#define foreach_ip6_sr_dynamic_tunnel_input_next    \
+  _(IP6_LOOKUP, "ip6-lookup")                   \
+  _(DROP, "error-drop")
+
+typedef enum
+{
+#define _(s,n) IP6_SR_DYNAMIC_TUNNEL_INPUT_NEXT_##s,
+  foreach_ip6_sr_dynamic_tunnel_input_next
+#undef _
+    IP6_SR_DYNAMIC_TUNNEL_INPUT_N_NEXT,
+} ip6_sr_dynamic_tunnel_input_next_t;
+
+static uword
+ip6_sr_dynamic_tunnel_node_fn (vlib_main_t * vm,
+			       vlib_node_runtime_t * node,
+			       vlib_frame_t * frame)
+{
+  u32 n_left_from, *from, *to_next;
+  ip_lookup_next_t next_index;
+  u32 deleted = 0, created = 0;
+
+  from = vlib_frame_vector_args (frame);
+  n_left_from = frame->n_vectors;
+  next_index = node->cached_next_index;
+
+  while (n_left_from > 0)
+    {
+      u32 n_left_to_next;
+
+      vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
+
+      while (n_left_from > 0 && n_left_to_next > 0)
+	{
+	  u32 bi0;
+	  vlib_buffer_t *b0;
+	  u32 next0;
+	  ip6_header_t *ip0;
+	  tcp_header_t *tcp0;
+	  u32 tcp_offset0;
+	  ip6_sr_header_t *sr0;
+	  ip6_sr_add_del_tunnel_args_t _a, *a = &_a;
+	  int rv = 0;
+	  ip6_address_t *segments = 0, *seg;
+	  int i;
+
+	  next0 = IP6_SR_DYNAMIC_TUNNEL_INPUT_NEXT_IP6_LOOKUP;
+	  /* speculatively enqueue b0 to the current next frame */
+	  bi0 = from[0];
+	  to_next[0] = bi0;
+	  from += 1;
+	  to_next += 1;
+	  n_left_from -= 1;
+	  n_left_to_next -= 1;
+
+	  b0 = vlib_get_buffer (vm, bi0);
+
+	  ip0 = vlib_buffer_get_current (b0);
+	  if (IP_PROTOCOL_TCP !=
+	      ip6_locate_header (b0, ip0, IP_PROTOCOL_TCP, &tcp_offset0))
+	    {
+	      goto TRACE0;
+	    }
+	  tcp0 = (tcp_header_t *) ((u8 *) ip0 + tcp_offset0);
+	  if ((tcp0->flags & TCP_FLAG_SYN) == TCP_FLAG_SYN &&
+	      (tcp0->flags & TCP_FLAG_ACK) == TCP_FLAG_ACK)
+	    {
+	      /* Look for SR header and create a tunnel */
+	      sr0 = (ip6_sr_header_t *) (ip0 + 1);
+	      if (PREDICT_FALSE (sr0->type != ROUTING_HEADER_TYPE_SR))
+		{
+		  goto TRACE0;
+		}
+	      memset (a, 0, sizeof (*a));
+	      a->src_address = (ip6_address_t *) & ip0->dst_address;
+	      a->dst_address = (ip6_address_t *) & ip0->src_address;
+	      a->dst_mask_width = 128;
+	      a->flags_net_byte_order =
+		clib_host_to_net_u16 (IP6_SR_HEADER_FLAG_CLEANUP);
+	      a->is_del = 0;
+	      for (i = 1; i < sr0->first_segment; i++)
+		{
+		  vec_add2 (segments, seg, 1);
+		  seg->as_u64[0] =
+		    sr0->segments[sr0->first_segment - i].as_u64[0];
+		  seg->as_u64[1] =
+		    sr0->segments[sr0->first_segment - i].as_u64[1];
+		}
+	      a->segments = segments;
+	      a->name =
+		format (0, "dyn%U", format_ip6_address, &ip0->src_address);
+	      rv = ip6_sr_add_del_tunnel (a);
+	      if (rv == 0)
+		created++;
+	    }
+	  else if (((tcp0->flags & TCP_FLAG_SYN) == TCP_FLAG_SYN &&
+		    (tcp0->flags & TCP_FLAG_ACK) == 0) ||
+		   (tcp0->flags & TCP_FLAG_RST) == TCP_FLAG_RST)
+	    {
+	      /* delete the tunnel */
+	      memset (a, 0, sizeof (*a));
+	      a->src_address = (ip6_address_t *) & ip0->src_address;
+	      a->dst_address = (ip6_address_t *) & ip0->dst_address;
+	      a->dst_mask_width = 128;
+	      a->is_del = 1;
+	      a->name =
+		format (0, "dyn%U", format_ip6_address, &ip0->dst_address);
+	      rv = ip6_sr_add_del_tunnel (a);
+	      if (rv == 0)
+		deleted++;
+	    }
+	TRACE0:
+	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)
+			     && (b0->flags & VLIB_BUFFER_IS_TRACED)))
+	    {
+	      ip6_sr_dynamic_tunnel_trace_t *t =
+		vlib_add_trace (vm, node, b0, sizeof (*t));
+	      t->next_index = next0;
+	    }
+
+	  /* verify speculative enqueue, maybe switch current next frame */
+	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
+					   to_next, n_left_to_next,
+					   bi0, next0);
+	}
+
+      vlib_put_next_frame (vm, node, next_index, n_left_to_next);
+    }
+
+  vlib_node_increment_counter (vm, ip6_sr_dynamic_tunnel_node.index,
+			       IP6_SR_DYNAMIC_TUNNEL_ERROR_CREATED, created);
+  vlib_node_increment_counter (vm, ip6_sr_dynamic_tunnel_node.index,
+			       IP6_SR_DYNAMIC_TUNNEL_ERROR_DELETED, deleted);
+
+  return frame->n_vectors;
+}
+
+VLIB_REGISTER_NODE (ip6_sr_dynamic_tunnel_node) =
+/* *INDENT-OFF* */
+{
+  .function = ip6_sr_dynamic_tunnel_node_fn,
+  .name = "ip6-sr-dynamic-tunnel",
+  .vector_size = sizeof (u32),
+  .format_trace = format_ip6_sr_dynamic_tunnel_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = ARRAY_LEN (ip6_sr_dynamic_tunnel_error_strings),
+  .error_strings =  ip6_sr_dynamic_tunnel_error_strings,
+  /* See ip/lookup.h */
+  .n_next_nodes = IP6_SR_DYNAMIC_TUNNEL_INPUT_N_NEXT,
+  .next_nodes =
+  {
+#define _(s,n) [IP6_SR_DYNAMIC_TUNNEL_INPUT_NEXT_##s] = n,
+    foreach_ip6_sr_dynamic_tunnel_input_next
+#undef _
+  },
+};
+/* *INDENT-ON* */
+
+VLIB_NODE_FUNCTION_MULTIARCH (ip6_sr_dynamic_tunnel_node,
+			      ip6_sr_dynamic_tunnel_node_fn)
 
 /*
  * fd.io coding-style-patch-verification: ON

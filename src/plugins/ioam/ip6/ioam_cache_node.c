@@ -141,8 +141,8 @@ ip6_ioam_cache_node_fn (vlib_main_t * vm,
 		  hbh0 = (ip6_hop_by_hop_header_t *) (ip0 + 1);
 		  if (0 == ioam_cache_add (p0,
                                            ip0,
-					   clib_net_to_host_u16(tcp0->ports.src),
-					   clib_net_to_host_u16(tcp0->ports.dst),
+					   clib_net_to_host_u16(tcp0->src_port),
+					   clib_net_to_host_u16(tcp0->dst_port),
 					   hbh0,
 					   clib_net_to_host_u32(tcp0->seq_number) + 1))
 		    {
@@ -306,8 +306,8 @@ ip6_add_from_cache_hbh_node_fn (vlib_main_t * vm,
 	      (tcp0->flags & TCP_FLAG_RST) == TCP_FLAG_RST)
 	    {
 	      if (0 != (entry = ioam_cache_lookup (ip0,
-						   clib_net_to_host_u16(tcp0->ports.src),
-						   clib_net_to_host_u16(tcp0->ports.dst),
+						   clib_net_to_host_u16(tcp0->src_port),
+						   clib_net_to_host_u16(tcp0->dst_port),
 						   clib_net_to_host_u32(tcp0->ack_number))))
 		{
 		  rewrite = entry->ioam_rewrite_string;

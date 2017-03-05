@@ -274,35 +274,13 @@ typedef CLIB_PACKED(struct {
 #define IOAM_E2E_CACHE_OPTION_RND ((sizeof(ioam_e2e_cache_option_t) + 7) & ~7)
 #define IOAM_E2E_CACHE_HBH_EXT_LEN (IOAM_E2E_CACHE_OPTION_RND >> 3)
 
-/* get first interface address */
-static inline ip6_address_t *
-ip6_interface_first_address (u32 sw_if_index)
-{
-  ip6_main_t *im = &ip6_main;
-  ip_lookup_main_t *lm = &im->lookup_main;
-  ip_interface_address_t *ia = 0;
-  ip6_address_t *result = 0;
-
-  foreach_ip_interface_address (lm, ia, sw_if_index,
-                                1 /* honor unnumbered */ ,
-                                (
-				{
-                                  ip6_address_t * a =
-				    ip_interface_address_get_address (lm, ia);
-                                  if (ip6_address_is_link_local_unicast(a))
-				    continue;
-                                  result = a;
-                                  break;
-				}
-				  ));
-  return result;
-}
 static inline void
 ioam_e2e_id_rewrite_handler (ioam_e2e_id_option_t *e2e_option,
                              vlib_buffer_t *b0)
 {
+  ip6_main_t *im = &ip6_main;
   ip6_address_t *my_address = 0;
-  my_address = ip6_interface_first_address(vnet_buffer (b0)->sw_if_index[VLIB_RX]);
+  my_address = ip6_interface_first_address(im, vnet_buffer (b0)->sw_if_index[VLIB_RX]);
   if (my_address)
     {
       e2e_option->id.as_u64[0] = my_address->as_u64[0];

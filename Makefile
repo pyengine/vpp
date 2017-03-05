@@ -11,8 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-WS_ROOT=$(CURDIR)
-BR=$(WS_ROOT)/build-root
+export WS_ROOT=$(CURDIR)
+export BR=$(WS_ROOT)/build-root
 CCACHE_DIR?=$(BR)/.ccache
 GDB?=gdb
 PLATFORM?=vpp
@@ -30,10 +30,16 @@ OS_ID        = $(shell grep '^ID=' /etc/os-release | cut -f2- -d= | sed -e 's/\"
 OS_VERSION_ID= $(shell grep '^VERSION_ID=' /etc/os-release | cut -f2- -d= | sed -e 's/\"//g')
 endif
 
+ifeq ($(filter ubuntu debian,$(OS_ID)),$(OS_ID))
+PKG=deb
+else ifeq ($(filter rhel centos,$(OS_ID)),$(OS_ID))
+PKG=rpm
+endif
+
 DEB_DEPENDS  = curl build-essential autoconf automake bison libssl-dev ccache
 DEB_DEPENDS += debhelper dkms git libtool libganglia1-dev libapr1-dev dh-systemd
-DEB_DEPENDS += libconfuse-dev git-review exuberant-ctags cscope
-DEB_DEPENDS += python-dev python-virtualenv
+DEB_DEPENDS += libconfuse-dev git-review exuberant-ctags cscope pkg-config
+DEB_DEPENDS += python-dev python-virtualenv python-pip lcov chrpath autoconf nasm
 ifeq ($(OS_VERSION_ID),14.04)
 	DEB_DEPENDS += openjdk-8-jdk-headless
 else
@@ -43,7 +49,7 @@ endif
 RPM_DEPENDS_GROUPS = 'Development Tools'
 RPM_DEPENDS  = redhat-lsb glibc-static java-1.8.0-openjdk-devel yum-utils
 RPM_DEPENDS += openssl-devel https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm apr-devel
-RPM_DEPENDS += python-devel
+RPM_DEPENDS += python-devel python-virtualenv lcov chrpath
 EPEL_DEPENDS = libconfuse-devel ganglia-devel
 
 ifneq ($(wildcard $(STARTUP_DIR)/startup.conf),)
@@ -57,8 +63,9 @@ endif
 
 .PHONY: help bootstrap wipe wipe-release build build-release rebuild rebuild-release
 .PHONY: run run-release debug debug-release build-vat run-vat pkg-deb pkg-rpm
-.PHONY: ctags cscope plugins plugins-release build-vpp-api
+.PHONY: ctags cscope
 .PHONY: test test-debug retest retest-debug test-doc test-wipe-doc test-help test-wipe
+.PHONY: test-cov test-wipe-cov
 
 help:
 	@echo "Make Targets:"
@@ -68,8 +75,7 @@ help:
 	@echo " wipe-release        - wipe all products of release build "
 	@echo " build               - build debug binaries"
 	@echo " build-release       - build release binaries"
-	@echo " plugins             - build debug plugin binaries"
-	@echo " plugins-release     - build release plugin binaries"
+	@echo " build-coverity      - build coverity artifacts"
 	@echo " rebuild             - wipe and build debug binares"
 	@echo " rebuild-release     - wipe and build release binares"
 	@echo " run                 - run debug binary"
@@ -82,11 +88,10 @@ help:
 	@echo " retest              - run functional tests"
 	@echo " retest-debug        - run functional tests (debug build)"
 	@echo " test-help           - show help on test framework"
-	@echo " build-vat           - build vpp-api-test tool"
-	@echo " build-vpp-api       - build vpp-api"
 	@echo " run-vat             - run vpp-api-test tool"
 	@echo " pkg-deb             - build DEB packages"
 	@echo " pkg-rpm             - build RPM packages"
+	@echo " dpdk-install-dev    - install DPDK development packages"
 	@echo " ctags               - (re)generate ctags database"
 	@echo " gtags               - (re)generate gtags database"
 	@echo " cscope              - (re)generate cscope database"
@@ -97,6 +102,9 @@ help:
 	@echo " wipe-doxygen        - wipe all generated documentation"
 	@echo " test-doc            - generate documentation for test framework"
 	@echo " test-wipe-doc       - wipe documentation for test framework"
+	@echo " test-cov            - generate code coverage report for test framework"
+	@echo " test-wipe-cov       - wipe code coverage report for test framework"
+	@echo " test-checkstyle     - check PEP8 compliance for test framework"
 	@echo ""
 	@echo "Make Arguments:"
 	@echo " V=[0|1]             - set build verbosity level"
@@ -107,7 +115,7 @@ help:
 	@echo "                       startup.conf file is present"
 	@echo " GDB=<path>          - gdb binary to use for debugging"
 	@echo " PLATFORM=<name>     - target platform. default is vpp"
-	@echo " TEST=<name>         - only run specific test"
+	@echo " TEST=<filter>       - apply filter to test set, see test-help"
 	@echo ""
 	@echo "Current Argument Values:"
 	@echo " V            = $(V)"
@@ -118,6 +126,9 @@ help:
 	@echo " DPDK_VERSION = $(DPDK_VERSION)"
 
 $(BR)/.bootstrap.ok:
+ifeq ($(findstring y,$(UNATTENDED)),y)
+	make install-dep
+endif
 ifeq ($(OS_ID),ubuntu)
 	@MISSING=$$(apt-get install -y -qq -s $(DEB_DEPENDS) | grep "^Inst ") ; \
 	if [ -n "$$MISSING" ] ; then \
@@ -141,7 +152,7 @@ else
 	@ln -s /usr/bin/ccache $(BR)/tools/ccache-bin/gcc
 	@ln -s /usr/bin/ccache $(BR)/tools/ccache-bin/g++
 endif
-	@make -C $(BR) V=$(V) is_build_tool=yes vppapigen-install
+	@make -C $(BR) V=$(V) is_build_tool=yes tools-install
 	@touch $@
 
 bootstrap: $(BR)/.bootstrap.ok
@@ -151,14 +162,14 @@ ifeq ($(OS_ID),ubuntu)
 ifeq ($(OS_VERSION_ID),14.04)
 	@sudo -E apt-get $(CONFIRM) $(FORCE) install software-properties-common
 	@sudo -E add-apt-repository ppa:openjdk-r/ppa $(CONFIRM)
-	@sudo -E apt-get update
 endif
+	@sudo -E apt-get update
 	@sudo -E apt-get $(CONFIRM) $(FORCE) install $(DEB_DEPENDS)
 else ifneq ("$(wildcard /etc/redhat-release)","")
-	@sudo yum groupinstall $(CONFIRM) $(RPM_DEPENDS_GROUPS)
-	@sudo yum install $(CONFIRM) $(RPM_DEPENDS)
-	@sudo yum install $(CONFIRM) --enablerepo=epel $(EPEL_DEPENDS)
-	@sudo debuginfo-install $(CONFIRM) glibc-2.17-106.el7_2.4.x86_64 openssl-libs-1.0.1e-51.el7_2.4.x86_64 zlib-1.2.7-15.el7.x86_64
+	@sudo -E yum groupinstall $(CONFIRM) $(RPM_DEPENDS_GROUPS)
+	@sudo -E yum install $(CONFIRM) $(RPM_DEPENDS)
+	@sudo -E yum install $(CONFIRM) --enablerepo=epel $(EPEL_DEPENDS)
+	@sudo -E debuginfo-install $(CONFIRM) glibc-2.17-106.el7_2.4.x86_64 openssl-libs-1.0.1e-51.el7_2.4.x86_64 zlib-1.2.7-15.el7.x86_64
 else
 	$(error "This option currently works only on Ubuntu or Centos systems")
 endif
@@ -167,10 +178,27 @@ define make
 	@make -C $(BR) PLATFORM=$(PLATFORM) TAG=$(1) $(2)
 endef
 
+$(BR)/scripts/.version:
+ifneq ("$(wildcard /etc/redhat-release)","")
+	$(shell $(BR)/scripts/version rpm-string > $(BR)/scripts/.version)
+else
+	$(shell $(BR)/scripts/version > $(BR)/scripts/.version)
+endif
+
+dist:	$(BR)/scripts/.version
+	$(MAKE) verstring=$(PLATFORM)-$(shell cat $(BR)/scripts/.version) prefix=$(PLATFORM) distversion
+
+distversion:	$(BR)/scripts/.version
+	$(BR)/scripts/verdist ${BR} ${prefix}-$(shell $(BR)/scripts/version rpm-version) ${verstring}
+	mv $(verstring).tar.gz $(BR)/rpm
+
 build: $(BR)/.bootstrap.ok
 	$(call make,$(PLATFORM)_debug,vpp-install)
 
-wipe: $(BR)/.bootstrap.ok
+wipedist:
+	$(RM) $(BR)/scripts/.version $(BR)/rpm/*.tar.gz
+
+wipe: wipedist $(BR)/.bootstrap.ok
 	$(call make,$(PLATFORM)_debug,vpp-wipe)
 
 rebuild: wipe build
@@ -183,25 +211,17 @@ wipe-release: $(BR)/.bootstrap.ok
 
 rebuild-release: wipe-release build-release
 
-plugins: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM)_debug,plugins-install)
-
-plugins-release: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM),plugins-install)
-
-build-vpp-api: $(BR)/.bootstrap.ok
-	$(call make,$(PLATFORM)_debug,vpp-api-install)
-
-VPP_PYTHON_PREFIX=$(BR)/python
+export VPP_PYTHON_PREFIX=$(BR)/python
 
 define test
-	$(if $(filter-out $(3),retest),make -C $(BR) PLATFORM=$(1) TAG=$(2) vpp-api-install plugins-install vpp-install vpp-api-test-install,)
+	$(if $(filter-out $(3),retest),make -C $(BR) PLATFORM=$(1) TAG=$(2) vpp-install,)
 	make -C test \
+	  VPP_TEST_BUILD_DIR=$(BR)/build-$(2)-native \
 	  VPP_TEST_BIN=$(BR)/install-$(2)-native/vpp/bin/vpp \
-	  VPP_TEST_API_TEST_BIN=$(BR)/install-$(2)-native/vpp-api-test/bin/vpp_api_test \
-	  VPP_TEST_PLUGIN_PATH=$(BR)/install-$(2)-native/plugins/lib64/vpp_plugins \
-	  LD_LIBRARY_PATH=$(BR)/install-$(2)-native/vpp-api/lib64/ \
-	  WS_ROOT=$(WS_ROOT) V=$(V) TEST=$(TEST) VPP_PYTHON_PREFIX=$(VPP_PYTHON_PREFIX) $(3)
+	  VPP_TEST_PLUGIN_PATH=$(BR)/install-$(2)-native/vpp/lib64/vpp_plugins \
+	  VPP_TEST_INSTALL_PATH=$(BR)/install-$(2)-native/ \
+	  LD_LIBRARY_PATH=$(BR)/install-$(2)-native/vpp/lib64/ \
+	  $(3)
 endef
 
 test: bootstrap
@@ -217,10 +237,19 @@ test-wipe:
 	@make -C test wipe
 
 test-doc:
-	@make -C test WS_ROOT=$(WS_ROOT) BR=$(BR) VPP_PYTHON_PREFIX=$(VPP_PYTHON_PREFIX) doc
+	@make -C test doc
 
 test-wipe-doc:
-	@make -C test wipe-doc BR=$(BR)
+	@make -C test wipe-doc
+
+test-cov: bootstrap
+	$(call test,vpp_lite,vpp_lite_gcov,cov)
+
+test-wipe-cov:
+	@make -C test wipe-cov
+
+test-checkstyle:
+	@make -C test checkstyle
 
 retest:
 	$(call test,vpp_lite,vpp_lite,retest)
@@ -234,12 +263,12 @@ define run
 	@echo "WARNING: STARTUP_CONF not defined or file doesn't exist."
 	@echo "         Running with minimal startup config: $(MINIMAL_STARTUP_CONF)\n"
 	@cd $(STARTUP_DIR) && \
-	  sudo $(2) $(1)/vpp/bin/vpp $(MINIMAL_STARTUP_CONF) plugin_path $(1)/plugins/lib64/vpp_plugins
+	  sudo $(2) $(1)/vpp/bin/vpp $(MINIMAL_STARTUP_CONF) plugin_path $(1)/vpp/lib64/vpp_plugins
 endef
 else
 define run
 	@cd $(STARTUP_DIR) && \
-	  sudo $(2) $(1)/vpp/bin/vpp $(shell cat $(STARTUP_CONF) | sed -e 's/#.*//') plugin_path $(1)/plugins/lib64/vpp_plugins
+	  sudo $(2) $(1)/vpp/bin/vpp $(shell cat $(STARTUP_CONF) | sed -e 's/#.*//') plugin_path $(1)/vpp/lib64/vpp_plugins
 endef
 endif
 
@@ -259,6 +288,9 @@ run-release:
 debug:
 	$(call run, $(BR)/install-$(PLATFORM)_debug-native,$(GDB) $(GDB_ARGS) --args)
 
+build-coverity: 
+	$(call make,$(PLATFORM)_coverity,install-packages)
+
 debug-release:
 	$(call run, $(BR)/install-$(PLATFORM)-native,$(GDB) $(GDB_ARGS) --args)
 
@@ -266,13 +298,16 @@ build-vat:
 	$(call make,$(PLATFORM)_debug,vpp-api-test-install)
 
 run-vat:
-	@sudo $(BR)/install-$(PLATFORM)_debug-native/vpp-api-test/bin/vpp_api_test
+	@sudo $(BR)/install-$(PLATFORM)_debug-native/vpp/bin/vpp_api_test
 
 pkg-deb:
 	$(call make,$(PLATFORM),install-deb)
 
-pkg-rpm:
+pkg-rpm: dist
 	$(call make,$(PLATFORM),install-rpm)
+
+dpdk-install-dev:
+	make -C dpdk install-$(PKG)
 
 ctags: ctags.files
 	@ctags --totals --tag-relative -L $<
@@ -298,7 +333,7 @@ fixstyle:
 export DOXY_DIR ?= $(WS_ROOT)/doxygen
 
 define make-doxy
-	@OS_ID="$(OS_ID)" WS_ROOT="$(WS_ROOT)" BR="$(BR)" make -C $(DOXY_DIR) $@
+	@OS_ID="$(OS_ID)" make -C $(DOXY_DIR) $@
 endef
 
 .PHONY: bootstrap-doxygen doxygen wipe-doxygen
@@ -311,4 +346,28 @@ doxygen:
 
 wipe-doxygen:
 	$(call make-doxy)
+
+define banner
+	@echo "========================================================================"
+	@echo " $(1)"
+	@echo "========================================================================"
+	@echo " "
+endef
+
+verify: install-dep $(BR)/.bootstrap.ok dpdk-install-dev
+	$(call banner,"Building for PLATFORM=vpp using gcc")
+	@make -C build-root PLATFORM=vpp TAG=vpp wipe-all install-packages
+	$(call banner,"Building for PLATFORM=vpp_lite using gcc")
+	@make -C build-root PLATFORM=vpp_lite TAG=vpp_lite wipe-all install-packages
+ifeq ($(OS_ID)-$(OS_VERSION_ID),ubuntu-16.04)
+	$(call banner,"Installing dependencies")
+	@sudo -E apt-get update
+	@sudo -E apt-get $(CONFIRM) $(FORCE) install clang
+	$(call banner,"Building for PLATFORM=vpp using clang")
+	@make -C build-root CC=clang PLATFORM=vpp TAG=vpp_clang wipe-all install-packages
+endif
+	$(call banner,"Building $(PKG) packages")
+	@make pkg-$(PKG)
+	@make test
+
 

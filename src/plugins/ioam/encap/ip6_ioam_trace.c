@@ -267,9 +267,6 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 	  time_u64.as_u64 = time_f64 * trace_tsp_mul[profile->trace_tsp];
 	  *elt = clib_host_to_net_u32 (time_u64.as_u32[0]);
 	  elt++;
-	  time_u64.as_u64 = time_f64 * trace_tsp_mul[profile->trace_tsp];
-	  *elt = clib_host_to_net_u32 (time_u64.as_u32[0]);
-	  elt++;
 	}
 
       if (trace->trace_hdr.ioam_trace_type & BIT_APPDATA)

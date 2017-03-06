@@ -121,7 +121,7 @@ AC_ARG_WITH(pre-data,
 	       128) ;;
 	       256) ;;
                *) with_pre_data="pre-data-not-set" ;;
-	     esac], [with_pre_data=256])
+	     esac], [with_pre_data=128])
 
 ###############################################################################
 # Substitutions and defines

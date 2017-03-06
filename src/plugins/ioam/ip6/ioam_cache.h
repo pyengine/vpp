@@ -20,7 +20,6 @@
 #include <vnet/ip/ip_packet.h>
 #include <vnet/ip/ip4_packet.h>
 #include <vnet/ip/ip6_packet.h>
-#include <vnet/ip/udp.h>
 #include <vnet/sr/sr.h>
 
 #include <vppinfra/pool.h>

@@ -760,7 +760,8 @@ inline static int ioam_cache_ts_lookup (ip6_header_t *ip0,
       ioam_cache_ts_entry_t *entry = 0;
       *pool_index = e2e->pool_index;
       *thread_id = e2e->pool_id;
-      entry = pool_elt_at_index(cm->ioam_ts_pool[*thread_id], *pool_index);
+      if (!pool_is_free_index(cm->ioam_ts_pool[*thread_id], *pool_index))
+        entry = pool_elt_at_index(cm->ioam_ts_pool[*thread_id], *pool_index);
       /* match */
       if (entry &&
 	  ip6_address_compare(&ip0->src_address, &entry->dst_address) == 0 &&

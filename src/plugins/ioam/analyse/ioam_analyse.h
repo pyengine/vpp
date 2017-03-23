@@ -140,12 +140,9 @@ ip6_ioam_analyse_calc_delay (ioam_trace_hdr_t * trace, u16 trace_len,
 
   num_nodes = (u8) (size_of_all_traceopts / size_of_traceopt_per_node);
 
+  end_elt = trace->elts + (size_of_traceopt_per_node * trace->data_list_elts_left / sizeof(u32));
+  start_elt = trace->elts + (size_of_traceopt_per_node * (num_nodes - 1) / sizeof(u32));
   num_nodes -= trace->data_list_elts_left;
-
-  start_elt = trace->elts;
-  end_elt =
-    trace->elts +
-    (u32) (size_of_traceopt_per_node * (num_nodes - 1) / sizeof (u32));
 
   if (oneway && (trace->ioam_trace_type & BIT_TTL_NODEID))
     {

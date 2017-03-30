@@ -7,6 +7,8 @@ AC_CONFIG_FILES([Makefile plugins/Makefile vpp-api/python/Makefile vpp-api/java/
 AC_CONFIG_MACRO_DIR([m4])
 
 AC_PROG_CC
+AC_PROG_CXX
+AX_CXX_COMPILE_STDCXX_11
 AM_PROG_AS
 AM_PROG_LIBTOOL
 AC_PROG_YACC

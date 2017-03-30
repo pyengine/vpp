@@ -20,7 +20,7 @@
 #include <vnet/ethernet/ethernet.h>
 #include <vpp/app/version.h>
 #include <vpp/api/vpe_msg_enum.h>
-
+#include <vppgpb/capi_server.h>
 
 static void
 vpe_main_init (vlib_main_t * vm)
@@ -199,6 +199,7 @@ defaulted:
     {
       vm->init_functions_called = hash_create (0, /* value bytes */ 0);
       vpe_main_init (vm);
+      capi_init ();
       return vlib_unix_main (argc, argv);
     }
   else

@@ -19,6 +19,7 @@
 
 #include <vnet/vnet.h>
 #include <vlibmemory/api.h>
+#include <vppgpb/capi_server.h>
 
 #include <vnet/interface.h>
 #include <vnet/api_errno.h>
@@ -30,6 +31,7 @@
 #include <vnet/vnet_msg_enum.h>
 #include <vnet/fib/fib_api.h>
 #include <vnet/mfib/mfib_table.h>
+#include <vnet/interface.pb-c.h>
 
 #define vl_typedefs		/* define message structures */
 #include <vnet/vnet_all_api_h.h>
@@ -83,6 +85,41 @@ vl_api_sw_interface_set_flags_t_handler (vl_api_sw_interface_set_flags_t * mp)
 
   BAD_SW_IF_INDEX_LABEL;
   REPLY_MACRO (VL_API_SW_INTERFACE_SET_FLAGS_REPLY);
+}
+
+static void
+cvl_api_sw_interface_set_flags_t_handler (api_buffer_t *req)
+{
+    Fdio__CvlApiSwInterfaceSetFlagsReplyT swsfr;
+    Fdio__CvlApiSwInterfaceSetFlagsT *swsf;
+    vnet_main_t *vnm = vnet_get_main ();
+    clib_error_t *error;
+    api_buffer_t *rmp;
+    size_t bytes;
+    u16 flags;
+
+    swsf = fdio__cvl_api_sw_interface_set_flags_t__unpack(capi_allocator(),
+                                                          ntohs(req->size),
+                                                          req->data);
+    flags = swsf->admin_up_down ? VNET_SW_INTERFACE_FLAG_ADMIN_UP : 0;
+
+    error = vnet_sw_interface_set_flags (vnm,
+                                      swsf->sw_if_index,
+                                      flags);
+
+    fdio__cvl_api_sw_interface_set_flags_reply_t__init(&swsfr);
+    GPB_SET(&swsfr, retval, (error == NULL));
+
+    bytes = fdio__cvl_api_sw_interface_set_flags_reply_t__get_packed_size(&swsfr);
+
+    rmp = capi_get_buffer(VL_API_SW_INTERFACE_SET_FLAGS_REPLY, bytes);
+ 
+    fdio__cvl_api_sw_interface_set_flags_reply_t__pack(&swsfr, rmp->data);
+    fdio__cvl_api_sw_interface_set_flags_t__free_unpacked
+      (swsf,
+       capi_allocator());
+
+    REPLY(req, rmp);
 }
 
 static void
@@ -296,6 +333,48 @@ static void
   BAD_SW_IF_INDEX_LABEL;
 
   REPLY_MACRO (VL_API_SW_INTERFACE_ADD_DEL_ADDRESS_REPLY);
+}
+
+static void
+cvl_api_sw_interface_add_del_address_t_handler (api_buffer_t *req)
+{
+    Fdio__CvlApiSwInterfaceAddDelAddressReplyT swadar;
+    Fdio__CvlApiSwInterfaceAddDelAddressT *swada;
+    vlib_main_t *vm = vlib_get_main ();
+
+    api_buffer_t *rmp;
+    size_t bytes;
+
+    swada = fdio__cvl_api_sw_interface_add_del_address_t__unpack(capi_allocator(),
+                                                                 ntohs(req->size),
+                                                          req->data);
+
+    if (swada->is_ipv6)
+      ip6_add_del_interface_address (vm,
+                                     swada->sw_if_index,
+                                     (void*) swada->address->data,
+                                     swada->address_length,
+                                     !swada->is_add);
+  else
+     ip4_add_del_interface_address (vm,
+                                    swada->sw_if_index,
+                                    (void*) swada->address->data,
+                                    swada->address_length,
+                                    !swada->is_add);
+
+    fdio__cvl_api_sw_interface_add_del_address_reply_t__init(&swadar);
+    GPB_SET(&swadar, retval, 1);
+
+    bytes = fdio__cvl_api_sw_interface_add_del_address_reply_t__get_packed_size(&swadar);
+
+    rmp = capi_get_buffer(VL_API_SW_INTERFACE_ADD_DEL_ADDRESS_REPLY, bytes);
+ 
+    fdio__cvl_api_sw_interface_add_del_address_reply_t__pack(&swadar, rmp->data);
+    fdio__cvl_api_sw_interface_add_del_address_t__free_unpacked
+      (swada,
+       capi_allocator());
+
+    REPLY(req, rmp);
 }
 
 void stats_dslock_with_hint (int hint, int tag) __attribute__ ((weak));
@@ -780,6 +859,10 @@ setup_message_id_table (api_main_t * am)
 
 pub_sub_handler (interface_events, INTERFACE_EVENTS);
 
+#define foreach_vppgpb_api_request_msg                          \
+_(SW_INTERFACE_SET_FLAGS, sw_interface_set_flags)               \
+_(SW_INTERFACE_ADD_DEL_ADDRESS, sw_interface_add_del_address)
+
 static clib_error_t *
 interface_api_hookup (vlib_main_t * vm)
 {
@@ -793,6 +876,15 @@ interface_api_hookup (vlib_main_t * vm)
                            vl_api_##n##_t_print,                \
                            sizeof(vl_api_##n##_t), 1);
   foreach_vpe_api_msg;
+#undef _
+#define _(N,n)                                                  \
+  vl_msg_api_set_handlers(USE_GPB | VL_API_##N, #n,             \
+                          cvl_api_##n##_t_handler,              \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          sizeof(api_buffer_t), 1);
+  foreach_vppgpb_api_request_msg;
 #undef _
 
   /*

@@ -195,8 +195,8 @@ typedef struct
   /* client side message index hash table */
   uword *msg_index_by_name_and_crc;
 
-  char *region_name;
-  char *root_path;
+  const char *region_name;
+  const char *root_path;
 
   /* Replay in progress? */
   int replay_in_progress;

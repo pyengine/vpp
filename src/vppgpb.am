@@ -1,0 +1,101 @@
+# Copyright (c) 2015 Cisco and/or its affiliates.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+COMMON_DEPS =     		\
+	libvppinfra.la		\
+	libvlib.la		\
+	libsvmdb.la		\
+	libsvm.la 		\
+	libvlibmemoryclient.la  \
+	libvlibmemory.la
+
+#
+# Client side of the C (language) based API
+#
+lib_LTLIBRARIES += libvppgpb_client.la libvppgpb_server.la
+
+libvppgpb_client_la_DEPENDENCIES =     \
+	$(COMMON_DEPS)
+
+libvppgpb_client_la_LDFLAGS =
+
+libvppgpb_client_la_LIBADD = \
+	$(libvppgpb_client_la_DEPENDENCIES) -lm -lpthread \
+	-ldl -lrt
+
+libvppgpb_client_la_SOURCES =                 	\
+	vppgpb/capi_common.c			\
+	vppgpb/capi_client.c
+
+#
+# Server (VPP) side of the C-API
+#
+libvppgpb_server_la_DEPENDENCIES =    	\
+	vpp/api/vpe.proto 		\
+	vpp/api/vpe.pb-c.h   		\
+	vpp/api/vpe.pb-c.c   		\
+	libvnet.la			\
+	$(COMMON_DEPS)
+
+libvppgpb_server_la_LDFLAGS = \
+	`pkg-config --libs 'libprotobuf-c >= 1.0.0'`
+
+libvppgpb_server_la_LIBADD = \
+	$(libvppgpb_server_la_DEPENDENCIES) -lm -lpthread \
+	-ldl -lrt
+
+libvppgpb_server_la_SOURCES =                 	\
+	vpp/api/vpe.pb-c.c			\
+	vnet/ip/ip.pb-c.c			\
+	vnet/interface.pb-c.c			\
+	vppgpb/capi_common.c			\
+	vppgpb/capi_server.c
+
+#
+# Client C++ library
+#
+lib_LTLIBRARIES += libvppgpbcpp.la
+
+libvppgpbcpp_la_SOURCES =
+libvppgpbcpp_la_DEPENDENCIES = 			\
+	libvppgpb_server.la			\
+	$(libvppgpb_la_DEPENDENCIES)
+
+libvppgpbcpp_la_LIBADD = 			\
+	 -lprotobuf -lprotoc 			\
+	$(libvppgpb_la_LIBADD) -lstdc++
+
+libvppgpbcpp_la_SOURCES +=                    	\
+	vpp/api/vpe.pb.cc			\
+	vnet/ip/ip.pb.cc			\
+	vnet/interface.pb.cc			\
+	vppgpb/connection.cc
+
+#
+# Test client
+#
+#if ENABLE_TESTS
+noinst_PROGRAMS += test_vppgpb
+test_vppgpb_SOURCES = 				\
+	vppgpb/test.cc				\
+	vppgpb/decoder.cc
+
+test_vppgpb_LDADD = \
+  $(top_builddir)/libvppgpbcpp.la \
+  $(top_builddir)/libvppgpb_client.la \
+  $(top_builddir)/libvppinfra.la \
+  $(top_builddir)/libvlibmemoryclient.la \
+  $(top_builddir)/libsvm.la \
+  -lpthread -lm -lrt -lprotobuf -lprotoc -lstdc++
+#endif
+# vi:syntax=automake

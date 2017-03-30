@@ -528,8 +528,10 @@ loopback_instance_free (u32 instance)
 }
 
 int
-vnet_create_loopback_interface (u32 * sw_if_indexp, u8 * mac_address,
-				u8 is_specified, u32 user_instance)
+vnet_create_loopback_interface (u32 * sw_if_indexp,
+                                const u8 * mac_address,
+				u8 is_specified,
+                                u32 user_instance)
 {
   vnet_main_t *vnm = vnet_get_main ();
   vlib_main_t *vm = vlib_get_main ();

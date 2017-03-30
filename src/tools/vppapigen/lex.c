@@ -28,7 +28,7 @@
 #include "node.h"
 #include "tools/vppapigen/gram.h"
 
-FILE *ifp, *ofp, *pythonfp, *jsonfp;
+FILE *ifp, *ofp, *pythonfp, *jsonfp, *gpbfp;
 char *vlib_app_name = "vpp";
 int dump_tree;
 time_t starttime;
@@ -260,6 +260,7 @@ int main (int argc, char **argv)
     char *ofile=0;
     char *pythonfile=0;
     char *jsonfile=0;
+    char *gpbfile=0;
     char *show_name=0;
 
     while (curarg < argc) {
@@ -372,6 +373,27 @@ int main (int argc, char **argv)
             }
             continue;
         }
+        if (!strncmp (argv [curarg], "--gpb", 5)) {
+            curarg++;
+            if (curarg < argc) {
+	        if (!strcmp(argv[curarg], "-")) {
+		    gpbfp = stdout;
+		} else {
+		    gpbfp = fopen(argv[curarg], "w");
+		    gpbfile = argv[curarg];
+		}
+                if (gpbfp == NULL) {
+                    fprintf (stderr, "Couldn't open GPB output file %s\n",
+                         argv[curarg]);
+                    exit (1);
+                }
+                curarg++;
+            } else {
+                fprintf(stderr, "Missing filename after --gpb\n");
+                exit(1);
+            }
+            continue;
+        }
         if (!strncmp (argv [curarg], "--app", 4)) {
             curarg++;
             if (curarg < argc) {
@@ -395,6 +417,9 @@ int main (int argc, char **argv)
     }
     if (jsonfp == NULL) {
         jsonfile = 0;
+    }
+    if (gpbfp == NULL) {
+        gpbfile = 0;
     }
     if (ifp == NULL) {
         fprintf(stderr, "No input file specified...\n");
@@ -421,6 +446,10 @@ int main (int argc, char **argv)
             printf ("JSON bindings written to %s\n", jsonfile);
             fclose (jsonfp);
         }
+        if (gpbfile) {
+            printf ("GPB bindings written to %s\n", gpbfile);
+            fclose (gpbfp);
+        }
     }
     else {
         fclose (ifp);
@@ -438,6 +467,10 @@ int main (int argc, char **argv)
             printf ("Removing %s\n", jsonfile);
             unlink (jsonfile);
         }
+        if (gpbfile) {
+            printf ("Removing %s\n", gpbfile);
+            unlink (gpbfile);
+        }
         exit (1);
     }
     exit (0);
@@ -450,7 +483,7 @@ static void usage (char *progname)
 {
     fprintf (stderr, 
              "usage: %s --input <filename> [--output <filename>] "
-	     "[--json <filename>] [--python <filename>]\n%s",
+	     "[--json <filename>] [--python <filename>] [--gpb <filename>]\n%s",
              progname,
              "          [--yydebug] [--dump-tree]\n");
     exit (1);

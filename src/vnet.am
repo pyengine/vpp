@@ -27,6 +27,8 @@ if WITH_LIBSSL
 libvnet_la_LIBADD += -lcrypto
 endif
 
+vnet/interface_api.c: vnet/interface.pb-c.h
+
 ########################################
 # Generic stuff
 ########################################
@@ -295,6 +297,8 @@ API_FILES += vnet/classify/classify.api
 ########################################
 # Layer 3 protocol: IP v4/v6
 ########################################
+vnet/ip/ip_api.c: vnet/ip/ip.pb-c.h
+
 libvnet_la_SOURCES +=				\
  vnet/ip/format.c				\
  vnet/ip/icmp4.c				\

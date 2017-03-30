@@ -35,6 +35,7 @@
 FILE *ofp;
 FILE *pythonfp;
 FILE *jsonfp;
+FILE *gpbfp;
 time_t starttime;
 char *vlib_app_name;
 char *input_filename;
@@ -42,16 +43,81 @@ node_vft_t *the_vft[NODE_N_TYPES];
 static int indent;
 static int dont_output_version;
 int dump_tree;
-static char *fixed_name;
+static const char *fixed_name;
 static char tmpbuf [MAXNAME];
-static char *current_def_name;
-static char *current_union_name;
-static char *current_type_fmt;
-static char *current_type_cast;
+static const char *current_def_name;
+static const char *current_union_name;
+static const char *current_type_fmt;
+static const char *current_type_cast;
 static char current_id;
 static char current_is_complex;
-static char *current_endianfun;
-static char *current_type_name;
+static const char *current_endianfun;
+static const char *current_type_name;
+
+typedef enum types_t
+{
+    UINT8,
+    UINT16,
+    UINT32,
+    UINT64,
+    INT8,
+    INT16,
+    INT32,
+    INT64,
+    F64,
+    PACKED,
+    UWORD,
+} types_t;
+
+typedef enum strs_t_
+{
+    TNAME = 0,
+    TFMT,
+    TCAST,
+} str_t;
+
+static const char * const typenames[][3] = {
+    [UINT8] =  {"u8",  "%u",   "(unsigned)"},
+    [UINT16] = {"u16", "%u",   "(unsigned)"},
+    [UINT32] = {"u32", "%u",   "(unsigned)"},
+    [UINT64] = {"u64", "%llu", "(long long)"},
+    [INT8]   = {"i8",  "%d",   "(unsigned)"},
+    [INT16]  = {"i16", "%d",   "(unsigned)"},
+    [INT32]  = {"i32", "%ld",  "(long)"},
+    [INT64]  = {"i64", "%lld", "(long long)"},
+    [F64]    = {"f64", "%.2f", "(double)"},
+    [PACKED] = {"PACKED", "", ""},
+    [UWORD] = {"uword", "uword", ""}
+};
+
+static const char * const gpb_typenames[][3] = {
+    [UINT8] =  {"byte",   "%u",   "(unsigned)"},
+    [UINT16] = {"uint32", "%u",   "(unsigned)"},
+    [UINT32] = {"uint32", "%u",   "(unsigned)"},
+    [UINT64] = {"uint64", "%llu", "(long long)"},
+    [INT8]   = {"sint32", "%d",   "(unsigned)"},
+    [INT16]  = {"sint32", "%d",   "(unsigned)"},
+    [INT32]  = {"sint32", "%ld",  "(long)"},
+    [INT64]  = {"sint64", "%lld", "(long long)"},
+    [F64]    = {"double", "%.2f", "(double)"},
+    [PACKED] = {"PACKED", "", ""},
+    [UWORD]  = {"uword", "uword", ""}
+};
+
+/**
+ * A context passed down the generation heirachy for each node
+ */
+typedef struct gpb_generate_ctx_t_
+{
+    /**
+     * The integer value to assign to the next member of the message
+     */
+    int value;
+    /**
+     * The type name
+     */
+    const char *type_name;
+} gpb_generate_ctx_t;
 
 void indent_me(FILE *ofp)
 {
@@ -61,7 +127,7 @@ void indent_me(FILE *ofp)
         putc(' ', ofp);
 }
 
-char *uppercase (char *s)
+char *uppercase (const char *s)
 {
     char *cp;
 
@@ -104,21 +170,23 @@ void primtype_recursive_print(node_t *this, i8 *fmt)
 }
 
 void primtype_recursive_generate(node_t *this, enum passid which, FILE *ofp,
-                                 i8 *type_name, i8 *type_fmt, i8 *type_cast)
+                                 void *ctx, types_t type)
 {
+    //void *ctx, i8 *type_name,
+    //i8 *type_fmt, i8 *type_cast
     node_vft_t *vftp;
 
-    current_type_name = (char *)type_name;
-    current_type_cast = (char *)type_cast;
+    current_type_name = typenames[type][TNAME];
+    current_type_cast = typenames[type][TCAST];
 
     switch(which) {
     case TYPEDEF_PASS:
-        fputs((char *)type_name, ofp);
+        fputs(typenames[type][TNAME], ofp);
         fputs(" ", ofp);
         break;
 
     case PRINTFUN_PASS:
-        current_type_fmt = (char *)type_fmt;
+        current_type_fmt = typenames[type][TFMT];
         break;
 
     case ENDIANFUN_PASS:
@@ -128,16 +196,28 @@ void primtype_recursive_generate(node_t *this, enum passid which, FILE *ofp,
 
     case PYTHON_PASS:
         fputs("('", pythonfp);
-        fputs((char *)type_name, pythonfp);
+        fputs(typenames[type][TNAME], pythonfp);
         fputs("', ", pythonfp);
         break;
 
     case JSON_PASS:
         fputs("[\"", jsonfp);
-        fputs((char *)type_name, jsonfp);
+        fputs(typenames[type][TNAME], jsonfp);
         fputs("\", ", jsonfp);
         break;
 
+    case GPB_PASS:{
+        gpb_generate_ctx_t *gpbc = ctx;
+        if (strstr(typenames[type][TNAME], "vl_api"))
+        {
+            char aug[256];
+            sprintf(aug, "c%s", typenames[type][TNAME]);
+            gpbc->type_name = aug;
+        }
+        else
+            gpbc->type_name = gpb_typenames[type][TNAME];
+        break;
+    }
     default:
         fprintf(stderr, "primtype_recursive_generate: unimp pass %d\n", which);
         break;
@@ -145,7 +225,7 @@ void primtype_recursive_generate(node_t *this, enum passid which, FILE *ofp,
 
     if (this->deeper) {
         vftp = the_vft[this->deeper->type];
-        vftp->generate(this->deeper, which, ofp);
+        vftp->generate(this->deeper, which, ofp, ctx);
     }
 }
 
@@ -155,7 +235,7 @@ void node_illegal_print (node_t *this)
     exit(0);
 }
 
-void node_illegal_generate (node_t *this, enum passid notused, FILE *ofp)
+void node_illegal_generate (node_t *this, enum passid notused, FILE *ofp, void *ctx)
 {
     fprintf(stderr, "node_illegal_generate called\n");
     exit(0);
@@ -172,9 +252,9 @@ void node_u8_print (node_t *this)
     primtype_recursive_print(this, "u8 ");
 }
 
-void node_u8_generate (node_t *this, enum passid which, FILE *ofp)
+void node_u8_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "u8", "%u", "(unsigned)");
+    primtype_recursive_generate(this, which, ofp, ctx, UINT8);
 }
 
 node_vft_t node_u8_vft = {
@@ -188,9 +268,9 @@ void node_u16_print (node_t *this)
     primtype_recursive_print(this, "u16 ");
 }
 
-void node_u16_generate (node_t *this, enum passid which, FILE *ofp)
+void node_u16_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "u16", "%u", "(unsigned)");
+    primtype_recursive_generate(this, which, ofp, ctx, UINT16);
 }
 
 node_vft_t node_u16_vft = {
@@ -204,9 +284,9 @@ void node_u32_print (node_t *this)
     primtype_recursive_print(this, "u32 ");
 }
 
-void node_u32_generate (node_t *this, enum passid which, FILE *ofp)
+void node_u32_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "u32", "%u", "(unsigned)");
+    primtype_recursive_generate(this, which, ofp, ctx, UINT32);
 }
 
 node_vft_t node_u32_vft = {
@@ -220,10 +300,9 @@ void node_u64_print (node_t *this)
     primtype_recursive_print(this, "u64 ");
 }
 
-void node_u64_generate (node_t *this, enum passid which, FILE *ofp)
+void node_u64_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "u64", "%llu", 
-                                "(long long)");
+    primtype_recursive_generate(this, which, ofp, ctx, UINT64);
 }
 
 node_vft_t node_u64_vft = {
@@ -237,9 +316,9 @@ void node_i8_print (node_t *this)
     primtype_recursive_print(this, "i8 ");
 }
 
-void node_i8_generate (node_t *this, enum passid which, FILE *ofp)
+void node_i8_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "i8", "%d", "(int)");
+    primtype_recursive_generate(this, which, ofp, ctx, INT8);
 }
 
 node_vft_t node_i8_vft = {
@@ -253,9 +332,9 @@ void node_i16_print (node_t *this)
     primtype_recursive_print(this, "i16 ");
 }
 
-void node_i16_generate (node_t *this, enum passid which, FILE *ofp)
+void node_i16_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "i16", "%d", "(int)");
+    primtype_recursive_generate(this, which, ofp, ctx, INT16);
 }
 
 node_vft_t node_i16_vft = {
@@ -269,9 +348,9 @@ void node_i32_print (node_t *this)
     primtype_recursive_print(this, "i32 ");
 }
 
-void node_i32_generate (node_t *this, enum passid which, FILE *ofp)
+void node_i32_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "i32", "%ld", "(long)");
+    primtype_recursive_generate(this, which, ofp, ctx, INT32);
 }
 
 node_vft_t node_i32_vft = {
@@ -285,10 +364,9 @@ void node_i64_print (node_t *this)
     primtype_recursive_print(this, "i64 ");
 }
 
-void node_i64_generate (node_t *this, enum passid which, FILE *ofp)
+void node_i64_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "i64", "%lld", 
-                                "(long long)");
+    primtype_recursive_generate(this, which, ofp, ctx, INT64);
 }
 
 node_vft_t node_i64_vft = {
@@ -302,10 +380,9 @@ void node_f64_print (node_t *this)
     primtype_recursive_print(this, "f64 ");
 }
 
-void node_f64_generate (node_t *this, enum passid which, FILE *ofp)
+void node_f64_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "f64", "%.2f", 
-                                "(double)");
+    primtype_recursive_generate(this, which, ofp, ctx, F64);
 }
 
 node_vft_t node_f64_vft = {
@@ -320,9 +397,9 @@ void node_packed_print (node_t *this)
     primtype_recursive_print (this, "packed ");
 }
 
-void node_packed_generate (node_t *this, enum passid which, FILE *ofp)
+void node_packed_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "PACKED", "", "");
+    primtype_recursive_generate(this, which, ofp, ctx, PACKED);
 }
 
 node_vft_t node_packed_vft = {
@@ -342,7 +419,7 @@ void node_define_print (node_t *this)
     fprintf(stdout, "};\n");
 }
 
-void node_define_generate (node_t *this, enum passid which, FILE *fp)
+void node_define_generate (node_t *this, enum passid which, FILE *fp, void *ctx)
 {
     node_t *child;
 
@@ -354,7 +431,7 @@ void node_define_generate (node_t *this, enum passid which, FILE *fp)
         while (child) {
             node_vft_t *vftp = the_vft[child->type];
             indent_me(fp);
-            vftp->generate(child, which, fp);
+            vftp->generate(child, which, fp, ctx);
             child = child->peer;
         }
         indent -= 4;
@@ -366,7 +443,7 @@ void node_define_generate (node_t *this, enum passid which, FILE *fp)
         child = this->deeper;
         while (child) {
             node_vft_t *vftp = the_vft[child->type];
-            vftp->generate(child, which, fp);
+            vftp->generate(child, which, fp, ctx);
             child = child->peer;
         }
         break;
@@ -378,7 +455,7 @@ void node_define_generate (node_t *this, enum passid which, FILE *fp)
         while (child) {
             node_vft_t *vftp = the_vft[child->type];
             indent_me(fp);
-            vftp->generate(child, which, fp);
+            vftp->generate(child, which, fp, ctx);
             child = child->peer;
         }
         indent -= 4;
@@ -392,7 +469,7 @@ void node_define_generate (node_t *this, enum passid which, FILE *fp)
         while (child) {
             node_vft_t *vftp = the_vft[child->type];
             indent_me(fp);
-            vftp->generate(child, which, fp);
+            vftp->generate(child, which, fp, ctx);
             child = child->peer;
 	    fprintf(fp, ",\n");
         }
@@ -401,6 +478,24 @@ void node_define_generate (node_t *this, enum passid which, FILE *fp)
         indent -= 4;
 	indent_me(fp);
         fprintf(fp, "]");
+        break;
+
+    case GPB_PASS:
+        fprintf(fp, "message cvl_api_%s_t {\n", CDATA0);
+        child = this->deeper;
+        indent += 4;
+        while (child) {
+            node_vft_t *vftp = the_vft[child->type];
+            indent_me(fp);
+            vftp->generate(child, which, fp, ctx);
+            child = child->peer;
+	    fprintf(fp, ";\n");
+        }
+	// indent_me(fp);
+	// fprintf (fp, "{\"crc\" : \"0x%08x\"}\n", (u32)(u64)CDATA3);
+        indent -= 4;
+	indent_me(fp);
+        fprintf(fp, "}\n");
         break;
 
     default:
@@ -420,7 +515,7 @@ void node_union_print (node_t *this)
     primtype_recursive_print (this, "union ");
 }
 
-void node_union_generate (node_t *this, enum passid which, FILE *fp)
+void node_union_generate (node_t *this, enum passid which, FILE *fp, void *ctx)
 {
     node_t *child;
     node_t *uelem;
@@ -437,7 +532,7 @@ void node_union_generate (node_t *this, enum passid which, FILE *fp)
         while (child) {
             node_vft_t *vftp = the_vft[child->type];
             indent_me(fp);
-            vftp->generate(child, which, fp);
+            vftp->generate(child, which, fp, ctx);
             child = child->peer;
         }
         indent -= 4;
@@ -464,7 +559,7 @@ void node_union_generate (node_t *this, enum passid which, FILE *fp)
             case_id++;
             indent += 4;
             /* Drill down on each element */
-            vftp->generate(uelem, which, fp);
+            vftp->generate(uelem, which, fp, ctx);
             indent_me(fp);
             fprintf(fp, "break;\n");
             uelem = uelem->peer;
@@ -506,7 +601,7 @@ void node_scalar_print (node_t *this)
     primtype_recursive_print (this, "");
 }
 
-void node_scalar_generate (node_t *this, enum passid which, FILE *fp)
+void node_scalar_generate (node_t *this, enum passid which, FILE *fp, void *ctx)
 {
     char *union_prefix = "";
 
@@ -567,6 +662,20 @@ void node_scalar_generate (node_t *this, enum passid which, FILE *fp)
         fprintf(fp, "\"%s\"]", CDATA0);
         break;
 
+    case GPB_PASS: {
+        gpb_generate_ctx_t *gpbc = ctx;
+
+        if (strstr(gpbc->type_name, "byte"))
+            fprintf(fp, "int32 %s = %d",
+                    CDATA0,
+                    gpbc->value++);
+        else
+            fprintf(fp, "%s %s = %d",
+                    gpbc->type_name,
+                    CDATA0,
+                    gpbc->value++);
+        break;
+    }
     default:
         fprintf(stderr, "node_scalar_generate: unimp pass %d\n", which);
     }
@@ -587,7 +696,7 @@ void node_vector_print (node_t *this)
     primtype_recursive_print (this, "vector ");
 }
 
-void node_vector_generate (node_t *this, enum passid which, FILE *fp)
+void node_vector_generate (node_t *this, enum passid which, FILE *fp, void *ctx)
 {
     char *union_prefix = "";
 
@@ -696,6 +805,17 @@ void node_vector_generate (node_t *this, enum passid which, FILE *fp)
         }
         break;
 
+    case GPB_PASS: {
+        gpb_generate_ctx_t *gpbc = ctx;
+
+        if (strstr(gpbc->type_name, "byte"))
+            fprintf(fp, "repeated bytes %s = %d",
+                    CDATA0, gpbc->value++);
+        else
+            fprintf(fp, "repeated %s %s = %d",
+                    gpbc->type_name, CDATA0, gpbc->value++);
+        break;
+    }
     default:
         fprintf(stderr, "node_vector_generate: unimp pass %d\n", which);
     }
@@ -715,7 +835,7 @@ void node_complex_print (node_t *this)
     primtype_recursive_print (this, "complex ");
 }
 
-void node_complex_generate (node_t *this, enum passid which, FILE *fp)
+void node_complex_generate (node_t *this, enum passid which, FILE *fp, void *ctx)
 {
     node_t *deeper;
     node_vft_t *vftp;
@@ -735,7 +855,7 @@ void node_complex_generate (node_t *this, enum passid which, FILE *fp)
         deeper = this->deeper;
         if (deeper) {
             vftp = the_vft[deeper->type];
-            vftp->generate(deeper, which, fp);
+            vftp->generate(deeper, which, fp, ctx);
         }
         break;
 
@@ -790,7 +910,7 @@ void node_complex_generate (node_t *this, enum passid which, FILE *fp)
         deeper = this->deeper;
         if (deeper) {
             vftp = the_vft[deeper->type];
-            vftp->generate(deeper, which, fp);
+            vftp->generate(deeper, which, fp, ctx);
         }
         break;
 
@@ -799,10 +919,29 @@ void node_complex_generate (node_t *this, enum passid which, FILE *fp)
         deeper = this->deeper;
         if (deeper) {
             vftp = the_vft[deeper->type];
-            vftp->generate(deeper, which, fp);
+            vftp->generate(deeper, which, fp, ctx);
         }
         break;
 
+    case GPB_PASS:{
+        gpb_generate_ctx_t *gpbc = ctx;
+
+        if (strstr(CDATA0, "vl_api"))
+        {
+            char aug[256];
+            sprintf(aug, "c%s", CDATA0);
+            gpbc->type_name = aug;
+        }
+        else
+            gpbc->type_name = CDATA0;
+
+        deeper = this->deeper;
+        if (deeper) {
+            vftp = the_vft[deeper->type];
+            vftp->generate(deeper, which, fp, ctx);
+        }
+        break;
+    }
     default:
         fprintf(stderr, "node_complex_generate unimp pass %d...\n", which);
         break;
@@ -821,7 +960,7 @@ void node_noversion_print (node_t *this)
     primtype_recursive_print (this, "noversion ");
 }
 
-void node_noversion_generate (node_t *this, enum passid which, FILE *ofp)
+void node_noversion_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
     fprintf(stderr, "node_noversion_generate called...\n");
 }
@@ -837,9 +976,9 @@ void node_uword_print (node_t *this)
     primtype_recursive_print(this, "uword ");
 }
 
-void node_uword_generate (node_t *this, enum passid which, FILE *ofp)
+void node_uword_generate (node_t *this, enum passid which, FILE *ofp, void *ctx)
 {
-    primtype_recursive_generate(this, which, ofp, "uword", "uword", "");
+    primtype_recursive_generate(this, which, ofp, ctx, UWORD);
 }
 
 node_vft_t node_uword_vft = {
@@ -1236,7 +1375,7 @@ void generate_typedefs(YYSTYPE a1, FILE *fp)
         if (np->type == NODE_DEFINE) {
             /* Yeah, this is pedantic */
             vftp = the_vft[np->type];
-            vftp->generate(np, TYPEDEF_PASS, fp);
+            vftp->generate(np, TYPEDEF_PASS, fp, NULL);
         }
         np = np->peer;
     }
@@ -1332,7 +1471,7 @@ void generate_printfun(YYSTYPE a1, FILE *fp)
                 indent += 4;
                 /* Yeah, this is pedantic */
                 vftp = the_vft[np->type];
-                vftp->generate(np, PRINTFUN_PASS, fp);
+                vftp->generate(np, PRINTFUN_PASS, fp, NULL);
                 fprintf(fp, "    return handle;\n");
                 fprintf(fp, "}\n\n");
                 indent -= 4;
@@ -1370,7 +1509,7 @@ void generate_endianfun(YYSTYPE a1, FILE *fp)
                 indent += 4;
                 /* Yeah, this is pedantic */
                 vftp = the_vft[np->type];
-                vftp->generate(np, ENDIANFUN_PASS, fp);
+                vftp->generate(np, ENDIANFUN_PASS, fp, NULL);
                 fprintf(fp, "}\n\n");
                 indent -= 4;
             } else {
@@ -1416,7 +1555,7 @@ void generate_python_msg_definitions(YYSTYPE a1, FILE *fp)
       if (np->type == NODE_DEFINE && !(np->flags & NODE_FLAG_TYPEONLY)) {
         /* Yeah, this is pedantic */
         vftp = the_vft[np->type];
-        vftp->generate(np, PYTHON_PASS, fp);
+        vftp->generate(np, PYTHON_PASS, fp, NULL);
       }
       np = np->peer;
     }
@@ -1449,7 +1588,7 @@ generate_json_definitions(YYSTYPE a1, FILE *fp, bool typeonly)
         /* Yeah, this is pedantic */
         vftp = the_vft[np->type];
 	indent_me(fp);
-        vftp->generate(np, JSON_PASS, fp);
+        vftp->generate(np, JSON_PASS, fp, NULL);
 	comma = true;
       }
       np = np->peer;
@@ -1464,6 +1603,30 @@ generate_json_definitions(YYSTYPE a1, FILE *fp, bool typeonly)
     fprintf(fp, "]");
 }
 
+static void
+generate_gpb_definitions(YYSTYPE a1, FILE *fp)
+{
+    node_t *np = (node_t *)a1;
+    node_vft_t *vftp;
+    gpb_generate_ctx_t ctx;
+
+    fprintf (fp, "syntax = \"proto3\";\n\n");
+    fprintf (fp, "option go_package = \"fdio\";\n\n");
+    fprintf (fp, "package fdio;\n\n");
+
+    /* Walk the top-level node-list */
+    while (np) {
+      if (np->type == NODE_DEFINE) {
+        /* Yeah, this is pedantic */
+        vftp = the_vft[np->type];
+	indent_me(fp);
+        ctx.value = 1;
+        vftp->generate(np, GPB_PASS, fp, &ctx);
+      }
+      np = np->peer;
+    }
+}
+
 void generate_python_typeonly_definitions(YYSTYPE a1, FILE *fp)
 {
     node_t *np = (node_t *)a1;
@@ -1473,7 +1636,7 @@ void generate_python_typeonly_definitions(YYSTYPE a1, FILE *fp)
     while (np) {
       if (np->type == NODE_DEFINE && (np->flags & NODE_FLAG_TYPEONLY)) {
         vftp = the_vft[np->type];
-        vftp->generate(np, PYTHON_PASS, fp);
+        vftp->generate(np, PYTHON_PASS, fp, NULL);
       }
       np = np->peer;
     }
@@ -1507,6 +1670,18 @@ void generate_json(YYSTYPE a1, FILE *fp)
     fprintf (fp, "}\n");
 }
 
+void generate_gpb(YYSTYPE a1, FILE *fp)
+{
+    generate_gpb_definitions(a1, fp);
+
+    /*
+     * API CRC signature
+     */
+    // fprintf (fp, ",\n\"vl_api_version\" :\"0x%08x\"\n",
+    // (unsigned int)input_crc);
+    // fprintf (fp, "}\n");
+}
+
 void generate(YYSTYPE a1)
 {
     if (dump_tree) {
@@ -1533,5 +1708,8 @@ void generate(YYSTYPE a1)
     }
     if (jsonfp) {
       generate_json(a1, jsonfp);
+    }
+    if (gpbfp) {
+      generate_gpb(a1, gpbfp);
     }
 }

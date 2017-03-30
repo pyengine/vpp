@@ -20,6 +20,8 @@ bin_vpp_SOURCES =				\
   vpp/oam/oam.c					\
   vpp/stats/stats.c
 
+vpp/api/api.c: vpp/api/vpe.pb-c.h
+
 bin_vpp_SOURCES +=				\
   vpp/api/api.c					\
   vpp/api/custom_dump.c				\
@@ -74,6 +76,7 @@ bin_vpp_LDADD = \
   libvlibmemory.la \
   libvlib.la \
   libvnet.la \
+  libvppgpb_server.la \
   libsvm.la \
   libsvmdb.la \
   libvppinfra.la \

@@ -25,3 +25,32 @@
 	mkdir -p `dirname $@` ;					\
 	$(CC) $(CPPFLAGS) -E -P -C -x c $<			\
 	| @VPPAPIGEN@ --input - --json $@ > /dev/null
+
+%.proto: %.api @VPPAPIGEN@
+	@echo "  GPB API" $@ ;					\
+	mkdir -p `dirname $@` ;					\
+	$(CC) $(CPPFLAGS) -E -P -C -x c $<			\
+	| @VPPAPIGEN@ --input - --gpb $@ > /dev/null;
+
+%.proto: %.pp
+	@echo " GPB CP" $@ ;					\
+	cp $< $@
+
+%.pb-c.c %.pb-c.h: %.proto
+	@echo "  GPB PROTOC " $@;				\
+	mkdir -p `dirname $@` ;					\
+	protoc-c  -I=. -I=/ --c_out=. $<
+
+%.pb.cc %.pb.h: %.proto
+	@echo "  GPB " $@;					\
+	mkdir -p `dirname $@` ;					\
+	protoc -I=. -I=/ --cpp_out=. $<
+
+%.grpc.pb.cc %.grpc.pb.h: %.proto
+	@echo "  GRPC " $@;					\
+	mkdir -p `dirname $@` ;					\
+	protoc -I=. -I/ --grpc_out=. --plugin=protoc-gen-grpc=`which grpc_cpp_plugin` $<
+
+%.cobra.pb.go: %.proto
+	@echo "  GPB COBRA " $@;					\
+	protoc --cobra_out=. --plugin=protoc-gen-grpc=`which protoc_gen_cobra` $<

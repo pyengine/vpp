@@ -44,6 +44,8 @@
 #include <vppinfra/pool.h>
 #include <vppinfra/format.h>
 #include <vppinfra/error.h>
+#include <vppgpb/capi_server.h>
+#include <vpp/api/vpe.pb-c.h>
 
 #include <vnet/api_errno.h>
 #include <vnet/vnet.h>
@@ -1029,6 +1031,48 @@ vl_api_create_loopback_t_handler (vl_api_create_loopback_t * mp)
     rmp->sw_if_index = ntohl (sw_if_index);
   }));
   /* *INDENT-ON* */
+}
+
+static void
+cvl_api_create_loopback_t_handler (api_buffer_t *req)
+{
+    Fdio__CvlApiCreateLoopbackReplyT clr;
+    Fdio__CvlApiCreateLoopbackT *cl;
+    api_buffer_t *rmp;
+    u32 sw_if_index;
+    size_t bytes;
+    int rv;
+    const static uint8_t def_mac[] = {
+        0xde,
+        0xad,
+        0xaa,
+        0xbb,
+        0xcc,
+        0xdd,
+    };
+    
+    cl = fdio__cvl_api_create_loopback_t__unpack(capi_allocator(),
+                                                 ntohs(req->size),
+                                                 req->data);
+
+    rv = vnet_create_loopback_interface (&sw_if_index,
+                                         (NULL == cl->mac_address ?
+                                          def_mac :
+                                          cl->mac_address->data),
+                                         0, 0);
+
+    fdio__cvl_api_create_loopback_reply_t__init(&clr);
+    GPB_SET(&clr, retval, rv);
+    GPB_SET(&clr, sw_if_index, sw_if_index);
+
+    bytes = fdio__cvl_api_create_loopback_reply_t__get_packed_size(&clr);
+
+    rmp = capi_get_buffer(VL_API_CREATE_LOOPBACK_REPLY, bytes);
+ 
+    fdio__cvl_api_create_loopback_reply_t__pack(&clr, rmp->data);
+    fdio__cvl_api_create_loopback_t__free_unpacked(cl, capi_allocator());
+
+    REPLY(req, rmp);
 }
 
 static void vl_api_create_loopback_instance_t_handler
@@ -2086,6 +2130,9 @@ static void vl_api_##nn##_t_handler (                                   \
 
 static void setup_message_id_table (api_main_t * am);
 
+#define foreach_vppgpb_api_request_msg            \
+_(CREATE_LOOPBACK, create_loopback)
+
 /*
  * vpe_api_hookup
  * Add vpe's API message handlers to the table.
@@ -2106,6 +2153,15 @@ vpe_api_hookup (vlib_main_t * vm)
                            vl_api_##n##_t_print,                \
                            sizeof(vl_api_##n##_t), 1);
   foreach_vpe_api_msg;
+#undef _
+#define _(N,n)                                                  \
+  vl_msg_api_set_handlers(USE_GPB | VL_API_##N, #n,             \
+                          cvl_api_##n##_t_handler,              \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          sizeof(api_buffer_t), 1);
+  foreach_vppgpb_api_request_msg;
 #undef _
 
   /*

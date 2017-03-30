@@ -19,6 +19,7 @@
 
 #include <vnet/vnet.h>
 #include <vlibmemory/api.h>
+#include <vppgpb/capi_server.h>
 
 #include <vnet/interface.h>
 #include <vnet/api_errno.h>
@@ -39,6 +40,7 @@
 #include <vnet/mfib/mfib_entry.h>
 
 #include <vnet/vnet_msg_enum.h>
+#include <vnet/ip/ip.pb-c.h>
 
 #define vl_typedefs		/* define message structures */
 #include <vnet/vnet_all_api_h.h>
@@ -975,6 +977,92 @@ ip4_add_del_route_t_handler (vl_api_ip_add_del_route_t * mp)
 				   label_stack));
 }
 
+static void
+cvl_api_ip_add_del_route_t_handler (api_buffer_t *req)
+{
+  Fdio__CvlApiIpAddDelRouteReplyT iadrr;
+  Fdio__CvlApiIpAddDelRouteT *iadr;
+  u32 fib_index, next_hop_fib_index;
+  //mpls_label_t *label_stack = NULL;
+  int rv; //, ii, n_labels;;
+
+  api_buffer_t *rmp;
+  size_t bytes;
+
+  iadr = fdio__cvl_api_ip_add_del_route_t__unpack(capi_allocator(),
+                                                  ntohs(req->size),
+                                                  req->data);
+
+  rv = add_del_route_check (FIB_PROTOCOL_IP4,
+			    iadr->table_id,
+			    iadr->next_hop_sw_if_index,
+			    FIB_PROTOCOL_IP4,
+			    iadr->next_hop_table_id,
+			    iadr->create_vrf_if_needed, 0,
+			    &fib_index, &next_hop_fib_index);
+
+  if (0 != rv)
+    goto reply;
+
+  fib_prefix_t pfx = {
+    .fp_len = iadr->dst_address_length,
+    .fp_proto = FIB_PROTOCOL_IP4,
+  };
+  clib_memcpy (&pfx.fp_addr.ip4,
+               iadr->dst_address->data,
+               sizeof (pfx.fp_addr.ip4));
+
+  ip46_address_t nh;
+  memset (&nh, 0, sizeof (nh));
+  memcpy (&nh.ip4, iadr->next_hop_address->data, sizeof (nh.ip4));
+
+  /* n_labels = iadr->next_hop_n_out_labels; */
+  /* if (n_labels == 0) */
+  /*   ; */
+  /* else if (1 == n_labels) */
+  /*   vec_add1 (label_stack, ntohl (iadr->next_hop_out_label_stack[0])); */
+  /* else */
+  /*   { */
+  /*     vec_validate (label_stack, n_labels - 1); */
+  /*     for (ii = 0; ii < n_labels; ii++) */
+  /*       label_stack[ii] = ntohl (iadr->next_hop_out_label_stack[ii]); */
+  /*   } */
+
+  rv = add_del_route_t_handler (1, //mp->is_multipath,
+                                iadr->is_add,
+                                0, //mp->is_drop,
+                                0, //mp->is_unreach,
+                                0, //mp->is_prohibit,
+                                0, //mp->is_local,
+                                0,
+                                0, //mp->is_classify,
+                                0, //mp->classify_table_index,
+                                0, //mp->is_resolve_host,
+                                0, //mp->is_resolve_attached,
+                                0, 0,
+                                fib_index, &pfx, 1,
+                                &nh,
+                                iadr->next_hop_sw_if_index,
+                                next_hop_fib_index,
+                                1, //mp->next_hop_weight,
+                                MPLS_LABEL_INVALID, //ntohl (mp->next_hop_via_label),
+                                NULL); //label_stack));
+
+ reply:
+  fdio__cvl_api_ip_add_del_route_reply_t__init(&iadrr);
+  GPB_SET(&iadrr, retval, (rv==0?1:0));
+
+  bytes = fdio__cvl_api_ip_add_del_route_reply_t__get_packed_size(&iadrr);
+
+  rmp = capi_get_buffer(VL_API_IP_ADD_DEL_ROUTE_REPLY, bytes);
+ 
+  fdio__cvl_api_ip_add_del_route_reply_t__pack(&iadrr, rmp->data);
+  fdio__cvl_api_ip_add_del_route_t__free_unpacked(iadr,
+                                                  capi_allocator());
+
+  REPLY(req, rmp);
+}
+
 static int
 ip6_add_del_route_t_handler (vl_api_ip_add_del_route_t * mp)
 {
@@ -1675,6 +1763,10 @@ setup_message_id_table (api_main_t * am)
 #undef _
 }
 
+#define foreach_vppgpb_api_request_msg                          \
+_(IP_ADD_DEL_ROUTE, ip_add_del_route)
+
+
 static clib_error_t *
 ip_api_hookup (vlib_main_t * vm)
 {
@@ -1688,6 +1780,15 @@ ip_api_hookup (vlib_main_t * vm)
                            vl_api_##n##_t_print,                \
                            sizeof(vl_api_##n##_t), 1);
   foreach_ip_api_msg;
+#undef _
+#define _(N,n)                                                  \
+  vl_msg_api_set_handlers(USE_GPB | VL_API_##N, #n,             \
+                          cvl_api_##n##_t_handler,              \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          vl_noop_handler,                      \
+                          sizeof(api_buffer_t), 1);
+  foreach_vppgpb_api_request_msg;
 #undef _
 
   /*

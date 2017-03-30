@@ -22,7 +22,7 @@ AM_LIBTOOLFLAGS = --quiet
 AM_CFLAGS = -Wall
 
 SUBDIRS = .
-SUFFIXES = .api.h .api .api.json
+SUFFIXES = .api.h .api .api.json .api.proto .api.pb.cc
 API_FILES =
 noinst_HEADERS =
 dist_bin_SCRIPTS =
@@ -85,6 +85,8 @@ endif
 ###############################################################################
 
 include suffix-rules.mk
+include vppgpb.am
+include vppgrpc.am
 
 # Set the suffix list
 apidir = $(prefix)/share/vpp/api/core
@@ -94,6 +96,11 @@ api_DATA = \
 
 BUILT_SOURCES += \
 	$(patsubst %.api,%.api.h,$(API_FILES))
+
+protodir = $(prefix)/share/vpp/proto
+
+proto_DATA = \
+	$(patsubst %.api,%.proto,$(API_FILES))
 
 endif # if ENABLE_VLIB
 endif # if ENABLE_SVM

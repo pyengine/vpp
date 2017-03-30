@@ -62,6 +62,7 @@ enum passid {
     PRINTFUN_PASS,
     PYTHON_PASS,
     JSON_PASS,
+    GPB_PASS,
 };
 
 extern void *make_node (enum node_subclass type);
@@ -87,7 +88,7 @@ typedef struct node_ {
 
 typedef struct node_vft_ {
     void (*print)(struct node_ *);
-    void (*generate)(struct node_ *, enum passid id, FILE *ofp);
+    void (*generate)(struct node_ *, enum passid id, FILE *ofp, void *ctx);
     char *endian_converter;
 } node_vft_t;    
 

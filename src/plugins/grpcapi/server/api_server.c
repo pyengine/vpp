@@ -19,6 +19,7 @@
  */
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
+#include <vpp/app/version.h>
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
@@ -44,26 +45,6 @@ u32 api_server_process_node_index (void)
   return(vpp_core_api_main.dummy_process_node_index);
 }
 
-/*
- * This routine exists to convince the vlib plugin framework that
- * we haven't accidentally copied a random .dll into the plugin directory.
- *
- * Also collects global variable pointers passed from the vpp engine
- */
-
-clib_error_t *
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-		int from_early_init)
-{
-	vpp_core_api_main_t *am = &vpp_core_api_main;
-	clib_error_t *error = 0;
-
-	memset(am, 0, sizeof(vpp_core_api_main));
-	am->vlib_main = vm;
-	am->vnet_main = h->vnet_main;
-
-	return error;
-}
 
 extern void RunServer();
 
@@ -127,11 +108,23 @@ VLIB_REGISTER_THREAD (api_server_thread_node, static) =
 
 /* *INDENT-ON* */
 
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = VPP_BUILD_VER,
+    .description = "GRPC Server",
+};
+/* *INDENT-ON* */
 static clib_error_t *
 api_server_init (vlib_main_t * vm)
 {
-	clib_error_t *error = 0;
-	return error;
+  vpp_core_api_main_t *am = &vpp_core_api_main;
+  clib_error_t *error = 0;
+
+  memset(am, 0, sizeof(vpp_core_api_main));
+  am->vlib_main = vm;
+  am->vnet_main = vnet_get_main();
+        
+  return error;
 }
 
 VLIB_INIT_FUNCTION (api_server_init);

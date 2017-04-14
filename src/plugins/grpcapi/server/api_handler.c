@@ -47,6 +47,7 @@
 #include <vnet/api_errno.h>
 #include <vnet/vnet.h>
 
+#include <vnet/fib/fib_table.h>
 #include <vnet/fib/ip6_fib.h>
 #include <vnet/fib/ip4_fib.h>
 #include <vnet/dpo/drop_dpo.h>
@@ -206,39 +207,35 @@ api_ip6_fib_table_put_entries (clib_bihash_kv_24_8_t * kvp,
 }
 
 static void
-api_ip6_fib_table_get_all ( fib_table_t *fib_table,
+api_ip6_fib_table_get_all ( fib_table_t * fib_table,
                             void *writer)
 {
   ip6_main_t *im6 = &ip6_main;
-  ip6_fib_t *fib = &fib_table->v6;
   fib_node_index_t *fib_entry_index;
   api_ip6_fib_show_ctx_t ctx = {
-    .fib_index = fib->index,
+    .fib_index = fib_table->ft_index,
     .entries = NULL,
   };
   fib_route_path_encode_t *api_rpaths;
   fib_prefix_t pfx;
 
-  BV(clib_bihash_foreach_key_value_pair)
-    ((BVT(clib_bihash) *) &im6->ip6_table[IP6_FIB_TABLE_NON_FWDING].ip6_hash,
-     api_ip6_fib_table_put_entries,
-     &ctx);
+  BV (clib_bihash_foreach_key_value_pair)
+    ((BVT (clib_bihash) *) & im6->ip6_table[IP6_FIB_TABLE_NON_FWDING].
+     ip6_hash, api_ip6_fib_table_put_entries, &ctx);
 
-  vec_sort_with_function(ctx.entries, fib_entry_cmp_for_sort);
+  vec_sort_with_function (ctx.entries, fib_entry_cmp_for_sort);
 
-  vec_foreach(fib_entry_index, ctx.entries)
-    {
-      fib_entry_get_prefix(*fib_entry_index, &pfx);
-      api_rpaths = NULL;
-      fib_entry_encode(*fib_entry_index, &api_rpaths);
-      send_ip6_fib_details (fib_table->ft_table_id,
-                            &pfx,
-                            api_rpaths,
-                            writer);
-      vec_free(api_rpaths);
-    }
+  vec_foreach (fib_entry_index, ctx.entries)
+  {
+    fib_entry_get_prefix (*fib_entry_index, &pfx);
+    api_rpaths = NULL;
+    fib_entry_encode (*fib_entry_index, &api_rpaths);
+    send_ip6_fib_details ( fib_table->ft_table_id,
+			  &pfx, api_rpaths, writer);
+    vec_free (api_rpaths);
+  }
 
-  vec_free(ctx.entries);
+  vec_free (ctx.entries);
 }
 
 void

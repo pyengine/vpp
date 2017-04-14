@@ -43,7 +43,6 @@ def run():
      for path in entry.path:
        print("sw if index:", path.sw_if_index, "weight", path.weight, "is_local[%s]" % path.is_local)
        print(ipaddr.IPv6Address(ipaddr.Bytes((path.next_hop))))
-
   vppShell().cmdloop()
 
 if __name__ == '__main__':

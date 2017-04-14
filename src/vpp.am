@@ -45,11 +45,7 @@ nobase_include_HEADERS +=			\
 
 API_FILES += vpp/api/vpe.api
 
-lib_LIBRARIES = libvppversion.a
-libvppversion_a_SOURCES =	\
-	vpp/app/version.c vpp/app/version.h
-
-BUILT_SOURCES += vpp/app/version.h
+BUILT_SOURCES += .version
 
 vpp/app/version.o:	vpp/app/version.h
 
@@ -73,21 +69,23 @@ VPP_VERSION = $(shell $(srcdir)/scripts/version)
 	  echo "#define VPP_BUILD_VER \"$(VPP_VERSION)\"" >> $$f			;\
 	fi
 
+lib_LIBRARIES = libvppversion.a
+libvppversion_a_SOURCES =	\
+	vpp/app/version.c vpp/app/version.h
+
 bin_vpp_LDADD = \
   libvlibmemory.la \
   libvlib.la \
   libvnet.la \
   libsvm.la \
   libsvmdb.la \
-  libvnetplugin.la \
   libvppinfra.la \
   -lrt -lm -lpthread -ldl
-  -lrt
 
 bin_vpp_LDFLAGS = $(DPDK_LD_FLAGS)
 bin_vpp_LDADD += libvppversion.a -lm -lpthread -ldl $(DPDK_LD_ADD)
 
-bin_vpp_LDFLAGS = -Wl,--export-dynamic
+bin_vpp_LDFLAGS += -Wl,--export-dynamic
 
 if ENABLE_TESTS
 noinst_PROGRAMS += bin/test_client

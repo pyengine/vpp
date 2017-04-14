@@ -198,6 +198,40 @@ typedef struct {
   map_ip6_fragment_t fragments[MAP_IP6_REASS_MAX_FRAGMENTS_PER_REASSEMBLY];
 } map_ip6_reass_t;
 
+#ifdef MAP_SKIP_IP6_LOOKUP
+/**
+ * A pre-resolved next-hop
+ */
+typedef struct map_main_pre_resolved_t_
+{
+  /**
+   * Linkage into the FIB graph
+   */
+  fib_node_t node;
+
+  /**
+   * The FIB entry index of the next-hop
+   */
+  fib_node_index_t fei;
+
+  /**
+   * This object sibling index on the FIB entry's child dependency list
+   */
+  u32 sibling;
+
+  /**
+   * The Load-balance object index to use to forward
+   */
+  dpo_id_t dpo;
+} map_main_pre_resolved_t;
+
+/**
+ * Pre-resolved next hops for v4 and v6. Why these are global and not
+ * per-domain is beyond me.
+ */
+extern map_main_pre_resolved_t pre_resolved[FIB_PROTOCOL_MAX];
+#endif
+
 typedef struct {
   /* pool of MAP domains */
   map_domain_t *domains;
@@ -206,13 +240,6 @@ typedef struct {
   vlib_simple_counter_main_t *simple_domain_counters;
   vlib_combined_counter_main_t *domain_counters;
   volatile u32 *counter_lock;
-
-#ifdef MAP_SKIP_IP6_LOOKUP
-  /* pre-presolve */
-  u32 adj6_index, adj4_index;
-  ip4_address_t preresolve_ip4;
-  ip6_address_t preresolve_ip6;
-#endif
 
   /* Traffic class: zero, copy (~0) or fixed value */
   u8 tc;
@@ -389,17 +416,11 @@ map_get_ip4 (ip6_address_t *addr)
  * Get the MAP domain from an IPv4 lookup adjacency.
  */
 static_always_inline map_domain_t *
-ip4_map_get_domain (u32 mdi,
-		    u32 *map_domain_index)
+ip4_map_get_domain (u32 mdi)
 {
   map_main_t *mm = &map_main;
-  map_dpo_t *md;
 
-  md = map_dpo_get(mdi);
-
-  ASSERT(md);
-  *map_domain_index = md->md_domain;
-  return pool_elt_at_index(mm->domains, *map_domain_index);
+  return pool_elt_at_index(mm->domains, mdi);
 }
 
 /*
@@ -408,23 +429,21 @@ ip4_map_get_domain (u32 mdi,
  * The IPv4 address is used otherwise.
  */
 static_always_inline map_domain_t *
-ip6_map_get_domain (u32 mdi, ip4_address_t *addr,
-                    u32 *map_domain_index, u8 *error)
+ip6_map_get_domain (u32 mdi,
+                    ip4_address_t *addr,
+                    u32 *map_domain_index,
+                    u8 *error)
 {
   map_main_t *mm = &map_main;
-  map_dpo_t *md;
 
   /*
    * Disable direct MAP domain lookup on decap, until the security check is updated to verify IPv4 SA.
    * (That's done implicitly when MAP domain is looked up in the IPv4 FIB)
    */
 #ifdef MAP_NONSHARED_DOMAIN_ENABLED
-  md = map_dpo_get(mdi);
-
-  ASSERT(md);
-  *map_domain_index = md->md_domain;
-  if (*map_domain_index != ~0)
-    return pool_elt_at_index(mm->domains, *map_domain_index);
+#error "How can you be sure this domain is not shared?"
+  *map_domain_index = mdi;
+  return pool_elt_at_index(mm->domains, mdi);
 #endif
 
   u32 lbi = ip4_fib_forwarding_lookup(0, addr);
@@ -432,8 +451,7 @@ ip6_map_get_domain (u32 mdi, ip4_address_t *addr,
   if (PREDICT_TRUE(dpo->dpoi_type == map_dpo_type ||
 		   dpo->dpoi_type == map_t_dpo_type))
     {
-      md = map_dpo_get(dpo->dpoi_index);
-     *map_domain_index = md->md_domain;
+      *map_domain_index = dpo->dpoi_index;
       return pool_elt_at_index(mm->domains, *map_domain_index);
     }
   *error = MAP_ERROR_NO_DOMAIN;

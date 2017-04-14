@@ -36,6 +36,9 @@
 #include <vnet/dpo/punt_dpo.h>
 #include <vnet/dpo/classify_dpo.h>
 #include <vnet/dpo/ip_null_dpo.h>
+#include <vnet/dpo/replicate_dpo.h>
+#include <vnet/dpo/interface_dpo.h>
+#include <vnet/dpo/mpls_disposition.h>
 
 /**
  * Array of char* names for the DPO types and protos
@@ -97,6 +100,8 @@ vnet_link_to_dpo_proto (vnet_link_t linkt)
         return (DPO_PROTO_MPLS);
     case VNET_LINK_ETHERNET:
         return (DPO_PROTO_ETHERNET);
+    case VNET_LINK_NSH:
+        return (DPO_PROTO_NSH);
     case VNET_LINK_ARP:
 	break;
     }
@@ -178,6 +183,12 @@ dpo_set (dpo_id_t *dpo,
 	    break;
 	case IP_LOOKUP_NEXT_MIDCHAIN:
 	    dpo->dpoi_type = DPO_ADJACENCY_MIDCHAIN;
+	    break;
+	case IP_LOOKUP_NEXT_MCAST_MIDCHAIN:
+	    dpo->dpoi_type = DPO_ADJACENCY_MCAST_MIDCHAIN;
+	    break;
+	case IP_LOOKUP_NEXT_MCAST:
+	    dpo->dpoi_type = DPO_ADJACENCY_MCAST;
 	    break;
 	default:
 	    break;
@@ -449,6 +460,9 @@ dpo_module_init (vlib_main_t * vm)
     classify_dpo_module_init();
     lookup_dpo_module_init();
     ip_null_dpo_module_init();
+    replicate_module_init();
+    interface_dpo_module_init();
+    mpls_disp_dpo_module_init();
 
     return (NULL);
 }

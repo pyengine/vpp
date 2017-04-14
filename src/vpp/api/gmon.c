@@ -59,17 +59,9 @@ typedef struct
 
 } gmon_main_t;
 
-#if DPDK == 0
-static inline u64
-vnet_get_aggregate_rx_packets (void)
-{
-  return 0;
-}
-#else
 #include <vlib/vlib.h>
 #include <vnet/vnet.h>
-#include <vnet/devices/dpdk/dpdk.h>
-#endif
+#include <vnet/devices/devices.h>
 
 gmon_main_t gmon_main;
 
@@ -130,13 +122,8 @@ gmon_process (vlib_main_t * vm, vlib_node_runtime_t * rt, vlib_frame_t * f)
   /* Initial wait for the world to settle down */
   vlib_process_suspend (vm, 5.0);
 
-  if (vec_len (vlib_mains) == 0)
-    vec_add1 (gm->my_vlib_mains, &vlib_global_main);
-  else
-    {
-      for (i = 0; i < vec_len (vlib_mains); i++)
-	vec_add1 (gm->my_vlib_mains, vlib_mains[i]);
-    }
+  for (i = 0; i < vec_len (vlib_mains); i++)
+    vec_add1 (gm->my_vlib_mains, vlib_mains[i]);
 
   while (1)
     {

@@ -62,10 +62,17 @@ static u32 next_proto_to_next_index[LISP_GPE_NEXT_PROTOS] = {
 always_inline u32
 next_protocol_to_next_index (lisp_gpe_header_t * lgh, u8 * next_header)
 {
+  lisp_gpe_main_t *lgm = vnet_lisp_gpe_get_main ();
+
   /* lisp-gpe router */
   if (PREDICT_TRUE ((lgh->flags & LISP_GPE_FLAGS_P)
-		    && lgh->next_protocol < LISP_GPE_NEXT_PROTOS))
-    return next_proto_to_next_index[lgh->next_protocol];
+		    || GPE_ENCAP_VXLAN == lgm->encap_mode))
+    {
+      if (PREDICT_FALSE (lgh->next_protocol >= LISP_GPE_NEXT_PROTOS))
+	return LISP_GPE_INPUT_NEXT_DROP;
+
+      return next_proto_to_next_index[lgh->next_protocol];
+    }
   /* legacy lisp router */
   else if ((lgh->flags & LISP_GPE_FLAGS_P) == 0)
     {
@@ -89,12 +96,14 @@ next_index_to_iface (lisp_gpe_main_t * lgm, u32 next_index)
     return &lgm->l3_ifaces;
   else if (LISP_GPE_INPUT_NEXT_L2_INPUT == next_index)
     return &lgm->l2_ifaces;
+  else if (LISP_GPE_INPUT_NEXT_NSH_INPUT == next_index)
+    return &lgm->nsh_ifaces;
   clib_warning ("next_index not associated to an interface!");
   return 0;
 }
 
 static_always_inline void
-incr_decap_stats (vnet_main_t * vnm, u32 cpu_index, u32 length,
+incr_decap_stats (vnet_main_t * vnm, u32 thread_index, u32 length,
 		  u32 sw_if_index, u32 * last_sw_if_index, u32 * n_packets,
 		  u32 * n_bytes)
 {
@@ -113,7 +122,7 @@ incr_decap_stats (vnet_main_t * vnm, u32 cpu_index, u32 length,
 
 	  vlib_increment_combined_counter (im->combined_sw_if_counters +
 					   VNET_INTERFACE_COUNTER_RX,
-					   cpu_index, *last_sw_if_index,
+					   thread_index, *last_sw_if_index,
 					   *n_packets, *n_bytes);
 	}
       *last_sw_if_index = sw_if_index;
@@ -141,11 +150,11 @@ static uword
 lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 		       vlib_frame_t * from_frame, u8 is_v4)
 {
-  u32 n_left_from, next_index, *from, *to_next, cpu_index;
+  u32 n_left_from, next_index, *from, *to_next, thread_index;
   u32 n_bytes = 0, n_packets = 0, last_sw_if_index = ~0, drops = 0;
   lisp_gpe_main_t *lgm = vnet_lisp_gpe_get_main ();
 
-  cpu_index = os_get_cpu_number ();
+  thread_index = vlib_get_thread_index ();
   from = vlib_frame_vector_args (from_frame);
   n_left_from = from_frame->n_vectors;
 
@@ -247,9 +256,9 @@ lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  /* map iid/vni to lisp-gpe sw_if_index which is used by ipx_input to
 	   * decide the rx vrf and the input features to be applied */
 	  si0 = hash_get (tl0->sw_if_index_by_vni,
-			  clib_net_to_host_u32 (lh0->iid));
+			  clib_net_to_host_u32 (lh0->iid << 8));
 	  si1 = hash_get (tl1->sw_if_index_by_vni,
-			  clib_net_to_host_u32 (lh1->iid));
+			  clib_net_to_host_u32 (lh1->iid << 8));
 
 
 	  /* Required to make the l2 tag push / pop code work on l2 subifs */
@@ -258,7 +267,7 @@ lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	  if (si0)
 	    {
-	      incr_decap_stats (lgm->vnet_main, cpu_index,
+	      incr_decap_stats (lgm->vnet_main, thread_index,
 				vlib_buffer_length_in_chain (vm, b0), si0[0],
 				&last_sw_if_index, &n_packets, &n_bytes);
 	      vnet_buffer (b0)->sw_if_index[VLIB_RX] = si0[0];
@@ -273,7 +282,7 @@ lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	  if (si1)
 	    {
-	      incr_decap_stats (lgm->vnet_main, cpu_index,
+	      incr_decap_stats (lgm->vnet_main, thread_index,
 				vlib_buffer_length_in_chain (vm, b1), si1[0],
 				&last_sw_if_index, &n_packets, &n_bytes);
 	      vnet_buffer (b1)->sw_if_index[VLIB_RX] = si1[0];
@@ -388,7 +397,7 @@ lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	  if (si0)
 	    {
-	      incr_decap_stats (lgm->vnet_main, cpu_index,
+	      incr_decap_stats (lgm->vnet_main, thread_index,
 				vlib_buffer_length_in_chain (vm, b0), si0[0],
 				&last_sw_if_index, &n_packets, &n_bytes);
 	      vnet_buffer (b0)->sw_if_index[VLIB_RX] = si0[0];
@@ -421,7 +430,7 @@ lisp_gpe_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
     }
 
   /* flush iface stats */
-  incr_decap_stats (lgm->vnet_main, cpu_index, 0, ~0, &last_sw_if_index,
+  incr_decap_stats (lgm->vnet_main, thread_index, 0, ~0, &last_sw_if_index,
 		    &n_packets, &n_bytes);
   vlib_node_increment_counter (vm, lisp_gpe_ip4_input_node.index,
 			       LISP_GPE_ERROR_NO_TUNNEL, drops);
@@ -491,6 +500,52 @@ VLIB_REGISTER_NODE (lisp_gpe_ip6_input_node) = {
   // $$$$ .unformat_buffer = unformat_lisp_gpe_header,
 };
 /* *INDENT-ON* */
+
+/**
+ * Adds arc from lisp-gpe-input to nsh-input if nsh-input is available
+ */
+static void
+gpe_add_arc_from_input_to_nsh ()
+{
+  lisp_gpe_main_t *lgm = vnet_lisp_gpe_get_main ();
+  vlib_main_t *vm = lgm->vlib_main;
+  vlib_node_t *nsh_input;
+
+  /* Arc already exists */
+  if (next_proto_to_next_index[LISP_GPE_NEXT_PROTO_NSH]
+      != LISP_GPE_INPUT_NEXT_DROP)
+    return;
+
+  /* Check if nsh-input is available */
+  if ((nsh_input = vlib_get_node_by_name (vm, (u8 *) "nsh-input")))
+    {
+      u32 slot4, slot6;
+      slot4 = vlib_node_add_next_with_slot (vm, lisp_gpe_ip4_input_node.index,
+					    nsh_input->index,
+					    LISP_GPE_NEXT_PROTO_NSH);
+      slot6 = vlib_node_add_next_with_slot (vm, lisp_gpe_ip6_input_node.index,
+					    nsh_input->index,
+					    LISP_GPE_NEXT_PROTO_NSH);
+      ASSERT (slot4 == slot6 && slot4 == LISP_GPE_INPUT_NEXT_NSH_INPUT);
+
+      next_proto_to_next_index[LISP_GPE_NEXT_PROTO_NSH] = slot4;
+    }
+}
+
+/** GPE decap init function. */
+clib_error_t *
+gpe_decap_init (vlib_main_t * vm)
+{
+  clib_error_t *error = 0;
+
+  if ((error = vlib_call_init_function (vm, lisp_gpe_init)))
+    return error;
+
+  gpe_add_arc_from_input_to_nsh ();
+  return 0;
+}
+
+VLIB_INIT_FUNCTION (gpe_decap_init);
 
 /*
  * fd.io coding-style-patch-verification: ON

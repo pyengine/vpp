@@ -18,38 +18,66 @@ DPDK_BUILD_DIR        ?= $(CURDIR)/_build
 DPDK_INSTALL_DIR      ?= $(CURDIR)/_install
 DPDK_PKTMBUF_HEADROOM ?= 128
 DPDK_DOWNLOAD_DIR     ?= $(HOME)/Downloads
-DPDK_MARCH            ?= native
-DPDK_TUNE             ?= generic
 DPDK_DEBUG            ?= n
-DPDK_CRYPTO_PMD       ?= n
+DPDK_CRYPTO_SW_PMD    ?= n
 DPDK_MLX5_PMD         ?= n
 
 B := $(DPDK_BUILD_DIR)
 I := $(DPDK_INSTALL_DIR)
-DPDK_VERSION ?= 16.11
+DPDK_VERSION ?= 17.02
+PKG_SUFFIX ?= vpp3
 DPDK_BASE_URL ?= http://fast.dpdk.org/rel
 DPDK_TARBALL := dpdk-$(DPDK_VERSION).tar.xz
 DPDK_TAR_URL := $(DPDK_BASE_URL)/$(DPDK_TARBALL)
-DPDK_16.07_TARBALL_MD5_CKSUM := 690a2bb570103e58d12f9806e8bf21be
 DPDK_16.11_TARBALL_MD5_CKSUM := 06c1c577795360719d0b4fafaeee21e9
+DPDK_17.02_TARBALL_MD5_CKSUM := 6b9f7387c35641f4e8dbba3e528f2376
 DPDK_SOURCE := $(B)/dpdk-$(DPDK_VERSION)
+
+ifeq ($(DPDK_CRYPTO_SW_PMD),y)
+AESNIMB_LIB_TARBALL := v0.44-gcm.2.tar.gz
+AESNIMB_LIB_TARBALL_URL := http://github.com/01org/intel-ipsec-mb/archive/$(AESNIMB_LIB_TARBALL)
+AESNIMB_LIB_SOURCE := $(B)/intel-ipsec-mb-0.44-gcm.2
+ISA_L_CRYPTO_LIB_TARBALL := isa_l_crypto.tar.gz
+ISA_L_CRYPTO_LIB_TARBALL_URL := http://github.com/01org/isa-l_crypto/archive/master.tar.gz
+ISA_L_CRYPTO_LIB_SOURCE := $(B)/isa-l_crypto-master
+endif
 
 ifneq (,$(findstring clang,$(CC)))
 DPDK_CC=clang
+else ifneq (,$(findstring icc,$(CC)))
+DPDK_CC=icc
 else
 DPDK_CC=gcc
 endif
 
+##############################################################################
+# Intel x86_64
+##############################################################################
+ifeq ($(shell uname -m),x86_64)
+DPDK_TARGET           ?= x86_64-native-linuxapp-$(DPDK_CC)
+DPDK_MACHINE          ?= nhm
+DPDK_TUNE             ?= core-avx2
 
-ifeq (,$(DPDK_TARGET))
-DPDK_TARGET := x86_64-native-linuxapp-$(DPDK_CC)
+##############################################################################
+# Cavium ThunderX
+##############################################################################
+else ifneq (,$(findstring thunder,$(shell cat /sys/bus/pci/devices/0000:00:01.0/uevent | grep cavium)))
+export CROSS=""
+DPDK_TARGET           ?= arm64-thunderx-linuxapp-$(DPDK_CC)
+DPDK_MACHINE          ?= thunderx
+DPDK_TUNE             ?= generic
+
+##############################################################################
+# Unknown platofrm
+##############################################################################
+else
+$(error unknown platform)
 endif
 
 JOBS := $(shell grep processor /proc/cpuinfo | wc -l)
 
 # compiler/linker custom arguments
 DPDK_CPU_CFLAGS := -pie -fPIC
-DPDK_CPU_LDFLAGS :=
 DPDK_EXTRA_LDFLAGS := -g
 
 ifeq ($(DPDK_DEBUG),n)
@@ -58,37 +86,23 @@ else
 DPDK_EXTRA_CFLAGS := -g -O0
 endif
 
-# translate gcc march values to DPDK arch
-ifeq ($(DPDK_MARCH),native)
-DPDK_MACHINE:=native                     # autodetect host CPU
-else ifeq ($(DPDK_MARCH),corei7)
-DPDK_MACHINE:=nhm                        # Nehalem / Westmere
-else ifeq ($(DPDK_MARCH),corei7-avx)
-DPDK_MACHINE:=snb                        # Sandy Bridge
-else ifeq ($(DPDK_MARCH),core-avx-i)
-DPDK_MACHINE:=ivb                        # Ivy Bridge
-else ifeq ($(DPDK_MARCH),core-avx2)
-DPDK_MACHINE:=hsw                        # Haswell
-else ifeq ($(DPDK_MARCH),armv7a)
-DPDK_MACHINE:=armv7a                     # ARMv7
-else ifeq ($(DPDK_MARCH),armv8a)
-DPDK_MACHINE:=armv8a                     # ARMv8
-else
-$(error Unknown DPDK_MARCH)
+ifeq ($(DPDK_CRYPTO_SW_PMD),y)
+DPDK_EXTRA_CFLAGS += -I$(I)/include
+DPDK_EXTRA_LDFLAGS += -L$(I)/lib
+DPDK_MAKE_EXTRA_ARGS += AESNI_MULTI_BUFFER_LIB_PATH=$(AESNIMB_LIB_SOURCE)
 endif
 
 # assemble DPDK make arguments
 DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) -j $(JOBS) \
 	T=$(DPDK_TARGET) \
 	RTE_CONFIG_TEMPLATE=../custom-config \
-	RTE_OUTPUT=$(I) \
 	EXTRA_CFLAGS="$(DPDK_EXTRA_CFLAGS)" \
 	EXTRA_LDFLAGS="$(DPDK_EXTRA_LDFLAGS)" \
 	CPU_CFLAGS="$(DPDK_CPU_CFLAGS)" \
-	CPU_LDFLAGS="$(DPDK_CPU_LDFLAGS)" \
+	DESTDIR=$(I) \
         $(DPDK_MAKE_EXTRA_ARGS)
 
-DPDK_SOURCE_FILES := $(shell  [ -e $(DPDK_SOURCE) ] && find $(DPDK_SOURCE) -name "*.[chS]")  
+DPDK_SOURCE_FILES := $(shell  [ -e $(DPDK_SOURCE) ] && find $(DPDK_SOURCE) -name "*.[chS]")
 
 define set
 @if grep -q CONFIG_$1 $@ ; \
@@ -120,9 +134,9 @@ $(B)/custom-config: $(B)/.patch.ok Makefile
 	$(call set,RTE_LIBRTE_VMXNET3_DEBUG_INIT,$(DPDK_DEBUG))
 	$(call set,RTE_LIBRTE_PMD_BOND,y)
 	$(call set,RTE_LIBRTE_IP_FRAG,y)
-	$(call set,RTE_LIBRTE_PMD_AESNI_MB,$(DPDK_CRYPTO_PMD))
-	$(call set,RTE_LIBRTE_PMD_AESNI_GCM,$(DPDK_CRYPTO_PMD))
-	$(call set,RTE_LIBRTE_PMD_QAT,$(DPDK_CRYPTO_PMD))
+	$(call set,RTE_LIBRTE_PMD_QAT,y)
+	$(call set,RTE_LIBRTE_PMD_AESNI_MB,$(DPDK_CRYPTO_SW_PMD))
+	$(call set,RTE_LIBRTE_PMD_AESNI_GCM,$(DPDK_CRYPTO_SW_PMD))
 	$(call set,RTE_LIBRTE_MLX5_PMD,$(DPDK_MLX5_PMD))
 	@# not needed
 	$(call set,RTE_LIBRTE_TIMER,n)
@@ -140,14 +154,32 @@ $(B)/custom-config: $(B)/.patch.ok Makefile
 	@rm -f .config.ok
 
 $(CURDIR)/$(DPDK_TARBALL):
-	@mkdir -p $(B)
 	@if [ -e $(DPDK_DOWNLOAD_DIR)/$(DPDK_TARBALL) ] ; \
 		then cp $(DPDK_DOWNLOAD_DIR)/$(DPDK_TARBALL) $(CURDIR) ; \
 		else curl -o $(CURDIR)/$(DPDK_TARBALL) -LO $(DPDK_TAR_URL) ; \
 	fi
 	@rm -f $(B)/.download.ok
 
-$(B)/.download.ok: $(CURDIR)/$(DPDK_TARBALL)
+$(CURDIR)/$(AESNIMB_LIB_TARBALL):
+	@if [ -e $(DPDK_DOWNLOAD_DIR)/$(AESNIMB_LIB_TARBALL) ] ; \
+		then cp $(DPDK_DOWNLOAD_DIR)/$(AESNIMB_LIB_TARBALL) $(CURDIR) ; \
+		else curl -o $@ -LO $(AESNIMB_LIB_TARBALL_URL) ; \
+	fi
+
+$(CURDIR)/$(ISA_L_CRYPTO_LIB_TARBALL):
+	@if [ -e $(DPDK_DOWNLOAD_DIR)/$(ISA_L_CRYPTO_LIB_TARBALL) ] ; \
+		then cp $(DPDK_DOWNLOAD_DIR)/$(ISA_L_CRYPTO_LIB_TARBALL) $(CURDIR) ; \
+		else curl -o $@ -LO $(ISA_L_CRYPTO_LIB_TARBALL_URL) ; \
+	fi
+
+DPDK_DOWNLOADS = $(CURDIR)/$(DPDK_TARBALL)
+ifeq ($(DPDK_CRYPTO_SW_PMD),y)
+DPDK_DOWNLOADS += $(CURDIR)/$(AESNIMB_LIB_TARBALL)
+DPDK_DOWNLOADS += $(CURDIR)/$(ISA_L_CRYPTO_LIB_TARBALL)
+endif
+
+$(B)/.download.ok: $(DPDK_DOWNLOADS)
+	@mkdir -p $(B)
 	@openssl md5 $< | cut -f 2 -d " " - > $(B)/$(DPDK_TARBALL).md5sum
 	@([ "$$(<$(B)/$(DPDK_TARBALL).md5sum)" = "$(DPDK_$(DPDK_VERSION)_TARBALL_MD5_CKSUM)" ] || \
 	( echo "Bad Checksum! Please remove $< and retry" && \
@@ -160,6 +192,12 @@ download: $(B)/.download.ok
 $(B)/.extract.ok: $(B)/.download.ok
 	@echo --- extracting $(DPDK_TARBALL) ---
 	@tar --directory $(B) --extract --file $(CURDIR)/$(DPDK_TARBALL)
+ifeq ($(DPDK_CRYPTO_SW_PMD),y)
+	@echo --- extracting $(AESNIMB_LIB_TARBALL) ---
+	@tar --directory $(B) --extract --file $(CURDIR)/$(AESNIMB_LIB_TARBALL)
+	@echo --- extracting $(ISA_L_CRYPTO_LIB_TARBALL) ---
+	@tar --directory $(B) --extract --file $(CURDIR)/$(ISA_L_CRYPTO_LIB_TARBALL)
+endif
 	@touch $@
 
 .PHONY: extract
@@ -168,7 +206,7 @@ extract: $(B)/.extract.ok
 $(B)/.patch.ok: $(B)/.extract.ok
 ifneq ($(wildcard $(CURDIR)/dpdk-$(DPDK_VERSION)_patches/*.patch),)
 	@echo --- patching ---
-	for f in $(CURDIR)/dpdk-$(DPDK_VERSION)_patches/*.patch ; do \
+	@for f in $(CURDIR)/dpdk-$(DPDK_VERSION)_patches/*.patch ; do \
 		echo Applying patch: $$(basename $$f) ; \
 		patch -p1 -d $(DPDK_SOURCE) < $$f ; \
 	done
@@ -187,14 +225,140 @@ config: $(B)/.config.ok
 
 $(B)/.build.ok: $(DPDK_SOURCE_FILES)
 	@if [ ! -e $(B)/.config.ok ] ; then echo 'Please run "make config" first' && false ; fi
+ifeq ($(DPDK_CRYPTO_SW_PMD),y)
+	# Build IPsec_MB library
+	mkdir -p $(I)/lib/
+	make -C $(AESNIMB_LIB_SOURCE) -j NO_GCM=y
+	cp $(AESNIMB_LIB_SOURCE)/libIPSec_MB.a $(I)/lib/
+	# Build ISA-L Crypto library
+	cd $(ISA_L_CRYPTO_LIB_SOURCE) && ./autogen.sh && ./configure --prefix=$(I)
+	make -C $(ISA_L_CRYPTO_LIB_SOURCE) -j install
+endif
 	@make $(DPDK_MAKE_ARGS) install
-	@dkms/create_deb_manifest.sh $(DPDK_VERSION) $(subst $(realpath ..)/,,$(B))
 	@touch $@
 
 .PHONY: build
 build: $(B)/.build.ok
 
+.PHONY: install
+install: $(B)/.build.ok
+
 .PHONY: clean
 clean:
 	@rm -rf $(B) $(I)
 
+##############################################################################
+# .deb packaging
+##############################################################################
+
+DEB_ARCH=$(shell dpkg --print-architecture 2> /dev/null)
+DEV_DEB=vpp-dpdk-dev_$(DPDK_VERSION)-$(PKG_SUFFIX)_$(DEB_ARCH).deb
+INSTALLED_DEB_VER=$(shell dpkg-query --showformat='$${Version}' --show vpp-dpdk-dev 2> /dev/null)
+
+.PHONY: build-deb install-deb check-deb
+
+deb/debian/changelog: Makefile
+	@echo "vpp-dpdk ($(DPDK_VERSION)-$(PKG_SUFFIX)) unstable; urgency=low" > $@
+	@echo "" >> $@
+	@echo "  * DPDK Release $(DPDK_VERSION)" >> $@
+	@echo "" >> $@
+	@echo " -- VPP Dev <vpp-dev@lists.fd.io>  $(shell date -R)" >> $@
+
+$(DEV_DEB): deb/debian/changelog
+	@cd deb && dpkg-buildpackage -b -uc -us
+	git clean -fdx deb
+
+build-deb: $(DEV_DEB)
+
+install-deb:
+ifneq ($(INSTALLED_DEB_VER),$(DPDK_VERSION)-$(PKG_SUFFIX))
+	@make $(DEV_DEB)
+	@sudo dpkg -i $(DEV_DEB)
+else
+	@echo "=========================================================="
+	@echo " Up-to-date DPDK package already installed"
+	@echo "=========================================================="
+endif
+
+check-deb:
+ifneq ($(INSTALLED_DEB_VER),$(DPDK_VERSION)-$(PKG_SUFFIX))
+	@echo "=========================================================="
+	@echo " Outdated DPDK package detected:"
+	@echo "  Installed: vpp-dpdk-dev $(INSTALLED_DEB_VER)"
+	@echo "  Current:   vpp-dpdk-dev $(DPDK_VERSION)-$(PKG_SUFFIX)"
+	@echo ""
+	@echo " Please upgrade by invoking 'make dpdk-install-dev'"
+	@echo " from the top level directory."
+	@echo "=========================================================="
+endif
+
+##############################################################################
+# .rpm packaging
+##############################################################################
+
+RPM_ARCH=$(shell rpm --eval "%{_arch}" 2> /dev/null)
+DEV_RPM=vpp-dpdk-devel-$(DPDK_VERSION)-$(PKG_SUFFIX).$(RPM_ARCH).rpm
+INSTALLED_RPM_VER=$(shell rpm -q --queryformat '%{VERSION}-%{RELEASE}' vpp-dpdk-devel 2> /dev/null | grep -v "not inst")
+
+.PHONY: build-rpm install-rpm check-rpm
+
+$(DEV_RPM): Makefile rpm/vpp-dpdk.spec
+	@rpmbuild -bb \
+	  --define "_topdir $(CURDIR)/rpm" \
+	  --define "_version $(DPDK_VERSION)" \
+	  --define "_release $(PKG_SUFFIX)" \
+	  $(CURDIR)/rpm/vpp-dpdk.spec
+	mv rpm/RPMS/$(RPM_ARCH)/*.rpm .
+	git clean -fdx rpm
+
+build-rpm: $(DEV_RPM)
+
+install-rpm:
+ifneq ($(INSTALLED_RPM_VER),$(DPDK_VERSION)-$(PKG_SUFFIX))
+	@make $(DEV_RPM)
+	sudo rpm -Uih $(DEV_RPM)
+else
+	@echo "=========================================================="
+	@echo " Up-to-date DPDK package already installed"
+	@echo "=========================================================="
+endif
+
+check-rpm:
+ifneq ($(INSTALLED_RPM_VER),$(DPDK_VERSION)-$(PKG_SUFFIX))
+	@echo "=========================================================="
+	@echo " Outdated DPDK package detected:"
+	@echo "  Installed: vpp-dpdk-devel $(INSTALLED_RPM_VER)"
+	@echo "  Current:   vpp-dpdk-devel $(DPDK_VERSION)-$(PKG_SUFFIX)"
+	@echo ""
+	@echo " Please upgrade by invoking 'make dpdk-install-dev'"
+	@echo " from the top level directory."
+	@echo "=========================================================="
+endif
+
+##############################################################################
+# ebuild support
+##############################################################################
+
+.PHONY: ebuild-build ebuild-install
+
+ebuild-build:
+ifeq ($(INSTALLED_DEB_VER)$(INSTALLED_RPM_VER),)
+	@echo "=========================================================="
+	@echo "Building DPDK from source. Consider installing development"
+	@echo "package by invoking 'make dpdk-install-dev' from the"
+	@echo "top level directory"
+	@echo "=========================================================="
+	make config
+else
+ifneq ($(INSTALLED_DEB_VER),)
+	make check-deb
+endif
+ifneq ($(INSTALLED_RPM_VER),)
+	make check-rpm
+endif
+endif
+
+ebuild-install:
+ifeq ($(INSTALLED_DEB_VER)$(INSTALLED_RPM_VER),)
+	make install
+endif

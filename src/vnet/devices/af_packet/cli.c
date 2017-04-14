@@ -32,6 +32,13 @@
 
 #include <vnet/devices/af_packet/af_packet.h>
 
+/**
+ * @file
+ * @brief CLI for Host Interface Device Driver.
+ *
+ * This file contains the source code for CLI for the host interface.
+ */
+
 static clib_error_t *
 af_packet_create_command_fn (vlib_main_t * vm, unformat_input_t * input,
 			     vlib_cli_command_t * cmd)
@@ -42,6 +49,7 @@ af_packet_create_command_fn (vlib_main_t * vm, unformat_input_t * input,
   u8 *hw_addr_ptr = 0;
   u32 sw_if_index;
   int r;
+  clib_error_t *error = NULL;
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -56,35 +64,75 @@ af_packet_create_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	    (line_input, "hw-addr %U", unformat_ethernet_address, hwaddr))
 	hw_addr_ptr = hwaddr;
       else
-	return clib_error_return (0, "unknown input `%U'",
-				  format_unformat_error, input);
+	{
+	  error = clib_error_return (0, "unknown input `%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
-  unformat_free (line_input);
 
   if (host_if_name == NULL)
-    return clib_error_return (0, "missing host interface name");
+    {
+      error = clib_error_return (0, "missing host interface name");
+      goto done;
+    }
 
   r = af_packet_create_if (vm, host_if_name, hw_addr_ptr, &sw_if_index);
-  vec_free (host_if_name);
 
   if (r == VNET_API_ERROR_SYSCALL_ERROR_1)
-    return clib_error_return (0, "%s (errno %d)", strerror (errno), errno);
+    {
+      error = clib_error_return (0, "%s (errno %d)", strerror (errno), errno);
+      goto done;
+    }
 
   if (r == VNET_API_ERROR_INVALID_INTERFACE)
-    return clib_error_return (0, "Invalid interface name");
+    {
+      error = clib_error_return (0, "Invalid interface name");
+      goto done;
+    }
 
   if (r == VNET_API_ERROR_SUBIF_ALREADY_EXISTS)
-    return clib_error_return (0, "Interface elready exists");
+    {
+      error = clib_error_return (0, "Interface elready exists");
+      goto done;
+    }
 
   vlib_cli_output (vm, "%U\n", format_vnet_sw_if_index_name, vnet_get_main (),
 		   sw_if_index);
-  return 0;
+
+done:
+  vec_free (host_if_name);
+  unformat_free (line_input);
+
+  return error;
 }
 
+/*?
+ * Create a host interface that will attach to a linux AF_PACKET
+ * interface, one side of a veth pair. The veth pair must already
+ * exist. Once created, a new host interface will exist in VPP
+ * with the name '<em>host-<ifname></em>', where '<em><ifname></em>'
+ * is the name of the specified veth pair. Use the
+ * '<em>show interface</em>' command to display host interface details.
+ *
+ * This command has the following optional parameters:
+ *
+ * - <b>hw-addr <mac-addr></b> - Optional ethernet address, can be in either
+ * X:X:X:X:X:X unix or X.X.X cisco format.
+ *
+ * @cliexpar
+ * Example of how to create a host interface tied to one side of an
+ * existing linux veth pair named vpp1:
+ * @cliexstart{create host-interface name vpp1}
+ * host-vpp1
+ * @cliexend
+ * Once the host interface is created, enable the interface using:
+ * @cliexcmd{set interface state host-vpp1 up}
+?*/
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (af_packet_create_command, static) = {
   .path = "create host-interface",
-  .short_help = "create host-interface name <interface name> [hw-addr <mac>]",
+  .short_help = "create host-interface name <ifname> [hw-addr <mac-addr>]",
   .function = af_packet_create_command_fn,
 };
 /* *INDENT-ON* */
@@ -95,6 +143,7 @@ af_packet_delete_command_fn (vlib_main_t * vm, unformat_input_t * input,
 {
   unformat_input_t _line_input, *line_input = &_line_input;
   u8 *host_if_name = NULL;
+  clib_error_t *error = NULL;
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -105,24 +154,42 @@ af_packet_delete_command_fn (vlib_main_t * vm, unformat_input_t * input,
       if (unformat (line_input, "name %s", &host_if_name))
 	;
       else
-	return clib_error_return (0, "unknown input `%U'",
-				  format_unformat_error, input);
+	{
+	  error = clib_error_return (0, "unknown input `%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
-  unformat_free (line_input);
 
   if (host_if_name == NULL)
-    return clib_error_return (0, "missing host interface name");
+    {
+      error = clib_error_return (0, "missing host interface name");
+      goto done;
+    }
 
   af_packet_delete_if (vm, host_if_name);
-  vec_free (host_if_name);
 
-  return 0;
+done:
+  vec_free (host_if_name);
+  unformat_free (line_input);
+
+  return error;
 }
 
+/*?
+ * Delete a host interface. Use the linux interface name to identify
+ * the host interface to be deleted. In VPP, host interfaces are
+ * named as '<em>host-<ifname></em>', where '<em><ifname></em>'
+ * is the name of the linux interface.
+ *
+ * @cliexpar
+ * Example of how to delete a host interface named host-vpp1:
+ * @cliexcmd{delete host-interface name vpp1}
+?*/
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (af_packet_delete_command, static) = {
   .path = "delete host-interface",
-  .short_help = "delete host-interface name <interface name>",
+  .short_help = "delete host-interface name <ifname>",
   .function = af_packet_delete_command_fn,
 };
 /* *INDENT-ON* */

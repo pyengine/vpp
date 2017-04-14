@@ -16,6 +16,7 @@ AUTOMAKE_OPTIONS = foreign subdir-objects
 
 AM_CFLAGS = -Wall -I${top_srcdir} -I${top_builddir}
 AM_LDFLAGS = -module -shared -avoid-version
+AM_LIBTOOLFLAGS = --quiet
 SUFFIXES = .api.h .api .api.json
 API_FILES =
 BUILT_SOURCES =
@@ -23,12 +24,17 @@ vppplugins_LTLIBRARIES =
 vppapitestplugins_LTLIBRARIES =
 noinst_HEADERS =
 nobase_apiinclude_HEADERS =
+nobase_include_HEADERS =
 
 vppapitestpluginsdir = ${libdir}/vpp_api_test_plugins
 vpppluginsdir = ${libdir}/vpp_plugins
 
 if ENABLE_ACL_PLUGIN
 include acl.am
+endif
+
+if ENABLE_DPDK_PLUGIN
+include dpdk.am
 endif
 
 if ENABLE_FLOWPERPKT_PLUGIN
@@ -43,8 +49,16 @@ if ENABLE_IOAM_PLUGIN
 include ioam.am
 endif
 
+if ENABLE_IXGE_PLUGIN
+include ixge.am
+endif
+
 if ENABLE_LB_PLUGIN
 include lb.am
+endif
+
+if ENABLE_MEMIF_PLUGIN
+include memif.am
 endif
 
 if ENABLE_SIXRD_PLUGIN
@@ -79,3 +93,4 @@ api_DATA = \
 BUILT_SOURCES += \
 	$(patsubst %.api,%.api.h,$(API_FILES))
 
+CLEANFILES = $(BUILT_SOURCES) $(api_DATA)

@@ -96,27 +96,42 @@ typedef enum fib_forward_chain_type_t_ {
      */
     FIB_FORW_CHAIN_TYPE_MPLS_EOS,
     /**
+     * Contribute an object that is to be used to forward IP4 packets
+     */
+    FIB_FORW_CHAIN_TYPE_MCAST_IP4,
+    /**
+     * Contribute an object that is to be used to forward IP6 packets
+     */
+    FIB_FORW_CHAIN_TYPE_MCAST_IP6,
+    /**
      * Contribute an object that is to be used to forward Ethernet packets.
+     */
+    FIB_FORW_CHAIN_TYPE_ETHERNET,
+    /**
+     * Contribute an object that is to be used to forward NSH packets.
      * This is last in the list since it is not valid for many FIB objects,
      * and thus their array of per-chain-type DPOs can be sized smaller.
      */
-    FIB_FORW_CHAIN_TYPE_ETHERNET,
+    FIB_FORW_CHAIN_TYPE_NSH,
 }  __attribute__ ((packed)) fib_forward_chain_type_t;
 
 #define FIB_FORW_CHAINS {					\
     [FIB_FORW_CHAIN_TYPE_ETHERNET]      = "ethernet",     	\
     [FIB_FORW_CHAIN_TYPE_UNICAST_IP4]   = "unicast-ip4",	\
     [FIB_FORW_CHAIN_TYPE_UNICAST_IP6]   = "unicast-ip6",	\
+    [FIB_FORW_CHAIN_TYPE_MCAST_IP4]     = "multicast-ip4",	\
+    [FIB_FORW_CHAIN_TYPE_MCAST_IP6]     = "multicast-ip6",	\
     [FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS]  = "mpls-neos",	        \
     [FIB_FORW_CHAIN_TYPE_MPLS_EOS]      = "mpls-eos",	        \
+    [FIB_FORW_CHAIN_TYPE_NSH]           = "nsh",                \
 }
 
-#define FIB_FORW_CHAIN_NUM (FIB_FORW_CHAIN_TYPE_MPLS_ETHERNET+1)
+#define FIB_FORW_CHAIN_NUM (FIB_FORW_CHAIN_TYPE_NSH+1)
 #define FIB_FORW_CHAIN_MPLS_NUM (FIB_FORW_CHAIN_TYPE_MPLS_EOS+1)
 
 #define FOR_EACH_FIB_FORW_CHAIN(_item)			  \
     for (_item = FIB_FORW_CHAIN_TYPE_UNICAST_IP4;   	  \
-	 _item <= FIB_FORW_CHAIN_TYPE_ETHERNET;		  \
+	 _item <= FIB_FORW_CHAIN_TYPE_NSH;		  \
 	 _item++)
 
 #define FOR_EACH_FIB_FORW_MPLS_CHAIN(_item)		  \
@@ -263,7 +278,43 @@ typedef enum fib_route_path_flags_t_
      * Recursion constraint of via an attahced prefix
      */
     FIB_ROUTE_PATH_RESOLVE_VIA_ATTACHED = (1 << 1),
+    /**
+     * A for-us/local path
+     */
+    FIB_ROUTE_PATH_LOCAL = (1 << 2),
+    /**
+     * Attached path
+     */
+    FIB_ROUTE_PATH_ATTACHED = (1 << 3),
+    /**
+     * A Drop path - resolve the path on the drop DPO
+     */
+    FIB_ROUTE_PATH_DROP = (1 << 4),
+    /**
+     * Don't resolve the path, use the DPO the client provides
+     */
+    FIB_ROUTE_PATH_EXCLUSIVE = (1 << 5),
+    /**
+     * A path that result in received traffic being recieved/recirculated
+     * so that it appears to have arrived on the new interface
+     */
+    FIB_ROUTE_PATH_INTF_RX = (1 << 6),
+    /**
+     * A local path with a RPF-ID => multicast traffic
+     */
+    FIB_ROUTE_PATH_RPF_ID = (1 << 7),
 } fib_route_path_flags_t;
+
+/**
+ * An RPF-ID is numerical value that is used RPF validate. An entry
+ * has-a RPF-ID, when a packet egress from (e.g. an LSP) it gains an
+ * RPF-ID, these two are compared for the RPF check.
+ * This replaces the interfce based chack (since the LSP has no associated
+ * interface.
+ */
+typedef u32 fib_rpf_id_t;
+
+#define MFIB_RPF_ID_NONE (0)
 
 /**
  * @brief 
@@ -298,17 +349,29 @@ typedef struct fib_route_path_t_ {
 	 */
 	ip46_address_t frp_addr;
 
-	/**
-	 * The MPLS local Label to reursively resolve through.
-	 * This is valid when the path type is MPLS.
-	 */
-	mpls_label_t frp_local_label;
+        struct {
+            /**
+             * The MPLS local Label to reursively resolve through.
+             * This is valid when the path type is MPLS.
+             */
+            mpls_label_t frp_local_label;
+            /**
+             * EOS bit for the resolving label
+             */
+            mpls_eos_bit_t frp_eos;
+        };
     };
-    /**
-     * The interface.
-     * Will be invalid for recursive paths.
-     */
-    u32 frp_sw_if_index;
+    union {
+        /**
+         * The interface.
+         * Will be invalid for recursive paths.
+         */
+        u32 frp_sw_if_index;
+        /**
+         * The RPF-ID
+         */
+        fib_rpf_id_t frp_rpf_id;
+    };
     /**
      * The FIB index to lookup the nexthop
      * Only valid for recursive paths.

@@ -162,17 +162,8 @@ ip4_source_check_inline (vlib_main_t * vm,
 	  mtrie0 = &ip4_fib_get (c0->fib_index)->mtrie;
 	  mtrie1 = &ip4_fib_get (c1->fib_index)->mtrie;
 
-	  leaf0 = leaf1 = IP4_FIB_MTRIE_LEAF_ROOT;
-
-	  leaf0 =
-	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 0);
-	  leaf1 =
-	    ip4_fib_mtrie_lookup_step (mtrie1, leaf1, &ip1->src_address, 0);
-
-	  leaf0 =
-	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 1);
-	  leaf1 =
-	    ip4_fib_mtrie_lookup_step (mtrie1, leaf1, &ip1->src_address, 1);
+	  leaf0 = ip4_fib_mtrie_lookup_step_one (mtrie0, &ip0->src_address);
+	  leaf1 = ip4_fib_mtrie_lookup_step_one (mtrie1, &ip1->src_address);
 
 	  leaf0 =
 	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 2);
@@ -250,13 +241,7 @@ ip4_source_check_inline (vlib_main_t * vm,
 
 	  mtrie0 = &ip4_fib_get (c0->fib_index)->mtrie;
 
-	  leaf0 = IP4_FIB_MTRIE_LEAF_ROOT;
-
-	  leaf0 =
-	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 0);
-
-	  leaf0 =
-	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 1);
+	  leaf0 = ip4_fib_mtrie_lookup_step_one (mtrie0, &ip0->src_address);
 
 	  leaf0 =
 	    ip4_fib_mtrie_lookup_step (mtrie0, leaf0, &ip0->src_address, 2);
@@ -399,6 +384,8 @@ set_ip_source_check (vlib_main_t * vm,
   vnet_feature_enable_disable ("ip4-unicast", feature_name, sw_if_index,
 			       is_del == 0, &config, sizeof (config));
 done:
+  unformat_free (line_input);
+
   return error;
 }
 
@@ -505,7 +492,7 @@ ip_source_check_accept (vlib_main_t * vm,
 
   if (~0 != table_id)
     {
-      fib_index = fib_table_id_find_fib_index (pfx.fp_proto, table_id);
+      fib_index = fib_table_find (pfx.fp_proto, table_id);
       if (~0 == fib_index)
 	{
 	  error = clib_error_return (0, "Nonexistent table id %d", table_id);
@@ -522,7 +509,7 @@ ip_source_check_accept (vlib_main_t * vm,
       fib_table_entry_special_add (fib_index,
 				   &pfx,
 				   FIB_SOURCE_URPF_EXEMPT,
-				   FIB_ENTRY_FLAG_DROP, ADJ_INDEX_INVALID);
+				   FIB_ENTRY_FLAG_DROP);
     }
   else
     {
@@ -531,7 +518,9 @@ ip_source_check_accept (vlib_main_t * vm,
     }
 
 done:
-  return (error);
+  unformat_free (line_input);
+
+  return error;
 }
 
 /*?

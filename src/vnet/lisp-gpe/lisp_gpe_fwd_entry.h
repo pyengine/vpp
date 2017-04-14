@@ -75,13 +75,18 @@ typedef struct lisp_gpe_fwd_entry_key_t_
 typedef struct lisp_gpe_fwd_entry_t_
 {
   /**
+   * Follows src/dst or dst only forwarding policy
+   */
+  u8 is_src_dst;
+
+  /**
    * This object joins the FIB control plane graph to receive updates to
    * for changes to the graph.
    */
   fib_node_t node;
 
   /**
-   * The Entry's key: {lEID,r-EID,vni}
+   * The Entry's key: {lEID,rEID,vni}
    */
   lisp_gpe_fwd_entry_key_t *key;
 
@@ -150,6 +155,33 @@ typedef struct lisp_gpe_fwd_entry_t_
        */
       dpo_id_t dpo;
     } l2;
+
+    /**
+     * Fields relevant to an NSH entry
+     */
+    struct
+    {
+      /**
+       * The path-list created for the forwarding
+       */
+      fib_node_index_t path_list_index;
+
+      /**
+       * Child index of this entry on the path-list
+       */
+      u32 child_index;
+
+      /**
+       * The DPO contributed by NSH
+       */
+      dpo_id_t dpo;
+
+      /**
+       * The DPO used for forwarding. Obtained after stacking tx node
+       * onto lb choice
+       */
+      dpo_id_t choice;
+    } nsh;
   };
 
   union
@@ -177,6 +209,14 @@ extern void vnet_lisp_gpe_fwd_entry_flush (void);
 extern u32 lisp_l2_fib_lookup (lisp_gpe_main_t * lgm,
 			       u16 bd_index, u8 src_mac[8], u8 dst_mac[8]);
 
+extern const dpo_id_t *lisp_nsh_fib_lookup (lisp_gpe_main_t * lgm,
+					    u32 spi_si);
+extern void
+vnet_lisp_gpe_del_fwd_counters (vnet_lisp_gpe_add_del_fwd_entry_args_t * a,
+				u32 fwd_entry_index);
+extern void
+vnet_lisp_gpe_add_fwd_counters (vnet_lisp_gpe_add_del_fwd_entry_args_t * a,
+				u32 fwd_entry_index);
 #endif
 
 /*

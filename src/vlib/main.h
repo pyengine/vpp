@@ -156,12 +156,13 @@ typedef struct vlib_main_t
   uword *init_functions_called;
 
   /* to compare with node runtime */
-  u32 cpu_index;
+  u32 thread_index;
 
   void **mbuf_alloc_list;
 
   /* List of init functions to call, setup by constructors */
   _vlib_init_function_list_elt_t *init_function_registrations;
+  _vlib_init_function_list_elt_t *worker_init_function_registrations;
   _vlib_init_function_list_elt_t *main_loop_enter_function_registrations;
   _vlib_init_function_list_elt_t *main_loop_exit_function_registrations;
   _vlib_init_function_list_elt_t *api_init_function_registrations;
@@ -177,10 +178,15 @@ typedef struct vlib_main_t
    * incoming requests */
   volatile u32 *main_lockp;
   u8 **argv;
+
+  /* debugging */
+  volatile int parked_at_barrier;
 } vlib_main_t;
 
 /* Global main structure. */
 extern vlib_main_t vlib_global_main;
+
+void vlib_worker_loop (vlib_main_t * vm);
 
 always_inline f64
 vlib_time_now (vlib_main_t * vm)

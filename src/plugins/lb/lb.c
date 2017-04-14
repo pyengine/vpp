@@ -15,6 +15,7 @@
 
 #include <lb/lb.h>
 #include <vnet/plugin/plugin.h>
+#include <vpp/app/version.h>
 #include <vnet/api_errno.h>
 
 //GC runs at most once every so many seconds
@@ -62,11 +63,11 @@ u8 *format_lb_main (u8 * s, va_list * args)
   s = format(s, " #vips: %u\n", pool_elts(lbm->vips));
   s = format(s, " #ass: %u\n", pool_elts(lbm->ass) - 1);
 
-  u32 cpu_index;
-  for(cpu_index = 0; cpu_index < tm->n_vlib_mains; cpu_index++ ) {
-    lb_hash_t *h = lbm->per_cpu[cpu_index].sticky_ht;
+  u32 thread_index;
+  for(thread_index = 0; thread_index < tm->n_vlib_mains; thread_index++ ) {
+    lb_hash_t *h = lbm->per_cpu[thread_index].sticky_ht;
     if (h) {
-      s = format(s, "core %d\n", cpu_index);
+      s = format(s, "core %d\n", thread_index);
       s = format(s, "  timeout: %ds\n", h->timeout);
       s = format(s, "  usage: %d / %d\n", lb_hash_elts(h, lb_hash_time_now(vlib_get_main())),  lb_hash_size(h));
     }
@@ -509,8 +510,7 @@ next:
 	fib_table_entry_special_add(0,
 				    &nh,
 				    FIB_SOURCE_RR,
-				    FIB_ENTRY_FLAG_NONE,
-				    ADJ_INDEX_INVALID);
+				    FIB_ENTRY_FLAG_NONE);
     as->next_hop_child_index =
 	fib_entry_child_add(as->next_hop_fib_entry_index,
 			    lbm->fib_node_type,
@@ -730,15 +730,12 @@ int lb_vip_del(u32 vip_index)
   return 0;
 }
 
-clib_error_t *
-vlib_plugin_register (vlib_main_t * vm,
-                      vnet_plugin_handoff_t * h,
-                      int from_early_init)
-{
-  clib_error_t *error = 0;
-  return error;
-}
-
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = VPP_BUILD_VER,
+    .description = "Load Balancer",
+};
+/* *INDENT-ON* */
 
 u8 *format_lb_dpo (u8 * s, va_list * va)
 {

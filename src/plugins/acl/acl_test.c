@@ -26,6 +26,9 @@
 #include <vnet/ip/ip.h>
 #include <arpa/inet.h>
 
+#define __plugin_msg_base acl_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 uword unformat_sw_if_index (unformat_input_t * input, va_list * args);
 
 /* Declare message IDs */
@@ -161,14 +164,14 @@ vl_api_acl_rule_t_pretty_format (u8 *out, vl_api_acl_rule_t * a)
   inet_ntop(af, a->src_ip_addr, (void *)src, sizeof(src));
   inet_ntop(af, a->dst_ip_addr, (void *)dst, sizeof(dst));
 
-  out = format(out, "%s action %d src %s/%d dst %s/%d proto %d sport %d-%d dport %d-%d tcpflags %d %d",
+  out = format(out, "%s action %d src %s/%d dst %s/%d proto %d sport %d-%d dport %d-%d tcpflags %d mask %d",
                      a->is_ipv6 ? "ipv6" : "ipv4", a->is_permit,
                      src, a->src_ip_prefix_len,
                      dst, a->dst_ip_prefix_len,
                      a->proto,
                      a->srcport_or_icmptype_first, a->srcport_or_icmptype_last,
 	             a->dstport_or_icmpcode_first, a->dstport_or_icmpcode_last,
-                     a->tcp_flags_mask, a->tcp_flags_value);
+                     a->tcp_flags_value, a->tcp_flags_mask);
   return(out);
 }
 
@@ -259,48 +262,12 @@ _(MACIP_ACL_INTERFACE_ADD_DEL_REPLY, macip_acl_interface_add_del_reply)  \
 _(MACIP_ACL_INTERFACE_GET_REPLY, macip_acl_interface_get_reply)  \
 _(ACL_PLUGIN_GET_VERSION_REPLY, acl_plugin_get_version_reply)
 
-/* M: construct, but don't yet send a message */
-
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-#define M2(T,t,n)                                               \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
 static int api_acl_plugin_get_version (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
     vl_api_acl_plugin_get_version_t * mp;
     u32 msg_size = sizeof(*mp);
-    f64 timeout;
+    int ret;
 
     vam->result_ready = 0;
     mp = vl_msg_api_alloc_as_if_client(msg_size);
@@ -309,12 +276,11 @@ static int api_acl_plugin_get_version (vat_main_t * vam)
     mp->client_index = vam->my_client_index;
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
-
-    return 0;
+    W (ret);
+    return ret;
 }
 
 static int api_macip_acl_interface_get (vat_main_t * vam)
@@ -322,7 +288,7 @@ static int api_macip_acl_interface_get (vat_main_t * vam)
     acl_test_main_t * sm = &acl_test_main;
     vl_api_acl_plugin_get_version_t * mp;
     u32 msg_size = sizeof(*mp);
-    f64 timeout;
+    int ret;
 
     vam->result_ready = 0;
     mp = vl_msg_api_alloc_as_if_client(msg_size);
@@ -331,12 +297,11 @@ static int api_macip_acl_interface_get (vat_main_t * vam)
     mp->client_index = vam->my_client_index;
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
-
-    return 0;
+    W (ret);
+    return ret;
 }
 
 #define vec_validate_acl_rules(v, idx) \
@@ -354,7 +319,6 @@ static int api_acl_add_replace (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_acl_add_replace_t * mp;
     u32 acl_index = ~0;
     u32 msg_size = sizeof (*mp); /* without the rules */
@@ -362,6 +326,7 @@ static int api_acl_add_replace (vat_main_t * vam)
     vl_api_acl_rule_t *rules = 0;
     int rule_idx = 0;
     int n_rules = 0;
+    int n_rules_override = -1;
     u32 proto = 0;
     u32 port1 = 0;
     u32 port2 = 0;
@@ -371,6 +336,7 @@ static int api_acl_add_replace (vat_main_t * vam)
     ip4_address_t src_v4address, dst_v4address;
     ip6_address_t src_v6address, dst_v6address;
     u8 *tag = 0;
+    int ret;
 
     if (!unformat (i, "%d", &acl_index)) {
 	/* Just assume -1 */
@@ -397,6 +363,15 @@ static int api_acl_add_replace (vat_main_t * vam)
           {
             vec_validate_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 1;
+          }
+        else if (unformat (i, "deny"))
+          {
+            vec_validate_acl_rules(rules, rule_idx);
+            rules[rule_idx].is_permit = 0;
+          }
+        else if (unformat (i, "count %d", &n_rules_override))
+          {
+            /* we will use this later */
           }
         else if (unformat (i, "action %d", &action))
           {
@@ -465,6 +440,12 @@ static int api_acl_add_replace (vat_main_t * vam)
             rules[rule_idx].tcp_flags_value = tcpflags;
             rules[rule_idx].tcp_flags_mask = tcpmask;
           }
+        else if (unformat (i, "tcpflags %d mask %d", &tcpflags, &tcpmask))
+          {
+            vec_validate_acl_rules(rules, rule_idx);
+            rules[rule_idx].tcp_flags_value = tcpflags;
+            rules[rule_idx].tcp_flags_mask = tcpmask;
+          }
         else if (unformat (i, "proto %d", &proto))
           {
             vec_validate_acl_rules(rules, rule_idx);
@@ -490,6 +471,9 @@ static int api_acl_add_replace (vat_main_t * vam)
     else
       n_rules = 0;
 
+    if (n_rules_override >= 0)
+      n_rules = n_rules_override;
+
     msg_size += n_rules*sizeof(rules[0]);
 
     mp = vl_msg_api_alloc_as_if_client(msg_size);
@@ -512,19 +496,19 @@ static int api_acl_add_replace (vat_main_t * vam)
     mp->count = htonl(n_rules);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_acl_del (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_acl_del_t * mp;
     u32 acl_index = ~0;
+    int ret;
 
     if (!unformat (i, "%d", &acl_index)) {
       errmsg ("missing acl index\n");
@@ -532,23 +516,23 @@ static int api_acl_del (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M(ACL_DEL, acl_del);
+    M(ACL_DEL, mp);
     mp->acl_index = ntohl(acl_index);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_macip_acl_del (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_acl_del_t * mp;
     u32 acl_index = ~0;
+    int ret;
 
     if (!unformat (i, "%d", &acl_index)) {
       errmsg ("missing acl index\n");
@@ -556,26 +540,26 @@ static int api_macip_acl_del (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M(MACIP_ACL_DEL, acl_del);
+    M(MACIP_ACL_DEL, mp);
     mp->acl_index = ntohl(acl_index);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_acl_interface_add_del (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_acl_interface_add_del_t * mp;
     u32 sw_if_index = ~0;
     u32 acl_index = ~0;
     u8 is_input = 0;
     u8 is_add = 0;
+    int ret;
 
 //    acl_interface_add_del <intfc> | sw_if_index <if-idx> acl_index <acl-idx> [out] [del]
 
@@ -621,28 +605,28 @@ static int api_acl_interface_add_del (vat_main_t * vam)
 
 
     /* Construct the API message */
-    M(ACL_INTERFACE_ADD_DEL, acl_interface_add_del);
+    M(ACL_INTERFACE_ADD_DEL, mp);
     mp->acl_index = ntohl(acl_index);
     mp->sw_if_index = ntohl(sw_if_index);
     mp->is_add = is_add;
     mp->is_input = is_input;
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_macip_acl_interface_add_del (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_macip_acl_interface_add_del_t * mp;
     u32 sw_if_index = ~0;
     u32 acl_index = ~0;
     u8 is_add = 0;
+    int ret;
 
     /* Parse args required to build the message */
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
@@ -673,29 +657,29 @@ static int api_macip_acl_interface_add_del (vat_main_t * vam)
 
 
     /* Construct the API message */
-    M(MACIP_ACL_INTERFACE_ADD_DEL, macip_acl_interface_add_del);
+    M(MACIP_ACL_INTERFACE_ADD_DEL, mp);
     mp->acl_index = ntohl(acl_index);
     mp->sw_if_index = ntohl(sw_if_index);
     mp->is_add = is_add;
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_acl_interface_set_acl_list (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_acl_interface_set_acl_list_t * mp;
     u32 sw_if_index = ~0;
     u32 acl_index = ~0;
     u32 *inacls = 0;
     u32 *outacls = 0;
     u8 is_input = 0;
+    int ret;
 
 //  acl_interface_set_acl_list <intfc> | sw_if_index <if-idx> input [acl-idx list] output [acl-idx list]
 
@@ -728,7 +712,7 @@ static int api_acl_interface_set_acl_list (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M2(ACL_INTERFACE_SET_ACL_LIST, acl_interface_set_acl_list, sizeof(u32) * (vec_len(inacls) + vec_len(outacls)));
+    M2(ACL_INTERFACE_SET_ACL_LIST, mp, sizeof(u32) * (vec_len(inacls) + vec_len(outacls)));
     mp->sw_if_index = ntohl(sw_if_index);
     mp->n_input = vec_len(inacls);
     mp->count = vec_len(inacls) + vec_len(outacls);
@@ -737,20 +721,20 @@ static int api_acl_interface_set_acl_list (vat_main_t * vam)
       clib_memcpy(mp->acls, inacls, vec_len(inacls)*sizeof(u32));
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 
 static int api_acl_interface_list_dump (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     u32 sw_if_index = ~0;
     vl_api_acl_interface_list_dump_t * mp;
+    int ret;
 
     /* Parse args required to build the message */
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
@@ -763,23 +747,23 @@ static int api_acl_interface_list_dump (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M(ACL_INTERFACE_LIST_DUMP, acl_interface_list_dump);
+    M(ACL_INTERFACE_LIST_DUMP, mp);
     mp->sw_if_index = ntohl (sw_if_index);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_acl_dump (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     u32 acl_index = ~0;
     vl_api_acl_dump_t * mp;
+    int ret;
 
     /* Parse args required to build the message */
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
@@ -790,23 +774,23 @@ static int api_acl_dump (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M(ACL_DUMP, acl_dump);
+    M(ACL_DUMP, mp);
     mp->acl_index = ntohl (acl_index);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 static int api_macip_acl_dump (vat_main_t * vam)
 {
-    acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     u32 acl_index = ~0;
     vl_api_acl_dump_t * mp;
+    int ret;
 
     /* Parse args required to build the message */
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
@@ -817,14 +801,15 @@ static int api_macip_acl_dump (vat_main_t * vam)
     }
 
     /* Construct the API message */
-    M(MACIP_ACL_DUMP, macip_acl_dump);
+    M(MACIP_ACL_DUMP, mp);
     mp->acl_index = ntohl (acl_index);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 #define vec_validate_macip_acl_rules(v, idx) \
@@ -840,13 +825,13 @@ static int api_macip_acl_add (vat_main_t * vam)
 {
     acl_test_main_t * sm = &acl_test_main;
     unformat_input_t * i = vam->input;
-    f64 timeout;
     vl_api_macip_acl_add_t * mp;
     u32 msg_size = sizeof (*mp); /* without the rules */
 
     vl_api_macip_acl_rule_t *rules = 0;
     int rule_idx = 0;
     int n_rules = 0;
+    int n_rules_override = -1;
     u32 src_prefix_length = 0;
     u32 action = 0;
     ip4_address_t src_v4address;
@@ -854,6 +839,7 @@ static int api_macip_acl_add (vat_main_t * vam)
     u8 src_mac[6];
     u8 *tag = 0;
     u8 mac_mask_all_1[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    int ret;
 
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
     {
@@ -877,6 +863,10 @@ static int api_macip_acl_add (vat_main_t * vam)
             vec_validate_macip_acl_rules(rules, rule_idx);
             rules[rule_idx].is_permit = 0;
           }
+        else if (unformat (i, "count %d", &n_rules_override))
+          {
+            /* we will use this later */
+          }
         else if (unformat (i, "action %d", &action))
           {
             vec_validate_macip_acl_rules(rules, rule_idx);
@@ -889,6 +879,10 @@ static int api_macip_acl_add (vat_main_t * vam)
             memcpy (rules[rule_idx].src_ip_addr, &src_v4address, 4);
             rules[rule_idx].src_ip_prefix_len = src_prefix_length;
             rules[rule_idx].is_ipv6 = 0;
+          }
+        else if (unformat (i, "src"))
+          {
+            /* Everything in MACIP is "source" but allow this verbosity */
           }
         else if (unformat (i, "ip %U/%d",
          unformat_ip6_address, &src_v6address, &src_prefix_length))
@@ -931,6 +925,9 @@ static int api_macip_acl_add (vat_main_t * vam)
     else
       n_rules = 0;
 
+    if (n_rules_override >= 0)
+      n_rules = n_rules_override;
+
     msg_size += n_rules*sizeof(rules[0]);
 
     mp = vl_msg_api_alloc_as_if_client(msg_size);
@@ -953,10 +950,11 @@ static int api_macip_acl_add (vat_main_t * vam)
     mp->count = htonl(n_rules);
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 /*
@@ -978,8 +976,8 @@ _(macip_acl_interface_add_del, "<intfc> | sw_if_index <if-idx> [add|del] acl <ac
 _(macip_acl_interface_get, "")
 
 
-
-void vat_api_hookup (vat_main_t *vam)
+static
+void acl_vat_api_hookup (vat_main_t *vam)
 {
     acl_test_main_t * sm = &acl_test_main;
     /* Hook up handlers for replies from the data plane plug-in */
@@ -1016,7 +1014,7 @@ clib_error_t * vat_plugin_register (vat_main_t *vam)
   sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (sm->msg_id_base != (u16) ~0)
-    vat_api_hookup (vam);
+    acl_vat_api_hookup (vam);
 
   vec_free(name);
 

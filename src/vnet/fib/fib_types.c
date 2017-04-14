@@ -66,12 +66,13 @@ fib_prefix_from_ip46_addr (const ip46_address_t *addr,
 
 void
 fib_prefix_from_mpls_label (mpls_label_t label,
+                            mpls_eos_bit_t eos,
 			    fib_prefix_t *pfx)
 {
     pfx->fp_proto = FIB_PROTOCOL_MPLS;
     pfx->fp_len = 21;
     pfx->fp_label = label;
-    pfx->fp_eos = MPLS_NON_EOS;
+    pfx->fp_eos = eos;
 }
 
 int
@@ -194,17 +195,7 @@ fib_route_path_cmp (const fib_route_path_t *rpath1,
 
     if (0 != res) return (res);
 
-    if (~0 != rpath1->frp_sw_if_index &&
-        ~0 != rpath2->frp_sw_if_index)
-    {
-        res = vnet_sw_interface_compare(vnet_get_main(),
-                                        rpath1->frp_sw_if_index,
-                                        rpath2->frp_sw_if_index);
-    }
-    else
-    {
-        res = rpath1->frp_sw_if_index - rpath2->frp_sw_if_index;
-    }
+    res = (rpath1->frp_sw_if_index - rpath2->frp_sw_if_index);
 
     if (0 != res) return (res);
 
@@ -279,6 +270,8 @@ fib_forw_chain_type_from_dpo_proto (dpo_proto_t proto)
 	return (FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS);
     case DPO_PROTO_ETHERNET:
 	return (FIB_FORW_CHAIN_TYPE_ETHERNET);
+    case DPO_PROTO_NSH:
+        return (FIB_FORW_CHAIN_TYPE_NSH);
     }
     ASSERT(0);
     return (FIB_FORW_CHAIN_TYPE_UNICAST_IP4);
@@ -290,11 +283,15 @@ fib_forw_chain_type_to_link_type (fib_forward_chain_type_t fct)
     switch (fct)
     {
     case FIB_FORW_CHAIN_TYPE_UNICAST_IP4:
+    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
 	return (VNET_LINK_IP4);
     case FIB_FORW_CHAIN_TYPE_UNICAST_IP6:
+    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
 	return (VNET_LINK_IP6);
     case FIB_FORW_CHAIN_TYPE_ETHERNET:
 	return (VNET_LINK_ETHERNET);
+    case FIB_FORW_CHAIN_TYPE_NSH:
+        return (VNET_LINK_NSH);
     case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
 	/*
 	 * insufficient information to to convert
@@ -313,11 +310,15 @@ fib_forw_chain_type_to_dpo_proto (fib_forward_chain_type_t fct)
     switch (fct)
     {
     case FIB_FORW_CHAIN_TYPE_UNICAST_IP4:
+    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
 	return (DPO_PROTO_IP4);
     case FIB_FORW_CHAIN_TYPE_UNICAST_IP6:
+    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
 	return (DPO_PROTO_IP6);
     case FIB_FORW_CHAIN_TYPE_ETHERNET:
 	return (DPO_PROTO_ETHERNET);
+    case FIB_FORW_CHAIN_TYPE_NSH:
+        return (DPO_PROTO_NSH);
     case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
     case FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS:
 	return (DPO_PROTO_MPLS);

@@ -47,6 +47,15 @@
 #include <vnet/ipsec-gre/ipsec_gre.api.h>
 #include <vnet/lisp-cp/lisp.api.h>
 #include <vnet/lisp-gpe/lisp_gpe.api.h>
+#include <vnet/lisp-cp/one.api.h>
+#include <vnet/session/session.api.h>
+#include <vnet/mpls/mpls.api.h>
+#include <vnet/sr/sr.api.h>
+#include <vnet/classify/classify.api.h>
+#include <vnet/flow/flow.api.h>
+#include <vnet/dhcp/dhcp.api.h>
+#include <vnet/cop/cop.api.h>
+#include <vnet/policer/policer.api.h>
 
 /*
  * fd.io coding-style-patch-verification: ON

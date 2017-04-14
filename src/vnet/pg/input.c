@@ -893,7 +893,7 @@ pg_generate_set_lengths (pg_main_t * pg,
 
     vlib_increment_combined_counter (im->combined_sw_if_counters
 				     + VNET_INTERFACE_COUNTER_RX,
-				     os_get_cpu_number (),
+				     vlib_get_thread_index (),
 				     si->sw_if_index, n_buffers, length_sum);
   }
 
@@ -1212,10 +1212,10 @@ pg_stream_fill_helper (pg_main_t * pg,
 
   /*
    * Historically, the pg maintained its own free lists and
-   * device drivers tx paths would return pkts. With the DPDK,
-   * that doesn't happen.
+   * device drivers tx paths would return pkts.
    */
-  if (DPDK == 0 && !(s->flags & PG_STREAM_FLAGS_DISABLE_BUFFER_RECYCLE))
+  if (vm->buffer_main->extern_buffer_mgmt == 0 &&
+      !(s->flags & PG_STREAM_FLAGS_DISABLE_BUFFER_RECYCLE))
     f->buffer_init_function = pg_buffer_init;
   f->buffer_init_function_opaque =
     (s - pg->streams) | ((bi - s->buffer_indices) << 24);
@@ -1238,7 +1238,7 @@ pg_stream_fill_helper (pg_main_t * pg,
   n_alloc = n_allocated;
 
   /* Reinitialize buffers */
-  if (DPDK == 0 || CLIB_DEBUG > 0
+  if (vm->buffer_main->extern_buffer_mgmt == 0 || CLIB_DEBUG > 0
       || (s->flags & PG_STREAM_FLAGS_DISABLE_BUFFER_RECYCLE))
     init_buffers_inline
       (vm, s,
@@ -1246,7 +1246,8 @@ pg_stream_fill_helper (pg_main_t * pg,
        n_alloc, (bi - s->buffer_indices) * s->buffer_bytes /* data offset */ ,
        s->buffer_bytes,
        /* set_data */
-       DPDK == 1 || (s->flags & PG_STREAM_FLAGS_DISABLE_BUFFER_RECYCLE) != 0);
+       vm->buffer_main->extern_buffer_mgmt != 0
+       || (s->flags & PG_STREAM_FLAGS_DISABLE_BUFFER_RECYCLE) != 0);
 
   if (next_buffers)
     pg_set_next_buffer_pointers (pg, s, buffers, next_buffers, n_alloc);
@@ -1265,7 +1266,7 @@ pg_stream_fill_helper (pg_main_t * pg,
 	    l += vlib_buffer_index_length_in_chain (vm, buffers[i]);
 	  vlib_increment_combined_counter (im->combined_sw_if_counters
 					   + VNET_INTERFACE_COUNTER_RX,
-					   os_get_cpu_number (),
+					   vlib_get_thread_index (),
 					   si->sw_if_index, n_alloc, l);
 	  s->current_replay_packet_index += n_alloc;
 	  s->current_replay_packet_index %=
@@ -1372,6 +1373,7 @@ typedef struct
   u32 stream_index;
 
   u32 packet_length;
+  u32 sw_if_index;
 
   /* Use pre data for packet data. */
   vlib_buffer_t buffer;
@@ -1398,6 +1400,7 @@ format_pg_input_trace (u8 * s, va_list * va)
     s = format (s, "stream %d", t->stream_index);
 
   s = format (s, ", %d bytes", t->packet_length);
+  s = format (s, ", %d sw_if_index", t->sw_if_index);
 
   s = format (s, "\n%U%U",
 	      format_white_space, indent, format_vlib_buffer, &t->buffer);
@@ -1457,6 +1460,9 @@ pg_input_trace (pg_main_t * pg,
       t0->packet_length = vlib_buffer_length_in_chain (vm, b0);
       t1->packet_length = vlib_buffer_length_in_chain (vm, b1);
 
+      t0->sw_if_index = vnet_buffer (b0)->sw_if_index[VLIB_RX];
+      t1->sw_if_index = vnet_buffer (b1)->sw_if_index[VLIB_RX];
+
       clib_memcpy (&t0->buffer, b0, sizeof (b0[0]) - sizeof (b0->pre_data));
       clib_memcpy (&t1->buffer, b1, sizeof (b1[0]) - sizeof (b1->pre_data));
 
@@ -1483,6 +1489,7 @@ pg_input_trace (pg_main_t * pg,
 
       t0->stream_index = stream_index;
       t0->packet_length = vlib_buffer_length_in_chain (vm, b0);
+      t0->sw_if_index = vnet_buffer (b0)->sw_if_index[VLIB_RX];
       clib_memcpy (&t0->buffer, b0, sizeof (b0[0]) - sizeof (b0->pre_data));
       clib_memcpy (t0->buffer.pre_data, b0->data,
 		   sizeof (t0->buffer.pre_data));

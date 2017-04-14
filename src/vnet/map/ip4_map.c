@@ -173,18 +173,10 @@ static_always_inline bool
 ip4_map_ip6_lookup_bypass (vlib_buffer_t * p0, ip4_header_t * ip)
 {
 #ifdef MAP_SKIP_IP6_LOOKUP
-  map_main_t *mm = &map_main;
-  u32 adj_index0 = mm->adj6_index;
-  if (adj_index0 > 0)
+  if (FIB_NODE_INDEX_INVALID != pre_resolved[FIB_PROTOCOL_IP6].fei)
     {
-      ip_lookup_main_t *lm6 = &ip6_main.lookup_main;
-      ip_adjacency_t *adj = ip_get_adjacency (lm6, mm->adj6_index);
-      if (adj->n_adj > 1)
-	{
-	  u32 hash_c0 = ip4_compute_flow_hash (ip, IP_FLOW_HASH_DEFAULT);
-	  adj_index0 += (hash_c0 & (adj->n_adj - 1));
-	}
-      vnet_buffer (p0)->ip.adj_index[VLIB_TX] = adj_index0;
+      vnet_buffer (p0)->ip.adj_index[VLIB_TX] =
+	pre_resolved[FIB_PROTOCOL_IP6].dpo.dpoi_index;
       return (true);
     }
 #endif
@@ -256,7 +248,7 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
   next_index = node->cached_next_index;
   map_main_t *mm = &map_main;
   vlib_combined_counter_main_t *cm = mm->domain_counters;
-  u32 cpu_index = os_get_cpu_number ();
+  u32 thread_index = vlib_get_thread_index ();
 
   while (n_left_from > 0)
     {
@@ -301,12 +293,10 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	  p1 = vlib_get_buffer (vm, pi1);
 	  ip40 = vlib_buffer_get_current (p0);
 	  ip41 = vlib_buffer_get_current (p1);
-	  d0 =
-	    ip4_map_get_domain (vnet_buffer (p0)->ip.adj_index[VLIB_TX],
-				&map_domain_index0);
-	  d1 =
-	    ip4_map_get_domain (vnet_buffer (p1)->ip.adj_index[VLIB_TX],
-				&map_domain_index1);
+	  map_domain_index0 = vnet_buffer (p0)->ip.adj_index[VLIB_TX];
+	  d0 = ip4_map_get_domain (map_domain_index0);
+	  map_domain_index1 = vnet_buffer (p1)->ip.adj_index[VLIB_TX];
+	  d1 = ip4_map_get_domain (map_domain_index1);
 	  ASSERT (d0);
 	  ASSERT (d1);
 
@@ -387,7 +377,7 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 					       ip40) ?
 		    IP4_MAP_NEXT_IP6_REWRITE : next0;
 		  vlib_increment_combined_counter (cm + MAP_DOMAIN_COUNTER_TX,
-						   cpu_index,
+						   thread_index,
 						   map_domain_index0, 1,
 						   clib_net_to_host_u16
 						   (ip6h0->payload_length) +
@@ -419,7 +409,7 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 					       ip41) ?
 		    IP4_MAP_NEXT_IP6_REWRITE : next1;
 		  vlib_increment_combined_counter (cm + MAP_DOMAIN_COUNTER_TX,
-						   cpu_index,
+						   thread_index,
 						   map_domain_index1, 1,
 						   clib_net_to_host_u16
 						   (ip6h1->payload_length) +
@@ -472,9 +462,8 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 
 	  p0 = vlib_get_buffer (vm, pi0);
 	  ip40 = vlib_buffer_get_current (p0);
-	  d0 =
-	    ip4_map_get_domain (vnet_buffer (p0)->ip.adj_index[VLIB_TX],
-				&map_domain_index0);
+	  map_domain_index0 = vnet_buffer (p0)->ip.adj_index[VLIB_TX];
+	  d0 = ip4_map_get_domain (map_domain_index0);
 	  ASSERT (d0);
 
 	  /*
@@ -531,7 +520,7 @@ ip4_map (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 					       ip40) ?
 		    IP4_MAP_NEXT_IP6_REWRITE : next0;
 		  vlib_increment_combined_counter (cm + MAP_DOMAIN_COUNTER_TX,
-						   cpu_index,
+						   thread_index,
 						   map_domain_index0, 1,
 						   clib_net_to_host_u16
 						   (ip6h0->payload_length) +
@@ -575,7 +564,7 @@ ip4_map_reass (vlib_main_t * vm,
   next_index = node->cached_next_index;
   map_main_t *mm = &map_main;
   vlib_combined_counter_main_t *cm = mm->domain_counters;
-  u32 cpu_index = os_get_cpu_number ();
+  u32 thread_index = vlib_get_thread_index ();
   u32 *fragments_to_drop = NULL;
   u32 *fragments_to_loopback = NULL;
 
@@ -605,9 +594,8 @@ ip4_map_reass (vlib_main_t * vm,
 	  p0 = vlib_get_buffer (vm, pi0);
 	  ip60 = vlib_buffer_get_current (p0);
 	  ip40 = (ip4_header_t *) (ip60 + 1);
-	  d0 =
-	    ip4_map_get_domain (vnet_buffer (p0)->ip.adj_index[VLIB_TX],
-				&map_domain_index0);
+	  map_domain_index0 = vnet_buffer (p0)->ip.adj_index[VLIB_TX];
+	  d0 = ip4_map_get_domain (map_domain_index0);
 
 	  map_ip4_reass_lock ();
 	  map_ip4_reass_t *r = map_ip4_reass_get (ip40->src_address.as_u32,
@@ -706,8 +694,8 @@ ip4_map_reass (vlib_main_t * vm,
 	    {
 	      if (error0 == MAP_ERROR_NONE)
 		vlib_increment_combined_counter (cm + MAP_DOMAIN_COUNTER_TX,
-						 cpu_index, map_domain_index0,
-						 1,
+						 thread_index,
+						 map_domain_index0, 1,
 						 clib_net_to_host_u16
 						 (ip60->payload_length) + 40);
 	      next0 =
@@ -773,7 +761,7 @@ VLIB_REGISTER_NODE(ip4_map_node) = {
   .next_nodes = {
     [IP4_MAP_NEXT_IP6_LOOKUP] = "ip6-lookup",
 #ifdef MAP_SKIP_IP6_LOOKUP
-    [IP4_MAP_NEXT_IP6_REWRITE] = "ip6-rewrite",
+    [IP4_MAP_NEXT_IP6_REWRITE] = "ip6-load-balance",
 #endif
     [IP4_MAP_NEXT_IP4_FRAGMENT] = "ip4-frag",
     [IP4_MAP_NEXT_IP6_FRAGMENT] = "ip6-frag",

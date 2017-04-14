@@ -35,6 +35,7 @@ OS_ID ?= $(shell grep '^ID=' /etc/os-release | cut -f2- -d= | sed -e 's/\"//g')
 # Package dependencies
 DOC_DEB_DEPENDS = doxygen graphviz python-pyparsing python-jinja2
 DOC_RPM_DEPENDS = doxygen graphviz pyparsing python-jinja2
+DOC_SUSE_RPM_DEPENDS = doxygen graphviz python-pyparsing python-Jinja2
 DOC_MAC_BIN_DEPENDS = doxygen dot git
 DOC_MAC_PY_DEPENDS = pyparsing jinja2
 
@@ -52,15 +53,15 @@ DOXY_SRC_DIRECTORIES = \
 	$(DOXY_SRC)/vlibsocket \
 	$(DOXY_SRC)/vnet \
 	$(DOXY_SRC)/vpp \
-	$(DOXY_SRC)/vpp-api
+	$(DOXY_SRC)/vpp-api \
+	$(DOXY_SRC)/examples
 
 # Input directories and files
 DOXY_INPUT ?= \
 	$(wildcard $(WS_ROOT)/*.md) \
 	$(wildcard $(DOXY_DIR)/*.md) \
 	$(DOXY_SRC_DIRECTORIES) \
-	$(DOXY_SRC)/plugins \
-	plugins
+	$(DOXY_SRC)/plugins
 
 # Strip leading workspace path from input names
 DOXY_INPUT := $(subst $(WS_ROOT)/,,$(DOXY_INPUT))
@@ -72,19 +73,14 @@ DOXY_INPUT := $(subst $(WS_ROOT)/,,$(DOXY_INPUT))
 # These must be left-anchored paths for the regexp below to work.
 DOXY_EXCLUDE ?= \
 	$(DOXY_SRC)/vlib/vlib/buffer.c \
-	$(DOXY_SRC)/vlib/example \
 	$(DOXY_SRC)/vpp-api/lua \
-	plugins/sample-plugin
+	$(DOXY_SRC)/examples/sample-plugin
 
 # Generate a regexp for filenames to exclude
 DOXY_EXCLUDE_REGEXP = ($(subst .,\.,$(shell echo '$(strip $(DOXY_EXCLUDE))' | sed -e 's/ /|/g')))
 
 # Include all the normal source directories in the include file path
 DOXY_INCLUDE_PATH = $(DOXY_SRC_DIRECTORIES)
-
-# Also include any plugin directories that exist
-DOXY_INCLUDE_PATH += \
-	$(shell find $(WS_ROOT)/plugins -maxdepth 1 -type d | sed -e 's@^$(WS_ROOT)/*@@')
 
 # Find API header directories and include them in the header path.
 # This is only useful if VPP and plugins are already built; nothing
@@ -140,7 +136,7 @@ ifeq ($(OS_ID),ubuntu)
 			sudo apt-get $(CONFIRM) $(FORCE) install $$inst; \
 		fi
 	@if [ ! -s /usr/lib/graphviz/config6a ]; then \
-		echo "Rebuidlding system Graphviz configuration."; \
+		echo "Rebuilding system Graphviz configuration."; \
 		sudo dot -c; \
 	fi
 else ifneq ("$(wildcard /etc/redhat-release)","")
@@ -160,8 +156,10 @@ else ifeq ($(OS_ID),darwin)
 			false; \
 		); \
 	done
+else ifeq ($(OS_ID),opensuse)
+	@sudo zypper install $(CONFIRM) $(DOC_SUSE_RPM_DEPENDS)
 else
-	$(error "Building documentation currently works only on Ubuntu, CentOS or MacOS systems.")
+	$(error "Building documentation currently works only on Ubuntu, CentOS, MacOS and OpenSUSE systems.")
 endif
 	@touch $@
 

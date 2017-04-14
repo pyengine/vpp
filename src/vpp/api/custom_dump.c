@@ -21,11 +21,10 @@
 #include <vnet/ip/ip.h>
 #include <vnet/unix/tuntap.h>
 #include <vnet/mpls/mpls.h>
-#include <vnet/dhcp/proxy.h>
-#include <vnet/dhcpv6/proxy.h>
+#include <vnet/dhcp/dhcp_proxy.h>
 #include <vnet/l2tp/l2tp.h>
 #include <vnet/l2/l2_input.h>
-#include <vnet/sr/sr_packet.h>
+#include <vnet/sr/sr.h>
 #include <vnet/vxlan-gpe/vxlan_gpe.h>
 #include <vnet/classify/policer_classify.h>
 #include <vnet/policer/xlate.h>
@@ -69,6 +68,18 @@ static void *vl_api_create_loopback_t_print
 
   s = format (0, "SCRIPT: create_loopback ");
   s = format (s, "mac %U ", format_ethernet_address, &mp->mac_address);
+
+  FINISH;
+}
+
+static void *vl_api_create_loopback_instance_t_print
+  (vl_api_create_loopback_instance_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: create_loopback ");
+  s = format (s, "mac %U ", format_ethernet_address, &mp->mac_address);
+  s = format (s, "instance %d ", ntohl (mp->user_instance));
 
   FINISH;
 }
@@ -189,7 +200,7 @@ static void *vl_api_sw_interface_set_vxlan_bypass_t_print
   s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
 
   if (mp->is_ipv6)
-    s = format (s, "ip6");
+    s = format (s, "ip6 ");
 
   if (mp->enable)
     s = format (s, "enable ");
@@ -238,56 +249,6 @@ static void *vl_api_sw_interface_set_l2_bridge_t_print
   FINISH;
 }
 
-static void *vl_api_sw_interface_set_dpdk_hqos_pipe_t_print
-  (vl_api_sw_interface_set_dpdk_hqos_pipe_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: sw_interface_set_dpdk_hqos_pipe ");
-
-  s = format (s, "sw_if_index %u ", ntohl (mp->sw_if_index));
-
-  s = format (s, "subport %u  pipe %u  profile %u ",
-	      ntohl (mp->subport), ntohl (mp->pipe), ntohl (mp->profile));
-
-  FINISH;
-}
-
-static void *vl_api_sw_interface_set_dpdk_hqos_subport_t_print
-  (vl_api_sw_interface_set_dpdk_hqos_subport_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: sw_interface_set_dpdk_hqos_subport ");
-
-  s = format (s, "sw_if_index %u ", ntohl (mp->sw_if_index));
-
-  s =
-    format (s,
-	    "subport %u  rate %u  bkt_size %u  tc0 %u tc1 %u tc2 %u tc3 %u period %u",
-	    ntohl (mp->subport), ntohl (mp->tb_rate), ntohl (mp->tb_size),
-	    ntohl (mp->tc_rate[0]), ntohl (mp->tc_rate[1]),
-	    ntohl (mp->tc_rate[2]), ntohl (mp->tc_rate[3]),
-	    ntohl (mp->tc_period));
-
-  FINISH;
-}
-
-static void *vl_api_sw_interface_set_dpdk_hqos_tctbl_t_print
-  (vl_api_sw_interface_set_dpdk_hqos_tctbl_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: sw_interface_set_dpdk_hqos_tctbl ");
-
-  s = format (s, "sw_if_index %u ", ntohl (mp->sw_if_index));
-
-  s = format (s, "entry %u  tc %u  queue %u",
-	      ntohl (mp->entry), ntohl (mp->tc), ntohl (mp->queue));
-
-  FINISH;
-}
-
 static void *vl_api_bridge_domain_add_del_t_print
   (vl_api_bridge_domain_add_del_t * mp, void *handle)
 {
@@ -299,12 +260,26 @@ static void *vl_api_bridge_domain_add_del_t_print
 
   if (mp->is_add)
     {
-      s = format (s, "flood %d uu-flood %d forward %d learn %d arp-term %d",
-		  mp->flood, mp->uu_flood, mp->forward, mp->learn,
-		  mp->arp_term);
+      s = format (s, "flood %d uu-flood %d ", mp->flood, mp->uu_flood);
+      s = format (s, "forward %d learn %d ", mp->forward, mp->learn);
+      s = format (s, "arp-term %d mac-age %d", mp->arp_term, mp->mac_age);
     }
   else
     s = format (s, "del ");
+
+  FINISH;
+}
+
+static void *vl_api_bridge_domain_set_mac_age_t_print
+  (vl_api_bridge_domain_set_mac_age_t * mp, void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: bridge_domain_set_mac_age ");
+
+  s = format (s, "bd_id %d ", ntohl (mp->bd_id));
+
+  s = format (s, "mac-age %d", mp->mac_age);
 
   FINISH;
 }
@@ -319,6 +294,30 @@ static void *vl_api_bridge_domain_dump_t_print
 
   if (bd_id != ~0)
     s = format (s, "bd_id %d ", bd_id);
+
+  FINISH;
+}
+
+static void *vl_api_l2fib_flush_bd_t_print
+  (vl_api_l2fib_flush_bd_t * mp, void *handle)
+{
+  u8 *s;
+  u32 bd_id = ntohl (mp->bd_id);
+
+  s = format (0, "SCRIPT: l2fib_flush_bd ");
+  s = format (s, "bd_id %d ", bd_id);
+
+  FINISH;
+}
+
+static void *vl_api_l2fib_flush_int_t_print
+  (vl_api_l2fib_flush_int_t * mp, void *handle)
+{
+  u8 *s;
+  u32 sw_if_index = ntohl (mp->sw_if_index);
+
+  s = format (0, "SCRIPT: l2fib_flush_int ");
+  s = format (s, "sw_if_index %d ", sw_if_index);
 
   FINISH;
 }
@@ -436,7 +435,12 @@ static void *vl_api_tap_connect_t_print
     s = format (s, "tag %s ", mp->tag);
   if (memcmp (mp->mac_address, null_mac, 6))
     s = format (s, "mac %U ", format_ethernet_address, mp->mac_address);
-
+  if (mp->ip4_address_set)
+    s = format (s, "address %U/%d ", format_ip4_address, mp->ip4_address,
+		mp->ip4_mask_width);
+  if (mp->ip6_address_set)
+    s = format (s, "address %U/%d ", format_ip6_address, mp->ip6_address,
+		mp->ip6_mask_width);
   FINISH;
 }
 
@@ -627,7 +631,8 @@ static void *vl_api_ip_neighbor_add_del_t_print
   if (mp->is_static)
     s = format (s, "is_static ");
 
-  s = format (s, "vrf_id %d ", ntohl (mp->vrf_id));
+  if (mp->is_no_adj_fib)
+    s = format (s, "is_no_fib_entry ");
 
   if (memcmp (mp->mac_address, null_mac, 6))
     s = format (s, "mac %U ", format_ethernet_address, mp->mac_address);
@@ -765,37 +770,6 @@ static void *vl_api_dhcp_proxy_config_t_print
 {
   u8 *s;
 
-  s = format (0, "SCRIPT: dhcp_proxy_config ");
-
-  s = format (s, "vrf_id %d ", ntohl (mp->vrf_id));
-
-  if (mp->is_ipv6)
-    {
-      s = format (s, "svr %U ", format_ip6_address,
-		  (ip6_address_t *) mp->dhcp_server);
-      s = format (s, "src %U ", format_ip6_address,
-		  (ip6_address_t *) mp->dhcp_src_address);
-    }
-  else
-    {
-      s = format (s, "svr %U ", format_ip4_address,
-		  (ip4_address_t *) mp->dhcp_server);
-      s = format (s, "src %U ", format_ip4_address,
-		  (ip4_address_t *) mp->dhcp_src_address);
-    }
-  if (mp->is_add == 0)
-    s = format (s, "del ");
-
-  s = format (s, "insert-cid %d ", mp->insert_circuit_id);
-
-  FINISH;
-}
-
-static void *vl_api_dhcp_proxy_config_2_t_print
-  (vl_api_dhcp_proxy_config_2_t * mp, void *handle)
-{
-  u8 *s;
-
   s = format (0, "SCRIPT: dhcp_proxy_config_2 ");
 
   s = format (s, "rx_vrf_id %d ", ntohl (mp->rx_vrf_id));
@@ -817,8 +791,6 @@ static void *vl_api_dhcp_proxy_config_2_t_print
     }
   if (mp->is_add == 0)
     s = format (s, "del ");
-
-  s = format (s, "insert-cid %d ", mp->insert_circuit_id);
 
   FINISH;
 }
@@ -858,7 +830,7 @@ static void *vl_api_dhcp_client_config_t_print
 
   s = format (s, "want_dhcp_event %d ", mp->want_dhcp_event);
 
-  s = format (s, "pid %d ", mp->pid);
+  s = format (s, "pid %d ", ntohl (mp->pid));
 
   if (mp->is_add == 0)
     s = format (s, "del ");
@@ -909,8 +881,7 @@ static void *vl_api_sw_interface_ip6_set_link_local_address_t_print
 
   s = format (s, "sw_if_index %d ", ntohl (mp->sw_if_index));
 
-  s = format (s, "%U/%d ", format_ip6_address, mp->address,
-	      mp->address_length);
+  s = format (s, "%U ", format_ip6_address, mp->address);
 
   FINISH;
 }
@@ -1030,143 +1001,215 @@ static void *vl_api_l2_patch_add_del_t_print
   FINISH;
 }
 
-static void *vl_api_sr_tunnel_add_del_t_print
-  (vl_api_sr_tunnel_add_del_t * mp, void *handle)
+static void *vl_api_sr_localsid_add_del_t_print
+  (vl_api_sr_localsid_add_del_t * mp, void *handle)
+{
+  vnet_main_t *vnm = vnet_get_main ();
+  u8 *s;
+
+  s = format (0, "SCRIPT: sr_localsid_add_del ");
+
+  switch (mp->behavior)
+    {
+    case SR_BEHAVIOR_END:
+      s = format (s, "Address: %U\nBehavior: End",
+		  format_ip6_address, (ip6_address_t *) mp->localsid_addr);
+      s = format (s, (mp->end_psp ? "End.PSP: True" : "End.PSP: False"));
+      break;
+    case SR_BEHAVIOR_X:
+      s =
+	format (s,
+		"Address: %U\nBehavior: X (Endpoint with Layer-3 cross-connect)"
+		"\nIface: %U\nNext hop: %U", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr,
+		format_vnet_sw_if_index_name, vnm, ntohl (mp->sw_if_index),
+		format_ip6_address, (ip6_address_t *) mp->nh_addr);
+      s = format (s, (mp->end_psp ? "End.PSP: True" : "End.PSP: False"));
+      break;
+    case SR_BEHAVIOR_DX4:
+      s =
+	format (s,
+		"Address: %U\nBehavior: DX4 (Endpoint with decapsulation with IPv4 cross-connect)"
+		"\nIface: %U\nNext hop: %U", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr,
+		format_vnet_sw_if_index_name, vnm, ntohl (mp->sw_if_index),
+		format_ip4_address, (ip4_address_t *) mp->nh_addr);
+      break;
+    case SR_BEHAVIOR_DX6:
+      s =
+	format (s,
+		"Address: %U\nBehavior: DX6 (Endpoint with decapsulation with IPv6 cross-connect)"
+		"\nIface: %UNext hop: %U", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr,
+		format_vnet_sw_if_index_name, vnm, ntohl (mp->sw_if_index),
+		format_ip6_address, (ip6_address_t *) mp->nh_addr);
+      break;
+    case SR_BEHAVIOR_DX2:
+      s =
+	format (s,
+		"Address: %U\nBehavior: DX2 (Endpoint with decapulation and Layer-2 cross-connect)"
+		"\nIface: %U", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr,
+		format_vnet_sw_if_index_name, vnm, ntohl (mp->sw_if_index));
+      break;
+    case SR_BEHAVIOR_DT6:
+      s =
+	format (s,
+		"Address: %U\nBehavior: DT6 (Endpoint with decapsulation and specific IPv6 table lookup)"
+		"\nTable: %u", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr, ntohl (mp->fib_table));
+      break;
+    case SR_BEHAVIOR_DT4:
+      s =
+	format (s,
+		"Address: %U\nBehavior: DT4 (Endpoint with decapsulation and specific IPv4 table lookup)"
+		"\nTable: %u", format_ip6_address,
+		(ip6_address_t *) mp->localsid_addr, ntohl (mp->fib_table));
+      break;
+    default:
+      if (mp->behavior >= SR_BEHAVIOR_LAST)
+	{
+	  s = format (s, "Address: %U\n Behavior: %u",
+		      format_ip6_address, (ip6_address_t *) mp->localsid_addr,
+		      mp->behavior);
+	}
+      else
+	//Should never get here...
+	s = format (s, "Internal error");
+      break;
+    }
+  FINISH;
+}
+
+static void *vl_api_sr_steering_add_del_t_print
+  (vl_api_sr_steering_add_del_t * mp, void *handle)
 {
   u8 *s;
-  ip6_address_t *this_address;
+
+  s = format (0, "SCRIPT: sr_steering_add_del ");
+
+  s = format (s, (mp->is_del ? "Del: True" : "Del: False"));
+
+  switch (mp->traffic_type)
+    {
+    case SR_STEER_L2:
+      s = format (s, "Traffic type: L2 iface: %u", ntohl (mp->sw_if_index));
+      break;
+    case SR_STEER_IPV4:
+      s = format (s, "Traffic type: IPv4 %U/%u", format_ip4_address,
+		  (ip4_address_t *) mp->prefix_addr, ntohl (mp->mask_width));
+      break;
+    case SR_STEER_IPV6:
+      s = format (s, "Traffic type: IPv6 %U/%u", format_ip6_address,
+		  (ip6_address_t *) mp->prefix_addr, ntohl (mp->mask_width));
+      break;
+    default:
+      s = format (s, "Traffic type: Unknown(%u)", mp->traffic_type);
+      break;
+    }
+  s = format (s, "BindingSID: %U", format_ip6_address,
+	      (ip6_address_t *) mp->bsid_addr);
+
+  s = format (s, "SR Policy Index: %u", ntohl (mp->sr_policy_index));
+
+  s = format (s, "FIB_table: %u", ntohl (mp->table_id));
+
+  FINISH;
+}
+
+static void *vl_api_sr_policy_add_t_print
+  (vl_api_sr_policy_add_t * mp, void *handle)
+{
+  u8 *s;
+
+  ip6_address_t *segments = 0, *seg;
+  ip6_address_t *this_address = (ip6_address_t *) mp->segments;
+
   int i;
-  u16 flags_host_byte_order;
-  u8 pl_flag;
-
-  s = format (0, "SCRIPT: sr_tunnel_add_del ");
-
-  if (mp->name[0])
-    s = format (s, "name %s ", mp->name);
-
-  s = format (s, "src %U dst %U/%d ", format_ip6_address,
-	      (ip6_address_t *) mp->src_address,
-	      format_ip6_address,
-	      (ip6_address_t *) mp->dst_address, mp->dst_mask_width);
-
-  this_address = (ip6_address_t *) mp->segs_and_tags;
   for (i = 0; i < mp->n_segments; i++)
     {
-      s = format (s, "next %U ", format_ip6_address, this_address);
-      this_address++;
-    }
-  for (i = 0; i < mp->n_tags; i++)
-    {
-      s = format (s, "tag %U ", format_ip6_address, this_address);
+      vec_add2 (segments, seg, 1);
+      clib_memcpy (seg->as_u8, this_address->as_u8, sizeof (*this_address));
       this_address++;
     }
 
-  flags_host_byte_order = clib_net_to_host_u16 (mp->flags_net_byte_order);
+  s = format (0, "SCRIPT: sr_policy_add ");
 
-  if (flags_host_byte_order & IP6_SR_HEADER_FLAG_CLEANUP)
-    s = format (s, " clean ");
+  s = format (s, "BSID: %U", format_ip6_address,
+	      (ip6_address_t *) mp->bsid_addr);
 
-  if (flags_host_byte_order & IP6_SR_HEADER_FLAG_PROTECTED)
-    s = format (s, "protected ");
+  s =
+    format (s,
+	    (mp->is_encap ? "Behavior: Encapsulation" :
+	     "Behavior: SRH insertion"));
 
-  for (i = 1; i <= 4; i++)
-    {
-      pl_flag = ip6_sr_policy_list_flags (flags_host_byte_order, i);
+  s = format (s, "FIB_table: %u", ntohl (mp->fib_table));
 
-      switch (pl_flag)
-	{
-	case IP6_SR_HEADER_FLAG_PL_ELT_NOT_PRESENT:
-	  continue;
+  s = format (s, (mp->type ? "Type: Default" : "Type: Spray"));
 
-	case IP6_SR_HEADER_FLAG_PL_ELT_INGRESS_PE:
-	  s = format (s, "InPE %d ", i);
-	  break;
+  s = format (s, "SID list weight: %u", ntohl (mp->weight));
 
-	case IP6_SR_HEADER_FLAG_PL_ELT_EGRESS_PE:
-	  s = format (s, "EgPE %d ", i);
-	  break;
-
-	case IP6_SR_HEADER_FLAG_PL_ELT_ORIG_SRC_ADDR:
-	  s = format (s, "OrgSrc %d ", i);
-	  break;
-
-	default:
-	  clib_warning ("BUG: pl elt %d value %d", i, pl_flag);
-	  break;
-	}
-    }
-
-  if (mp->policy_name[0])
-    s = format (s, "policy_name %s ", mp->policy_name);
-
-  if (mp->is_add == 0)
-    s = format (s, "del ");
+  s = format (s, "{");
+  vec_foreach (seg, segments)
+  {
+    s = format (s, "%U, ", format_ip6_address, seg);
+  }
+  s = format (s, "\b\b } ");
 
   FINISH;
 }
 
-static void *vl_api_sr_policy_add_del_t_print
-  (vl_api_sr_policy_add_del_t * mp, void *handle)
+static void *vl_api_sr_policy_mod_t_print
+  (vl_api_sr_policy_mod_t * mp, void *handle)
 {
   u8 *s;
+  u32 weight;
+
+  ip6_address_t *segments = 0, *seg;
+  ip6_address_t *this_address = (ip6_address_t *) mp->segments;
+
   int i;
-
-  s = format (0, "SCRIPT: sr_policy_add_del ");
-
-  if (mp->name[0])
-    s = format (s, "name %s ", mp->name);
-
-
-  if (mp->tunnel_names[0])
+  for (i = 0; i < mp->n_segments; i++)
     {
-      // start deserializing tunnel_names
-      int num_tunnels = mp->tunnel_names[0];	//number of tunnels
-      u8 *deser_tun_names = mp->tunnel_names;
-      deser_tun_names += 1;	//moving along
-
-      u8 *tun_name = 0;
-      int tun_name_len = 0;
-
-      for (i = 0; i < num_tunnels; i++)
-	{
-	  tun_name_len = *deser_tun_names;
-	  deser_tun_names += 1;
-	  vec_resize (tun_name, tun_name_len);
-	  memcpy (tun_name, deser_tun_names, tun_name_len);
-	  s = format (s, "tunnel %s ", tun_name);
-	  deser_tun_names += tun_name_len;
-	  tun_name = 0;
-	}
+      vec_add2 (segments, seg, 1);
+      clib_memcpy (seg->as_u8, this_address->as_u8, sizeof (*this_address));
+      this_address++;
     }
 
-  if (mp->is_add == 0)
-    s = format (s, "del ");
+  s = format (0, "SCRIPT: sr_policy_mod ");
+
+  s = format (s, "BSID: %U", format_ip6_address,
+	      (ip6_address_t *) mp->bsid_addr);
+
+  s = format (s, "SR Policy index: %u", ntohl (mp->sr_policy_index));
+
+  s = format (s, "Operation: %u", mp->operation);
+
+  s = format (s, "SID list index: %u", ntohl (mp->sl_index));
+
+  s = format (s, "SID list weight: %u", ntohl (mp->weight));
+
+  s = format (s, "{");
+  vec_foreach (seg, segments)
+  {
+    s = format (s, "%U, ", format_ip6_address, seg);
+  }
+  s = format (s, "\b\b } ");
 
   FINISH;
 }
 
-static void *vl_api_sr_multicast_map_add_del_t_print
-  (vl_api_sr_multicast_map_add_del_t * mp, void *handle)
+static void *vl_api_sr_policy_del_t_print
+  (vl_api_sr_policy_del_t * mp, void *handle)
 {
+  u8 *s;
 
-  u8 *s = 0;
-  /* int i; */
-
-  s = format (0, "SCRIPT: sr_multicast_map_add_del ");
-
-  if (mp->multicast_address[0])
-    s = format (s, "address %U ", format_ip6_address, &mp->multicast_address);
-
-  if (mp->policy_name[0])
-    s = format (s, "sr-policy %s ", &mp->policy_name);
-
-
-  if (mp->is_add == 0)
-    s = format (s, "del ");
-
+  s = format (0, "SCRIPT: sr_policy_del ");
+  u8 bsid_addr[16];
+  u32 sr_policy_index;
+  s = format (s, "To be delivered. Good luck.");
   FINISH;
 }
-
 
 static void *vl_api_classify_add_del_table_t_print
   (vl_api_classify_add_del_table_t * mp, void *handle)
@@ -1379,10 +1422,8 @@ static void *vl_api_vxlan_add_del_tunnel_t_print
   u8 *s;
   s = format (0, "SCRIPT: vxlan_add_del_tunnel ");
 
-  ip46_address_t src, dst;
-
-  ip46_from_addr_buf (mp->is_ipv6, mp->dst_address, &dst);
-  ip46_from_addr_buf (mp->is_ipv6, mp->src_address, &src);
+  ip46_address_t src = to_ip46 (mp->is_ipv6, mp->src_address);
+  ip46_address_t dst = to_ip46 (mp->is_ipv6, mp->dst_address);
 
   u8 is_grp = ip46_address_is_multicast (&dst);
   char *dst_name = is_grp ? "group" : "dst";
@@ -1400,9 +1441,6 @@ static void *vl_api_vxlan_add_del_tunnel_t_print
   s = format (s, "decap-next %d ", ntohl (mp->decap_next_index));
 
   s = format (s, "vni %d ", ntohl (mp->vni));
-
-  if (mp->is_add == 0)
-    s = format (s, "del ");
 
   if (mp->is_add == 0)
     s = format (s, "del ");
@@ -1707,7 +1745,7 @@ static void *vl_api_want_ip4_arp_events_t_print
   u8 *s;
 
   s = format (0, "SCRIPT: want_ip4_arp_events ");
-  s = format (s, "pid %d address %U ", mp->pid,
+  s = format (s, "pid %d address %U ", ntohl (mp->pid),
 	      format_ip4_address, &mp->address);
   if (mp->enable_disable == 0)
     s = format (s, "del ");
@@ -1721,7 +1759,7 @@ static void *vl_api_want_ip6_nd_events_t_print
   u8 *s;
 
   s = format (0, "SCRIPT: want_ip6_nd_events ");
-  s = format (s, "pid %d address %U ", mp->pid,
+  s = format (s, "pid %d address %U ", ntohl (mp->pid),
 	      format_ip6_address, mp->address);
   if (mp->enable_disable == 0)
     s = format (s, "del ");
@@ -2323,12 +2361,12 @@ static void *vl_api_lisp_enable_disable_t_print
   FINISH;
 }
 
-static void *vl_api_lisp_gpe_add_del_iface_t_print
-  (vl_api_lisp_gpe_add_del_iface_t * mp, void *handle)
+static void *vl_api_gpe_add_del_iface_t_print
+  (vl_api_gpe_add_del_iface_t * mp, void *handle)
 {
   u8 *s;
 
-  s = format (0, "SCRIPT: lisp_gpe_add_del_iface ");
+  s = format (0, "SCRIPT: gpe_add_del_iface ");
 
   s = format (s, "%s ", mp->is_add ? "up" : "down");
   s = format (s, "vni %d ", mp->vni);
@@ -2371,34 +2409,6 @@ format_lisp_flat_eid (u8 * s, va_list * args)
   return 0;
 }
 
-/** Used for transferring locators via VPP API */
-typedef CLIB_PACKED (struct
-		     {
-		     u8 is_ip4;
-	     /**< is locator an IPv4 address */
-		     u8 priority;
-	       /**< locator priority */
-		     u8 weight;
-	       /**< locator weight */
-		     u8 addr[16];
-	       /**< IPv4/IPv6 address */
-		     }) rloc_t;
-
-static u8 *
-format_rloc (u8 * s, va_list * args)
-{
-  rloc_t *rloc = va_arg (*args, rloc_t *);
-
-  if (rloc->is_ip4)
-    s = format (s, "%U ", format_ip4_address, rloc->addr);
-  else
-    s = format (s, "%U ", format_ip6_address, rloc->addr);
-
-  s = format (s, "p %d w %d", rloc->priority, rloc->weight);
-
-  return s;
-}
-
 static void *vl_api_lisp_add_del_remote_mapping_t_print
   (vl_api_lisp_add_del_remote_mapping_t * mp, void *handle)
 {
@@ -2426,12 +2436,6 @@ static void *vl_api_lisp_add_del_remote_mapping_t_print
 
   if (0 == rloc_num)
     s = format (s, "action %d", mp->action);
-  else
-    {
-      rloc_t *rloc = (rloc_t *) mp->rlocs;
-      for (i = 0; i < rloc_num; i++)
-	s = format (s, "%U ", format_rloc, &rloc[i]);
-    }
 
   FINISH;
 }
@@ -2507,12 +2511,12 @@ static void *vl_api_lisp_add_del_local_eid_t_print
   FINISH;
 }
 
-static void *vl_api_lisp_gpe_add_del_fwd_entry_t_print
-  (vl_api_lisp_gpe_add_del_fwd_entry_t * mp, void *handle)
+static void *vl_api_gpe_add_del_fwd_entry_t_print
+  (vl_api_gpe_add_del_fwd_entry_t * mp, void *handle)
 {
   u8 *s;
 
-  s = format (0, "SCRIPT: lisp_gpe_add_del_fwd_entry TODO");
+  s = format (0, "SCRIPT: gpe_add_del_fwd_entry TODO");
 
   FINISH;
 }
@@ -2535,35 +2539,16 @@ static void *vl_api_lisp_add_del_map_resolver_t_print
   FINISH;
 }
 
-static void *vl_api_lisp_gpe_enable_disable_t_print
-  (vl_api_lisp_gpe_enable_disable_t * mp, void *handle)
+static void *vl_api_gpe_enable_disable_t_print
+  (vl_api_gpe_enable_disable_t * mp, void *handle)
 {
   u8 *s;
 
-  s = format (0, "SCRIPT: lisp_gpe_enable_disable ");
+  s = format (0, "SCRIPT: gpe_enable_disable ");
 
   s = format (s, "%s ", mp->is_en ? "enable" : "disable");
 
   FINISH;
-}
-
-typedef CLIB_PACKED (struct
-		     {
-		     u32 sw_if_index;
-		   /**< locator sw_if_index */
-		     u8 priority;
-	       /**< locator priority */
-		     u8 weight;
-	       /**< locator weight */
-		     }) ls_locator_t;
-
-static u8 *
-format_locator (u8 * s, va_list * args)
-{
-  ls_locator_t *l = va_arg (*args, ls_locator_t *);
-
-  return format (s, "sw_if_index %d p %d w %d",
-		 l->sw_if_index, l->priority, l->weight);
 }
 
 static void *vl_api_lisp_add_del_locator_set_t_print
@@ -2571,7 +2556,6 @@ static void *vl_api_lisp_add_del_locator_set_t_print
 {
   u8 *s;
   u32 loc_num = 0, i;
-  ls_locator_t *locs;
 
   s = format (0, "SCRIPT: lisp_add_del_locator_set ");
 
@@ -2581,10 +2565,6 @@ static void *vl_api_lisp_add_del_locator_set_t_print
   s = format (s, "locator-set %s ", mp->locator_set_name);
 
   loc_num = clib_net_to_host_u32 (mp->locator_num);
-  locs = (ls_locator_t *) mp->locators;
-
-  for (i = 0; i < loc_num; i++)
-    s = format (s, "%U ", format_locator, &locs[i]);
 
   FINISH;
 }
@@ -2947,8 +2927,7 @@ _(lisp_map_resolver_dump)                                               \
 _(lisp_map_server_dump)                                                 \
 _(show_lisp_rloc_probe_state)                                           \
 _(show_lisp_map_register_state)                                         \
-_(show_lisp_map_request_mode)                                           \
-_(lisp_gpe_tunnel_dump)
+_(show_lisp_map_request_mode)
 
 #define _(f)                                                            \
 static void * vl_api_ ## f ## _t_print                                  \
@@ -2962,6 +2941,7 @@ foreach_custom_print_no_arg_function
 #undef _
 #define foreach_custom_print_function                                   \
 _(CREATE_LOOPBACK, create_loopback)                                     \
+_(CREATE_LOOPBACK_INSTANCE, create_loopback_instance)                   \
 _(SW_INTERFACE_SET_FLAGS, sw_interface_set_flags)                       \
 _(SW_INTERFACE_ADD_DEL_ADDRESS, sw_interface_add_del_address)           \
 _(SW_INTERFACE_SET_TABLE, sw_interface_set_table)                       \
@@ -2992,25 +2972,26 @@ _(SW_INTERFACE_IP6ND_RA_PREFIX, sw_interface_ip6nd_ra_prefix)           \
 _(SW_INTERFACE_IP6ND_RA_CONFIG, sw_interface_ip6nd_ra_config)           \
 _(SET_ARP_NEIGHBOR_LIMIT, set_arp_neighbor_limit)                       \
 _(L2_PATCH_ADD_DEL, l2_patch_add_del)                                   \
-_(SR_TUNNEL_ADD_DEL, sr_tunnel_add_del)					\
-_(SR_POLICY_ADD_DEL, sr_policy_add_del)					\
-_(SR_MULTICAST_MAP_ADD_DEL, sr_multicast_map_add_del)                   \
+_(SR_LOCALSID_ADD_DEL, sr_localsid_add_del)                             \
+_(SR_STEERING_ADD_DEL, sr_steering_add_del)                             \
+_(SR_POLICY_ADD, sr_policy_add)                                         \
+_(SR_POLICY_MOD, sr_policy_mod)                                         \
+_(SR_POLICY_DEL, sr_policy_del)                                         \
 _(SW_INTERFACE_SET_L2_XCONNECT, sw_interface_set_l2_xconnect)           \
 _(L2FIB_ADD_DEL, l2fib_add_del)                                         \
+_(L2FIB_FLUSH_BD, l2fib_flush_bd)                                       \
+_(L2FIB_FLUSH_INT, l2fib_flush_int)                                     \
 _(L2_FLAGS, l2_flags)                                                   \
 _(BRIDGE_FLAGS, bridge_flags)                                           \
 _(CLASSIFY_ADD_DEL_TABLE, classify_add_del_table)			\
 _(CLASSIFY_ADD_DEL_SESSION, classify_add_del_session)			\
 _(SW_INTERFACE_SET_L2_BRIDGE, sw_interface_set_l2_bridge)		\
-_(SW_INTERFACE_SET_DPDK_HQOS_PIPE, sw_interface_set_dpdk_hqos_pipe)     \
-_(SW_INTERFACE_SET_DPDK_HQOS_SUBPORT, sw_interface_set_dpdk_hqos_subport)\
-_(SW_INTERFACE_SET_DPDK_HQOS_TCTBL, sw_interface_set_dpdk_hqos_tctbl)   \
 _(BRIDGE_DOMAIN_ADD_DEL, bridge_domain_add_del)                         \
 _(BRIDGE_DOMAIN_DUMP, bridge_domain_dump)                               \
+_(BRIDGE_DOMAIN_SET_MAC_AGE, bridge_domain_set_mac_age)                 \
 _(CLASSIFY_SET_INTERFACE_IP_TABLE, classify_set_interface_ip_table)	\
 _(CLASSIFY_SET_INTERFACE_L2_TABLES, classify_set_interface_l2_tables)	\
 _(ADD_NODE_NEXT, add_node_next)						\
-_(DHCP_PROXY_CONFIG_2, dhcp_proxy_config_2)	                        \
 _(DHCP_CLIENT_CONFIG, dhcp_client_config)	                        \
 _(L2TPV3_CREATE_TUNNEL, l2tpv3_create_tunnel)                           \
 _(L2TPV3_SET_TUNNEL_COOKIES, l2tpv3_set_tunnel_cookies)                 \
@@ -3078,8 +3059,8 @@ _(IP_SOURCE_AND_PORT_RANGE_CHECK_ADD_DEL,                               \
 _(IP_SOURCE_AND_PORT_RANGE_CHECK_INTERFACE_ADD_DEL,                     \
   ip_source_and_port_range_check_interface_add_del)                     \
 _(LISP_ENABLE_DISABLE, lisp_enable_disable)                             \
-_(LISP_GPE_ENABLE_DISABLE, lisp_gpe_enable_disable)                     \
-_(LISP_GPE_ADD_DEL_IFACE, lisp_gpe_add_del_iface)                       \
+_(GPE_ENABLE_DISABLE, gpe_enable_disable)                               \
+_(GPE_ADD_DEL_IFACE, gpe_add_del_iface)                                 \
 _(LISP_PITR_SET_LOCATOR_SET, lisp_pitr_set_locator_set)                 \
 _(LISP_MAP_REQUEST_MODE, lisp_map_request_mode)                         \
 _(SHOW_LISP_MAP_REQUEST_MODE, show_lisp_map_request_mode)               \
@@ -3089,14 +3070,13 @@ _(LISP_ADD_DEL_MAP_REQUEST_ITR_RLOCS,                                   \
   lisp_add_del_map_request_itr_rlocs)                                   \
 _(LISP_EID_TABLE_ADD_DEL_MAP, lisp_eid_table_add_del_map)               \
 _(LISP_ADD_DEL_LOCAL_EID, lisp_add_del_local_eid)                       \
-_(LISP_GPE_ADD_DEL_FWD_ENTRY, lisp_gpe_add_del_fwd_entry)               \
+_(GPE_ADD_DEL_FWD_ENTRY, gpe_add_del_fwd_entry)                         \
 _(LISP_ADD_DEL_LOCATOR_SET, lisp_add_del_locator_set)                   \
 _(LISP_ADD_DEL_MAP_RESOLVER, lisp_add_del_map_resolver)                 \
 _(LISP_ADD_DEL_LOCATOR, lisp_add_del_locator)                           \
 _(LISP_EID_TABLE_DUMP, lisp_eid_table_dump)                             \
 _(LISP_EID_TABLE_MAP_DUMP, lisp_eid_table_map_dump)                     \
 _(LISP_EID_TABLE_VNI_DUMP, lisp_eid_table_vni_dump)                     \
-_(LISP_GPE_TUNNEL_DUMP, lisp_gpe_tunnel_dump)                           \
 _(LISP_MAP_RESOLVER_DUMP, lisp_map_resolver_dump)                       \
 _(LISP_MAP_SERVER_DUMP, lisp_map_server_dump)                           \
 _(LISP_LOCATOR_SET_DUMP, lisp_locator_set_dump)                         \

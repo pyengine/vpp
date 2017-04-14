@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+libvatplugin_la_LIBADD = libvppinfra.la
+libvatplugin_la_DEPENDENCIES = libvppinfra.la
 libvatplugin_la_SOURCES = \
   vat/plugin_api.c
 
@@ -31,20 +33,17 @@ vpp_json_test_SOURCES = \
   vat/json_format.c	\
   vat/json_test.c
 
-vpp_api_test_LDFLAGS = $(DPDK_LD_FLAGS)
 vpp_api_test_LDADD = \
-  libvlib.la				\
   libvlibmemoryclient.la		\
   libsvm.la				\
   libvatplugin.la			\
   libvppinfra.la 			\
-  libvlibapi.la				\
-  libvlibmemory.la			\
-  libvnet.la \
-  $(DPDK_LD_ADD)			\
   -lpthread -lm -lrt -ldl -lcrypto
 
+vpp_api_test_LDFLAGS = -Wl,--export-dynamic
+
 vpp_json_test_LDADD = libvppinfra.la -lm
+vpp_json_test_LDFLAGS = -Wl,--export-dynamic
 
 nobase_include_HEADERS += \
   vat/vat.h 		\

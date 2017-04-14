@@ -1,4 +1,4 @@
-AC_INIT([vpp], [17.04], [vpp-dev@fd.io])
+AC_INIT([vpp], [17.07], [vpp-dev@fd.io])
 LT_INIT
 AC_CONFIG_AUX_DIR([.])
 AM_INIT_AUTOMAKE([subdir-objects])
@@ -11,6 +11,7 @@ AC_PROG_CXX
 AM_PROG_AS
 AM_PROG_LIBTOOL
 AC_PROG_YACC
+AM_PATH_PYTHON
 
 AM_CONDITIONAL([CROSSCOMPILE], [test "$cross_compiling" == "yes"])
 
@@ -74,7 +75,7 @@ AC_DEFUN([PLUGIN_DISABLED],
      AC_HELP_STRING([--enable-$1-plugin], [Build $1 plugin]),
        [enable_$1_plugin=yes ],
        [enable_$1_plugin=no])
-  AM_CONDITIONAL(m4_toupper((ENABLE_$1_PLUGIN), test "$enable_$1_plugin" = "yes")
+  AM_CONDITIONAL(m4_toupper(ENABLE_$1_PLUGIN), test "$enable_$1_plugin" = "yes")
   m4_append([list_of_plugins], [$1], [, ])
 ])
 
@@ -97,13 +98,11 @@ DISABLE_ARG(papi,	[Disable Python API bindings])
 DISABLE_ARG(japi,	[Disable Java API bindings])
 
 # --with-X
-WITH_ARG(dpdk,		[Use use DPDK])
-WITH_ARG(dpdk_crypto,	[Use DPDK cryptodev])
+WITH_ARG(dpdk_crypto_sw,[Use DPDK cryptodev SW PMDs])
 WITH_ARG(dpdk_mlx5_pmd,	[Use DPDK with mlx5 PMD])
 
 # --without-X
-WITHOUT_ARG(ipsec,	[Disable IPSec])
-WITHOUT_ARG(ipv6sr,	[Disable IPv6 SR])
+WITHOUT_ARG(libssl,	[Disable libssl])
 WITHOUT_ARG(apicli,	[Disable binary api CLI])
 
 AC_ARG_WITH(unix,
@@ -131,11 +130,9 @@ AC_ARG_WITH(pre-data,
 AC_SUBST(PRE_DATA_SIZE,		[$with_pre_data])
 AC_SUBST(APICLI,		[-DVPP_API_TEST_BUILTIN=${n_with_apicli}])
 
-AC_DEFINE_UNQUOTED(DPDK, 		[${n_with_dpdk}])
 AC_DEFINE_UNQUOTED(DPDK_SHARED_LIB,	[${n_enable_dpdk_shared}])
-AC_DEFINE_UNQUOTED(DPDK_CRYPTO,		[${n_with_dpdk_crypto}])
-AC_DEFINE_UNQUOTED(IPSEC,		[${n_with_ipsec}])
-AC_DEFINE_UNQUOTED(IPV6SR,		[${n_with_ipv6sr}])
+AC_DEFINE_UNQUOTED(DPDK_CRYPTO_SW,	[${n_with_dpdk_crypto_sw}])
+AC_DEFINE_UNQUOTED(WITH_LIBSSL,		[${n_with_libssl}])
 
 
 # Silence following noise:
@@ -149,10 +146,13 @@ AC_SUBST(AR_FLAGS)
 
 # Please keep alphabetical order
 PLUGIN_ENABLED(acl)
+PLUGIN_ENABLED(dpdk)
 PLUGIN_ENABLED(flowperpkt)
 PLUGIN_ENABLED(ila)
 PLUGIN_ENABLED(ioam)
+PLUGIN_ENABLED(ixge)
 PLUGIN_ENABLED(lb)
+PLUGIN_ENABLED(memif)
 PLUGIN_ENABLED(sixrd)
 PLUGIN_ENABLED(snat)
 PLUGIN_ENABLED(grpcapi)
@@ -201,6 +201,15 @@ AM_COND_IF([ENABLE_JAPI],
   AC_SUBST(JAVAC)
   AC_SUBST(JAVAH)
   AC_SUBST(JAR)
+])
+
+###############################################################################
+# PYTHON
+###############################################################################
+
+AM_COND_IF([ENABLE_PAPI],
+[
+  AM_PATH_PYTHON
 ])
 
 ###############################################################################

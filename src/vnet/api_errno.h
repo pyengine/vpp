@@ -35,7 +35,7 @@ _(SYSCALL_ERROR_6, -16, "System call error #6")                         \
 _(SYSCALL_ERROR_7, -17, "System call error #7")                         \
 _(SYSCALL_ERROR_8, -18, "System call error #8")                         \
 _(SYSCALL_ERROR_9, -19, "System call error #9")                         \
-_(SYSCALL_ERROR_10, -20, "System call error #9")                        \
+_(SYSCALL_ERROR_10, -20, "System call error #10")                       \
 _(FEATURE_DISABLED, -30, "Feature disabled by configuration")           \
 _(INVALID_REGISTRATION, -31, "Invalid registration")                    \
 _(NEXT_HOP_NOT_IN_FIB, -50, "Next hop not in FIB")                      \
@@ -51,7 +51,6 @@ _(ADDRESS_LENGTH_MISMATCH, -59, "Address length mismatch")              \
 _(ADDRESS_NOT_FOUND_FOR_INTERFACE, -60, "Address not found for interface") \
 _(ADDRESS_NOT_LINK_LOCAL, -61, "Address not link-local")                \
 _(IP6_NOT_ENABLED, -62, "ip6 not enabled")				\
-_(ADDRESS_MATCHES_INTERFACE_ADDRESS, -63, "Address matches interface address") \
 _(IN_PROGRESS, 10, "Operation in progress")				\
 _(NO_SUCH_NODE, -63, "No such graph node")				\
 _(NO_SUCH_NODE2, -64, "No such graph node #2")				\
@@ -91,8 +90,22 @@ _(INVALID_ADDRESS_FAMILY, -97, "Invalid address family")                \
 _(INVALID_SUB_SW_IF_INDEX, -98, "Invalid sub-interface sw_if_index")    \
 _(TABLE_TOO_BIG, -99, "Table too big")                                  \
 _(CANNOT_ENABLE_DISABLE_FEATURE, -100, "Cannot enable/disable feature") \
-_(BFD_EEXIST, -101, "Duplicate BFD session") \
-_(BFD_NOENT, -102, "No such BFD session")
+_(BFD_EEXIST, -101, "Duplicate BFD object")                             \
+_(BFD_ENOENT, -102, "No such BFD object")                               \
+_(BFD_EINUSE, -103, "BFD object in use")                                \
+_(BFD_NOTSUPP, -104, "BFD feature not supported")                       \
+_(ADDRESS_IN_USE, -105, "Address in use")				\
+_(ADDRESS_NOT_IN_USE, -106, "Address not in use")			\
+_(QUEUE_FULL, -107, "Queue full")                                       \
+_(UNKNOWN_URI_TYPE, -108, "Unknown URI type")				\
+_(URI_FIFO_CREATE_FAILED, -109, "URI FIFO segment create failed")       \
+_(LISP_RLOC_LOCAL, -110, "RLOC address is local")                       \
+_(BFD_EAGAIN, -111, "BFD object cannot be manipulated at this time")	\
+_(INVALID_GPE_MODE, -112, "Invalid GPE mode")                           \
+_(LISP_GPE_ENTRIES_PRESENT, -113, "LISP GPE entries are present")       \
+_(ADDRESS_FOUND_FOR_INTERFACE, -114, "Address found for interface")	\
+_(SESSION_CONNECT_FAIL, -115, "Session failed to connect")              \
+_(ENTRY_ALREADY_EXISTS, -116, "Entry already exists")
 
 typedef enum
 {

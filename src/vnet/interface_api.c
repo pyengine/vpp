@@ -25,9 +25,11 @@
 #include <vnet/ethernet/ethernet.h>
 #include <vnet/ip/ip.h>
 #include <vnet/fib/fib_table.h>
+#include <vnet/mfib/mfib_table.h>
 #include <vnet/l2/l2_vtr.h>
 #include <vnet/vnet_msg_enum.h>
 #include <vnet/fib/fib_api.h>
+#include <vnet/mfib/mfib_table.h>
 
 #define vl_typedefs		/* define message structures */
 #include <vnet/vnet_all_api_h.h>
@@ -44,19 +46,20 @@
 #undef vl_printfun
 
 #include <vlibapi/api_helper_macros.h>
+vpe_api_main_t vpe_api_main;
 
 #define foreach_vpe_api_msg                                     \
 _(SW_INTERFACE_SET_FLAGS, sw_interface_set_flags)               \
 _(SW_INTERFACE_SET_MTU, sw_interface_set_mtu)                   \
 _(WANT_INTERFACE_EVENTS, want_interface_events)                 \
 _(SW_INTERFACE_DUMP, sw_interface_dump)                         \
-_(SW_INTERFACE_DETAILS, sw_interface_details)                   \
 _(SW_INTERFACE_ADD_DEL_ADDRESS, sw_interface_add_del_address)   \
 _(SW_INTERFACE_SET_TABLE, sw_interface_set_table)               \
 _(SW_INTERFACE_GET_TABLE, sw_interface_get_table)               \
 _(SW_INTERFACE_SET_UNNUMBERED, sw_interface_set_unnumbered)     \
 _(SW_INTERFACE_CLEAR_STATS, sw_interface_clear_stats)           \
-_(SW_INTERFACE_TAG_ADD_DEL, sw_interface_tag_add_del)
+_(SW_INTERFACE_TAG_ADD_DEL, sw_interface_tag_add_del)           \
+_(SW_INTERFACE_SET_MAC_ADDRESS, sw_interface_set_mac_address)
 
 static void
 vl_api_sw_interface_set_flags_t_handler (vl_api_sw_interface_set_flags_t * mp)
@@ -132,14 +135,10 @@ send_sw_interface_details (vpe_api_main_t * am,
 			   vnet_sw_interface_t * swif,
 			   u8 * interface_name, u32 context)
 {
-  vl_api_sw_interface_details_t *mp;
-  vnet_main_t *vnm = vnet_get_main ();
-  vnet_hw_interface_t *hi;
-  u8 *tag;
+  vnet_hw_interface_t *hi =
+    vnet_get_sup_hw_interface (am->vnet_main, swif->sw_if_index);
 
-  hi = vnet_get_sup_hw_interface (am->vnet_main, swif->sw_if_index);
-
-  mp = vl_msg_api_alloc (sizeof (*mp));
+  vl_api_sw_interface_details_t *mp = vl_msg_api_alloc (sizeof (*mp));
   memset (mp, 0, sizeof (*mp));
   mp->_vl_msg_id = ntohs (VL_API_SW_INTERFACE_DETAILS);
   mp->sw_if_index = ntohl (swif->sw_if_index);
@@ -203,7 +202,27 @@ send_sw_interface_details (vpe_api_main_t * am,
 	}
     }
 
-  tag = vnet_get_sw_interface_tag (vnm, swif->sw_if_index);
+  /* pbb tag rewrite data */
+  ethernet_header_t eth_hdr;
+  u32 vtr_op = L2_VTR_DISABLED;
+  u16 outer_tag = 0;
+  u16 b_vlanid = 0;
+  u32 i_sid = 0;
+  memset (&eth_hdr, 0, sizeof (eth_hdr));
+
+  if (!l2pbb_get (am->vlib_main, am->vnet_main, swif->sw_if_index,
+		  &vtr_op, &outer_tag, &eth_hdr, &b_vlanid, &i_sid))
+    {
+      mp->sub_dot1ah = 1;
+      clib_memcpy (mp->b_dmac, eth_hdr.dst_address,
+		   sizeof (eth_hdr.dst_address));
+      clib_memcpy (mp->b_smac, eth_hdr.src_address,
+		   sizeof (eth_hdr.src_address));
+      mp->b_vlanid = b_vlanid;
+      mp->i_sid = i_sid;
+    }
+
+  u8 *tag = vnet_get_sw_interface_tag (vnet_get_main (), swif->sw_if_index);
   if (tag)
     strncpy ((char *) mp->tag, (char *) tag, ARRAY_LEN (mp->tag) - 1);
 
@@ -216,39 +235,38 @@ vl_api_sw_interface_dump_t_handler (vl_api_sw_interface_dump_t * mp)
   vpe_api_main_t *am = &vpe_api_main;
   vnet_sw_interface_t *swif;
   vnet_interface_main_t *im = &am->vnet_main->interface_main;
-  u8 *filter_string = 0, *name_string = 0;
-  unix_shared_memory_queue_t *q;
-  char *strcasestr (char *, char *);	/* lnx hdr file botch */
 
-  q = vl_api_client_index_to_input_queue (mp->client_index);
-
+  unix_shared_memory_queue_t *q =
+    vl_api_client_index_to_input_queue (mp->client_index);
   if (q == 0)
     return;
 
+  u8 *filter = 0, *name = 0;
   if (mp->name_filter_valid)
     {
       mp->name_filter[ARRAY_LEN (mp->name_filter) - 1] = 0;
-      filter_string = format (0, "%s%c", mp->name_filter, 0);
+      filter = format (0, "%s%c", mp->name_filter, 0);
     }
 
+  char *strcasestr (char *, char *);	/* lnx hdr file botch */
   /* *INDENT-OFF* */
   pool_foreach (swif, im->sw_interfaces,
   ({
-    name_string = format (name_string, "%U%c",
-                          format_vnet_sw_interface_name,
-                          am->vnet_main, swif, 0);
+    if (!vnet_swif_is_api_visible (swif))
+        continue;
+    vec_reset_length(name);
+    name = format (name, "%U%c", format_vnet_sw_interface_name, am->vnet_main,
+                   swif, 0);
 
-    if (mp->name_filter_valid == 0 ||
-        strcasestr((char *) name_string, (char *) filter_string)) {
+    if (filter && !strcasestr((char *) name, (char *) filter))
+	continue;
 
-      send_sw_interface_details (am, q, swif, name_string, mp->context);
-    }
-    _vec_len (name_string) = 0;
+    send_sw_interface_details (am, q, swif, name, mp->context);
   }));
   /* *INDENT-ON* */
 
-  vec_free (name_string);
-  vec_free (filter_string);
+  vec_free (name);
+  vec_free (filter);
 }
 
 static void
@@ -299,6 +317,7 @@ vl_api_sw_interface_set_table_t_handler (vl_api_sw_interface_set_table_t * mp)
   u32 table_id = ntohl (mp->vrf_id);
   u32 sw_if_index = ntohl (mp->sw_if_index);
   vl_api_sw_interface_set_table_reply_t *rmp;
+  CLIB_UNUSED (ip_interface_address_t * ia);
   u32 fib_index;
 
   VALIDATE_SW_IF_INDEX (mp);
@@ -307,21 +326,50 @@ vl_api_sw_interface_set_table_t_handler (vl_api_sw_interface_set_table_t * mp)
 
   if (mp->is_ipv6)
     {
+      /* *INDENT-OFF* */
+      foreach_ip_interface_address (&ip6_main.lookup_main,
+				    ia, sw_if_index,
+				    1 /* honor unnumbered */ ,
+      ({
+        rv = VNET_API_ERROR_ADDRESS_FOUND_FOR_INTERFACE;
+        goto done;
+      }));
+      /* *INDENT-ON* */
+
       fib_index = fib_table_find_or_create_and_lock (FIB_PROTOCOL_IP6,
 						     table_id);
-
       vec_validate (ip6_main.fib_index_by_sw_if_index, sw_if_index);
       ip6_main.fib_index_by_sw_if_index[sw_if_index] = fib_index;
+
+      fib_index = mfib_table_find_or_create_and_lock (FIB_PROTOCOL_IP6,
+						      table_id);
+      vec_validate (ip6_main.mfib_index_by_sw_if_index, sw_if_index);
+      ip6_main.mfib_index_by_sw_if_index[sw_if_index] = fib_index;
     }
   else
     {
+      /* *INDENT-OFF* */
+      foreach_ip_interface_address (&ip4_main.lookup_main,
+				    ia, sw_if_index,
+				    1 /* honor unnumbered */ ,
+      ({
+        rv = VNET_API_ERROR_ADDRESS_FOUND_FOR_INTERFACE;
+        goto done;
+      }));
+      /* *INDENT-ON* */
 
       fib_index = fib_table_find_or_create_and_lock (FIB_PROTOCOL_IP4,
 						     table_id);
-
       vec_validate (ip4_main.fib_index_by_sw_if_index, sw_if_index);
       ip4_main.fib_index_by_sw_if_index[sw_if_index] = fib_index;
+
+      fib_index = mfib_table_find_or_create_and_lock (FIB_PROTOCOL_IP4,
+						      table_id);
+      vec_validate (ip4_main.mfib_index_by_sw_if_index, sw_if_index);
+      ip4_main.mfib_index_by_sw_if_index[sw_if_index] = fib_index;
     }
+
+done:
   stats_dsunlock ();
 
   BAD_SW_IF_INDEX_LABEL;
@@ -384,48 +432,63 @@ static void vl_api_sw_interface_set_unnumbered_t_handler
 {
   vl_api_sw_interface_set_unnumbered_reply_t *rmp;
   int rv = 0;
-  vnet_sw_interface_t *si;
   vnet_main_t *vnm = vnet_get_main ();
-  u32 sw_if_index, unnumbered_sw_if_index;
-
-  sw_if_index = ntohl (mp->sw_if_index);
-  unnumbered_sw_if_index = ntohl (mp->unnumbered_sw_if_index);
+  u32 sw_if_index = ntohl (mp->sw_if_index);
+  u32 unnumbered_sw_if_index = ntohl (mp->unnumbered_sw_if_index);
+  u32 was_unnum;
 
   /*
    * The API message field names are backwards from
    * the underlying data structure names.
    * It's not worth changing them now.
    */
-  if (pool_is_free_index (vnm->interface_main.sw_interfaces,
-			  unnumbered_sw_if_index))
+  if (!vnet_sw_interface_is_api_valid (vnm, unnumbered_sw_if_index))
     {
       rv = VNET_API_ERROR_INVALID_SW_IF_INDEX;
       goto done;
     }
 
   /* Only check the "use loop0" field when setting the binding */
-  if (mp->is_add &&
-      pool_is_free_index (vnm->interface_main.sw_interfaces, sw_if_index))
+  if (mp->is_add && !vnet_sw_interface_is_api_valid (vnm, sw_if_index))
     {
       rv = VNET_API_ERROR_INVALID_SW_IF_INDEX_2;
       goto done;
     }
 
-  si = vnet_get_sw_interface (vnm, unnumbered_sw_if_index);
+  vnet_sw_interface_t *si =
+    vnet_get_sw_interface (vnm, unnumbered_sw_if_index);
+  was_unnum = (si->flags & VNET_SW_INTERFACE_FLAG_UNNUMBERED);
 
   if (mp->is_add)
     {
       si->flags |= VNET_SW_INTERFACE_FLAG_UNNUMBERED;
       si->unnumbered_sw_if_index = sw_if_index;
-      ip4_sw_interface_enable_disable (unnumbered_sw_if_index, 1);
-      ip6_sw_interface_enable_disable (unnumbered_sw_if_index, 1);
+
+      ip4_main.lookup_main.if_address_pool_index_by_sw_if_index
+	[unnumbered_sw_if_index] =
+	ip4_main.
+	lookup_main.if_address_pool_index_by_sw_if_index[sw_if_index];
+      ip6_main.
+	lookup_main.if_address_pool_index_by_sw_if_index
+	[unnumbered_sw_if_index] =
+	ip6_main.
+	lookup_main.if_address_pool_index_by_sw_if_index[sw_if_index];
     }
   else
     {
       si->flags &= ~(VNET_SW_INTERFACE_FLAG_UNNUMBERED);
       si->unnumbered_sw_if_index = (u32) ~ 0;
-      ip4_sw_interface_enable_disable (unnumbered_sw_if_index, 0);
-      ip6_sw_interface_enable_disable (unnumbered_sw_if_index, 0);
+
+      ip4_main.lookup_main.if_address_pool_index_by_sw_if_index
+	[unnumbered_sw_if_index] = ~0;
+      ip6_main.lookup_main.if_address_pool_index_by_sw_if_index
+	[unnumbered_sw_if_index] = ~0;
+    }
+
+  if (was_unnum != (si->flags & VNET_SW_INTERFACE_FLAG_UNNUMBERED))
+    {
+      ip4_sw_interface_enable_disable (unnumbered_sw_if_index, mp->is_add);
+      ip6_sw_interface_enable_disable (unnumbered_sw_if_index, mp->is_add);
     }
 
 done:
@@ -664,10 +727,36 @@ out:
   REPLY_MACRO (VL_API_SW_INTERFACE_TAG_ADD_DEL_REPLY);
 }
 
-static void
-vl_api_sw_interface_details_t_handler (vl_api_sw_interface_details_t * mp)
+static void vl_api_sw_interface_set_mac_address_t_handler
+  (vl_api_sw_interface_set_mac_address_t * mp)
 {
-  clib_warning ("BUG");
+  vl_api_sw_interface_set_mac_address_reply_t *rmp;
+  vnet_main_t *vnm = vnet_get_main ();
+  u32 sw_if_index = ntohl (mp->sw_if_index);
+  u64 mac;
+  clib_error_t *error;
+  int rv = 0;
+
+  VALIDATE_SW_IF_INDEX (mp);
+
+  mac = ((u64) mp->mac_address[0] << (8 * 0)
+	 | (u64) mp->mac_address[1] << (8 * 1)
+	 | (u64) mp->mac_address[2] << (8 * 2)
+	 | (u64) mp->mac_address[3] << (8 * 3)
+	 | (u64) mp->mac_address[4] << (8 * 4)
+	 | (u64) mp->mac_address[5] << (8 * 5));
+
+  error = vnet_hw_interface_change_mac_address (vnm, sw_if_index, mac);
+  if (error)
+    {
+      rv = VNET_API_ERROR_UNIMPLEMENTED;
+      clib_error_report (error);
+      goto out;
+    }
+
+  BAD_SW_IF_INDEX_LABEL;
+out:
+  REPLY_MACRO (VL_API_SW_INTERFACE_SET_MAC_ADDRESS_REPLY);
 }
 
 /*

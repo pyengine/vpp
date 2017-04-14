@@ -29,6 +29,7 @@
 #include <vnet/l2/feat_bitmap.h>
 #include <vnet/l2/l2_bvi.h>
 #include <vnet/l2/l2_fib.h>
+#include <vnet/l2/l2_bd.h>
 
 #include <vppinfra/error.h>
 #include <vppinfra/hash.h>
@@ -116,7 +117,7 @@ typedef enum
 static_always_inline void
 classify_and_dispatch (vlib_main_t * vm,
 		       vlib_node_runtime_t * node,
-		       u32 cpu_index,
+		       u32 thread_index,
 		       l2input_main_t * msm, vlib_buffer_t * b0, u32 * next0)
 {
   /*
@@ -201,6 +202,9 @@ classify_and_dispatch (vlib_main_t * vm,
       /* Get config for the bridge domain interface */
       bd_config = vec_elt_at_index (msm->bd_configs, bd_index0);
 
+      /* Save bridge domain seq_num */
+      vnet_buffer (b0)->l2.bd_sn = bd_config->seq_num;
+
       /*
        * Process bridge domain feature enables.
        * To perform learning/flooding/forwarding, the corresponding bit
@@ -214,6 +218,9 @@ classify_and_dispatch (vlib_main_t * vm,
   /* mask out features from bitmap using packet type and bd config */
   feature_bitmap = config->feature_bitmap & feat_mask;
 
+  /* Save interface seq_num */
+  vnet_buffer (b0)->l2.int_sn = config->seq_num;
+
   /* save for next feature graph nodes */
   vnet_buffer (b0)->l2.feature_bitmap = feature_bitmap;
 
@@ -222,15 +229,15 @@ classify_and_dispatch (vlib_main_t * vm,
 					    feature_bitmap);
 }
 
-
-static uword
-l2input_node_fn (vlib_main_t * vm,
-		 vlib_node_runtime_t * node, vlib_frame_t * frame)
+static_always_inline uword
+l2input_node_inline (vlib_main_t * vm,
+		     vlib_node_runtime_t * node, vlib_frame_t * frame,
+		     int do_trace)
 {
   u32 n_left_from, *from, *to_next;
   l2input_next_t next_index;
   l2input_main_t *msm = &l2input_main;
-  u32 cpu_index = os_get_cpu_number ();
+  u32 thread_index = vlib_get_thread_index ();
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;	/* number of packets to process */
@@ -294,7 +301,7 @@ l2input_node_fn (vlib_main_t * vm,
 	  b2 = vlib_get_buffer (vm, bi2);
 	  b3 = vlib_get_buffer (vm, bi3);
 
-	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+	  if (do_trace)
 	    {
 	      /* RX interface handles */
 	      sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
@@ -343,10 +350,10 @@ l2input_node_fn (vlib_main_t * vm,
 	  vlib_node_increment_counter (vm, l2input_node.index,
 				       L2INPUT_ERROR_L2INPUT, 4);
 
-	  classify_and_dispatch (vm, node, cpu_index, msm, b0, &next0);
-	  classify_and_dispatch (vm, node, cpu_index, msm, b1, &next1);
-	  classify_and_dispatch (vm, node, cpu_index, msm, b2, &next2);
-	  classify_and_dispatch (vm, node, cpu_index, msm, b3, &next3);
+	  classify_and_dispatch (vm, node, thread_index, msm, b0, &next0);
+	  classify_and_dispatch (vm, node, thread_index, msm, b1, &next1);
+	  classify_and_dispatch (vm, node, thread_index, msm, b2, &next2);
+	  classify_and_dispatch (vm, node, thread_index, msm, b3, &next3);
 
 	  /* verify speculative enqueues, maybe switch current next frame */
 	  /* if next0==next1==next_index then nothing special needs to be done */
@@ -373,8 +380,7 @@ l2input_node_fn (vlib_main_t * vm,
 
 	  b0 = vlib_get_buffer (vm, bi0);
 
-	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)
-			     && (b0->flags & VLIB_BUFFER_IS_TRACED)))
+	  if (do_trace && PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED))
 	    {
 	      ethernet_header_t *h0 = vlib_buffer_get_current (b0);
 	      l2input_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
@@ -387,7 +393,7 @@ l2input_node_fn (vlib_main_t * vm,
 	  vlib_node_increment_counter (vm, l2input_node.index,
 				       L2INPUT_ERROR_L2INPUT, 1);
 
-	  classify_and_dispatch (vm, node, cpu_index, msm, b0, &next0);
+	  classify_and_dispatch (vm, node, thread_index, msm, b0, &next0);
 
 	  /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
@@ -401,6 +407,14 @@ l2input_node_fn (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
+static uword
+l2input_node_fn (vlib_main_t * vm,
+		 vlib_node_runtime_t * node, vlib_frame_t * frame)
+{
+  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+    return l2input_node_inline (vm, node, frame, 1 /* do_trace */ );
+  return l2input_node_inline (vm, node, frame, 0 /* do_trace */ );
+}
 
 /* *INDENT-OFF* */
 VLIB_REGISTER_NODE (l2input_node) = {
@@ -506,10 +520,13 @@ l2input_set_bridge_features (u32 bd_index, u32 feat_mask, u32 feat_value)
  */
 
 u32
-set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_index, u32 bd_index,	/* for bridged interface */
-		 u32 bvi,	/* the bridged interface is the BVI */
-		 u32 shg,	/* the bridged interface's split horizon group */
-		 u32 xc_sw_if_index)	/* peer interface for xconnect */
+set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main,	/*           */
+		 u32 mode,	/* One of L2 modes or back to L3 mode        */
+		 u32 sw_if_index,	/* sw interface index                */
+		 u32 bd_index,	/* for bridged interface                     */
+		 u32 bvi,	/* the bridged interface is the BVI          */
+		 u32 shg,	/* the bridged interface split horizon group */
+		 u32 xc_sw_if_index)	/* peer interface for xconnect       */
 {
   l2input_main_t *mp = &l2input_main;
   l2output_main_t *l2om = &l2output_main;
@@ -551,6 +568,12 @@ set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_
 						VNET_SIMULATED_ETHERNET_TX_NEXT_ETHERNET_INPUT);
 	  ASSERT (slot == VNET_SIMULATED_ETHERNET_TX_NEXT_ETHERNET_INPUT);
 	}
+
+      /* Clear MACs learned on the interface */
+      if ((config->feature_bitmap | L2INPUT_FEAT_LEARN) ||
+	  (bd_config->feature_bitmap | L2INPUT_FEAT_LEARN))
+	l2fib_flush_int_mac (vm, sw_if_index);
+
       l2_if_adjust--;
     }
   else if (config->xconnect)
@@ -576,6 +599,10 @@ set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_
       config->shg = 0;
       config->bd_index = 0;
       config->feature_bitmap = L2INPUT_FEAT_DROP;
+
+      /* Clear L2 output config */
+      out_config = l2output_intf_config (sw_if_index);
+      memset (out_config, 0, sizeof (l2_output_config_t));
 
       /* Make sure any L2-output packet to this interface now in L3 mode is
        * dropped. This may happen if L2 FIB MAC entry is stale */
@@ -618,6 +645,7 @@ set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_
 	  config->xconnect = 0;
 	  config->bridge = 1;
 	  config->bd_index = bd_index;
+	  config->seq_num += 1;
 
 	  /*
 	   * Enable forwarding, flooding, learning and ARP termination by default
@@ -689,10 +717,11 @@ set_int_l2_mode (vlib_main_t * vm, vnet_main_t * vnet_main, u32 mode, u32 sw_if_
 	  shg = 0;		/* not used in xconnect */
 	}
 
-      /* set up split-horizon group */
+      /* set up split-horizon group and set output feature bit */
       config->shg = shg;
       out_config = l2output_intf_config (sw_if_index);
       out_config->shg = shg;
+      out_config->feature_bitmap |= L2OUTPUT_FEAT_OUTPUT;
 
       /*
        * Test: remove this when non-IP features can be configured.

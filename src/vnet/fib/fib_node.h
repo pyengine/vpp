@@ -31,6 +31,7 @@ typedef enum fib_node_type_t_ {
      */
     FIB_NODE_TYPE_WALK,
     FIB_NODE_TYPE_ENTRY,
+    FIB_NODE_TYPE_MFIB_ENTRY,
     FIB_NODE_TYPE_PATH_LIST,
     FIB_NODE_TYPE_PATH,
     FIB_NODE_TYPE_ADJ,
@@ -40,6 +41,7 @@ typedef enum fib_node_type_t_ {
     FIB_NODE_TYPE_LISP_ADJ,
     FIB_NODE_TYPE_GRE_TUNNEL,
     FIB_NODE_TYPE_VXLAN_TUNNEL,
+    FIB_NODE_TYPE_MAP_E,
     /**
      * Marker. New types before this one. leave the test last.
      */
@@ -51,6 +53,7 @@ typedef enum fib_node_type_t_ {
 
 #define FIB_NODE_TYPES {                          \
     [FIB_NODE_TYPE_ENTRY]     = "entry",          \
+    [FIB_NODE_TYPE_MFIB_ENTRY] = "mfib-entry",    \
     [FIB_NODE_TYPE_WALK]      = "walk",           \
     [FIB_NODE_TYPE_PATH_LIST] = "path-list",      \
     [FIB_NODE_TYPE_PATH]      = "path",           \
@@ -61,6 +64,7 @@ typedef enum fib_node_type_t_ {
     [FIB_NODE_TYPE_LISP_ADJ] = "lisp-adj", \
     [FIB_NODE_TYPE_GRE_TUNNEL] = "gre-tunnel", \
     [FIB_NODE_TYPE_VXLAN_TUNNEL] = "vxlan-tunnel", \
+    [FIB_NODE_TYPE_MAP_E] = "map-e", \
 }
 
 /**

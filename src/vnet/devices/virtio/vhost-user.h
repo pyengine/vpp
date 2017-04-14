@@ -42,6 +42,7 @@
 #define VIRTIO_NET_CTRL_MQ_VQ_PAIRS_MAX        0x8000
 
 #define VRING_USED_F_NO_NOTIFY  1
+#define VRING_AVAIL_F_NO_INTERRUPT 1
 
 #define foreach_virtio_net_feature      \
  _ (VIRTIO_NET_F_MRG_RXBUF, 15)         \
@@ -65,11 +66,13 @@ typedef enum
 int vhost_user_create_if (vnet_main_t * vnm, vlib_main_t * vm,
 			  const char *sock_filename, u8 is_server,
 			  u32 * sw_if_index, u64 feature_mask,
-			  u8 renumber, u32 custom_dev_instance, u8 * hwaddr);
+			  u8 renumber, u32 custom_dev_instance, u8 * hwaddr,
+			  u8 operation_mode);
 int vhost_user_modify_if (vnet_main_t * vnm, vlib_main_t * vm,
 			  const char *sock_filename, u8 is_server,
 			  u32 sw_if_index, u64 feature_mask,
-			  u8 renumber, u32 custom_dev_instance);
+			  u8 renumber, u32 custom_dev_instance,
+			  u8 operation_mode);
 int vhost_user_delete_if (vnet_main_t * vnm, vlib_main_t * vm,
 			  u32 sw_if_index);
 
@@ -207,7 +210,14 @@ typedef struct
   u32 callfd_idx;
   u32 kickfd_idx;
   u64 log_guest_addr;
+  u32 interrupt_thread_index;
 } vhost_user_vring_t;
+
+#define VHOST_USER_POLLING_MODE   0
+#define VHOST_USER_INTERRUPT_MODE 1
+#define VHOST_USER_ADAPTIVE_MODE  2
+
+#define VHOST_USER_EVENT_START_TIMER 1
 
 typedef struct
 {
@@ -249,6 +259,8 @@ typedef struct
 
   /* Vector of workers for this interface */
   u32 *workers;
+
+  u8 operation_mode;
 } vhost_user_intf_t;
 
 typedef struct
@@ -289,6 +301,12 @@ typedef struct
   /* This is here so it doesn't end-up
    * using stack or registers. */
   vhost_trace_t *current_trace;
+
+  /* bitmap of pending rx interfaces */
+  uword *pending_input_bitmap;
+
+  /* The operation mode computed per cpu based on interface setting */
+  u8 operation_mode;
 } vhost_cpu_t;
 
 typedef struct
@@ -311,6 +329,9 @@ typedef struct
 
   /** Pseudo random iterator */
   u32 random;
+
+  /* Node is in interrupt mode */
+  u8 interrupt_mode;
 } vhost_user_main_t;
 
 typedef struct
@@ -323,21 +344,11 @@ typedef struct
   u8 sock_filename[256];
   u32 num_regions;
   int sock_errno;
+  u8 operation_mode;
 } vhost_user_intf_details_t;
 
 int vhost_user_dump_ifs (vnet_main_t * vnm, vlib_main_t * vm,
 			 vhost_user_intf_details_t ** out_vuids);
-
-// CLI commands to be used from dpdk
-clib_error_t *vhost_user_connect_command_fn (vlib_main_t * vm,
-					     unformat_input_t * input,
-					     vlib_cli_command_t * cmd);
-clib_error_t *vhost_user_delete_command_fn (vlib_main_t * vm,
-					    unformat_input_t * input,
-					    vlib_cli_command_t * cmd);
-clib_error_t *show_vhost_user_command_fn (vlib_main_t * vm,
-					  unformat_input_t * input,
-					  vlib_cli_command_t * cmd);
 
 #endif
 

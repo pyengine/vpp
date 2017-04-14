@@ -54,11 +54,20 @@ u32 ip6_fib_table_fwding_lookup_with_if_index(ip6_main_t * im,
 					      u32 sw_if_index,
 					      const ip6_address_t * dst);
 u32 ip6_fib_table_fwding_lookup(ip6_main_t * im,
-				u32 fib_index, 
+				u32 fib_index,
 				const ip6_address_t * dst);
 
 /**
- * @biref return the DPO that the LB stacks on.
+ * @brief Walk all entries in a FIB table
+ * N.B: This is NOT safe to deletes. If you need to delete walk the whole
+ * table and store elements in a vector, then delete the elements
+ */
+extern void ip6_fib_table_walk(u32 fib_index,
+                               fib_table_walk_fn_t fn,
+                               void *ctx);
+
+/**
+ * @brief return the DPO that the LB stacks on.
  */
 always_inline u32
 ip6_src_lookup_for_packet (ip6_main_t * im,
@@ -106,7 +115,7 @@ static inline ip6_fib_t *
 ip6_fib_get (fib_node_index_t index)
 {
     ASSERT(!pool_is_free_index(ip6_main.fibs, index));
-    return (&pool_elt_at_index (ip6_main.fibs, index)->v6);
+    return (pool_elt_at_index (ip6_main.v6_fibs, index));
 }
 
 static inline 

@@ -40,33 +40,21 @@
 #ifndef included_ip_ip4_h
 #define included_ip_ip4_h
 
-#include <vnet/ip/ip4_mtrie.h>
 #include <vnet/ip/ip4_packet.h>
 #include <vnet/ip/lookup.h>
 #include <vnet/feature/feature.h>
 
-typedef struct ip4_fib_t
+typedef struct ip4_mfib_t
 {
   /* Hash table for each prefix length mapping. */
-  uword *fib_entry_by_dst_address[33];
-
-  /* Mtrie for fast lookups.  Hash is used to maintain overlapping prefixes. */
-  ip4_fib_mtrie_t mtrie;
+  uword *fib_entry_by_dst_address[65];
 
   /* Table ID (hash key) for this FIB. */
   u32 table_id;
 
   /* Index into FIB vector. */
   u32 index;
-
-  /* flow hash configuration */
-  flow_hash_config_t flow_hash_config;
-
-  /* N-tuple classifier indices */
-  u32 fwd_classify_table_index;
-  u32 rev_classify_table_index;
-
-} ip4_fib_t;
+} ip4_mfib_t;
 
 struct ip4_main_t;
 
@@ -99,10 +87,19 @@ typedef struct ip4_main_t
   /** Vector of FIBs. */
   struct fib_table_t_ *fibs;
 
+  /** Vector of MTries. */
+  struct ip4_fib_t_ *v4_fibs;
+
+  /** Vector of MFIBs. */
+  struct mfib_table_t_ *mfibs;
+
   u32 fib_masks[33];
 
   /** Table index indexed by software interface. */
   u32 *fib_index_by_sw_if_index;
+
+  /** Table index indexed by software interface. */
+  u32 *mfib_index_by_sw_if_index;
 
   /* IP4 enabled count by software interface */
   u8 *ip_enabled_by_sw_if_index;
@@ -110,6 +107,10 @@ typedef struct ip4_main_t
   /** Hash table mapping table id to fib index.
      ID space is not necessarily dense; index space is dense. */
   uword *fib_index_by_table_id;
+
+  /** Hash table mapping table id to multicast fib index.
+     ID space is not necessarily dense; index space is dense. */
+  uword *mfib_index_by_table_id;
 
   /** Functions to call when interface address changes. */
     ip4_add_del_interface_address_callback_t
@@ -140,7 +141,9 @@ extern ip4_main_t ip4_main;
 /** Global ip4 input node.  Errors get attached to ip4 input node. */
 extern vlib_node_registration_t ip4_input_node;
 extern vlib_node_registration_t ip4_lookup_node;
+extern vlib_node_registration_t ip4_local_node;
 extern vlib_node_registration_t ip4_rewrite_node;
+extern vlib_node_registration_t ip4_rewrite_mcast_node;
 extern vlib_node_registration_t ip4_rewrite_local_node;
 extern vlib_node_registration_t ip4_arp_node;
 extern vlib_node_registration_t ip4_glean_node;
@@ -190,7 +193,6 @@ ip4_src_address_for_packet (ip_lookup_main_t * lm,
     }
   else
     {
-      ASSERT (0);
       src->as_u32 = 0;
     }
   return (!0);
@@ -261,8 +263,6 @@ serialize_function_t serialize_vnet_ip4_main, unserialize_vnet_ip4_main;
 int vnet_set_ip4_flow_hash (u32 table_id,
 			    flow_hash_config_t flow_hash_config);
 
-void ip4_mtrie_init (ip4_fib_mtrie_t * m);
-
 int vnet_set_ip4_classify_intfc (vlib_main_t * vm, u32 sw_if_index,
 				 u32 table_index);
 
@@ -286,8 +286,8 @@ ip4_compute_flow_hash (const ip4_header_t * ip,
   b = (flow_hash_config & IP_FLOW_HASH_REVERSE_SRC_DST) ? t1 : t2;
   b ^= (flow_hash_config & IP_FLOW_HASH_PROTO) ? ip->protocol : 0;
 
-  t1 = is_tcp_udp ? tcp->ports.src : 0;
-  t2 = is_tcp_udp ? tcp->ports.dst : 0;
+  t1 = is_tcp_udp ? tcp->src : 0;
+  t2 = is_tcp_udp ? tcp->dst : 0;
 
   t1 = (flow_hash_config & IP_FLOW_HASH_SRC_PORT) ? t1 : 0;
   t2 = (flow_hash_config & IP_FLOW_HASH_DST_PORT) ? t2 : 0;
@@ -311,6 +311,44 @@ u8 *format_ip4_forward_next_trace (u8 * s, va_list * args);
 
 u32 ip4_tcp_udp_validate_checksum (vlib_main_t * vm, vlib_buffer_t * p0);
 
+#define IP_DF 0x4000		/* don't fragment */
+
+/**
+ * Push IPv4 header to buffer
+ *
+ * This does not support fragmentation.
+ *
+ * @param vm - vlib_main
+ * @param b - buffer to write the header to
+ * @param src - source IP
+ * @param dst - destination IP
+ * @param prot - payload proto
+ *
+ * @return - pointer to start of IP header
+ */
+always_inline void *
+vlib_buffer_push_ip4 (vlib_main_t * vm, vlib_buffer_t * b,
+		      ip4_address_t * src, ip4_address_t * dst, int proto)
+{
+  ip4_header_t *ih;
+
+  /* make some room */
+  ih = vlib_buffer_push_uninit (b, sizeof (ip4_header_t));
+
+  ih->ip_version_and_header_length = 0x45;
+  ih->tos = 0;
+  ih->length = clib_host_to_net_u16 (vlib_buffer_length_in_chain (vm, b));
+
+  /* No fragments */
+  ih->flags_and_fragment_offset = clib_host_to_net_u16 (IP_DF);
+  ih->ttl = 255;
+  ih->protocol = proto;
+  ih->src_address.as_u32 = src->as_u32;
+  ih->dst_address.as_u32 = dst->as_u32;
+
+  ih->checksum = ip4_header_checksum (ih);
+  return ih;
+}
 #endif /* included_ip_ip4_h */
 
 /*

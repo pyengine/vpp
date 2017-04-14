@@ -38,10 +38,14 @@ lisp_gpe_add_del_fwd_entry_command_fn (vlib_main_t * vm,
   ip_address_t lloc, rloc;
   clib_error_t *error = 0;
   gid_address_t _reid, *reid = &_reid, _leid, *leid = &_leid;
-  u8 reid_set = 0, leid_set = 0, is_negative = 0, vrf_set = 0, vni_set = 0;
-  u32 vni, vrf, action = ~0, p, w;
+  u8 reid_set = 0, leid_set = 0, is_negative = 0, dp_table_set = 0,
+    vni_set = 0;
+  u32 vni = 0, dp_table = 0, action = ~0, w;
   locator_pair_t pair, *pairs = 0;
   int rv;
+
+  memset (leid, 0, sizeof (*leid));
+  memset (reid, 0, sizeof (*reid));
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -67,46 +71,47 @@ lisp_gpe_add_del_fwd_entry_command_fn (vlib_main_t * vm,
 	  gid_address_vni (reid) = vni;
 	  vni_set = 1;
 	}
-      else if (unformat (line_input, "vrf %u", &vrf))
+      else if (unformat (line_input, "vrf %u", &dp_table))
 	{
-	  vrf_set = 1;
+	  dp_table_set = 1;
 	}
-      else if (unformat (line_input, "bd %u", &vrf))
+      else if (unformat (line_input, "bd %u", &dp_table))
 	{
-	  vrf_set = 1;
+	  dp_table_set = 1;
 	}
       else if (unformat (line_input, "negative action %U",
 			 unformat_negative_mapping_action, &action))
 	{
 	  is_negative = 1;
 	}
-      else if (unformat (line_input, "loc-pair %U %U p %d w %d",
+      else if (unformat (line_input, "loc-pair %U %U w %d",
 			 unformat_ip_address, &lloc,
-			 unformat_ip_address, &rloc, &p, &w))
+			 unformat_ip_address, &rloc, &w))
 	{
 	  pair.lcl_loc = lloc;
 	  pair.rmt_loc = rloc;
-	  pair.priority = p;
 	  pair.weight = w;
+	  pair.priority = 0;
 	  vec_add1 (pairs, pair);
 	}
       else
 	{
 	  error = unformat_parse_error (line_input);
+	  vlib_cli_output (vm, "parse error: '%U'",
+			   format_unformat_error, line_input);
 	  goto done;
 	}
-    }
-  unformat_free (line_input);
-
-  if (!vni_set || !vrf_set)
-    {
-      error = clib_error_return (0, "vni and vrf must be set!");
-      goto done;
     }
 
   if (!reid_set)
     {
-      error = clib_error_return (0, "remote eid must be set!");
+      vlib_cli_output (vm, "remote eid must be set!");
+      goto done;
+    }
+
+  if (gid_address_type (reid) != GID_ADDR_NSH && (!vni_set || !dp_table_set))
+    {
+      vlib_cli_output (vm, "vni and vrf/bd must be set!");
       goto done;
     }
 
@@ -114,7 +119,7 @@ lisp_gpe_add_del_fwd_entry_command_fn (vlib_main_t * vm,
     {
       if (~0 == action)
 	{
-	  error = clib_error_return (0, "no action set for negative tunnel!");
+	  vlib_cli_output (vm, "no action set for negative tunnel!");
 	  goto done;
 	}
     }
@@ -122,7 +127,7 @@ lisp_gpe_add_del_fwd_entry_command_fn (vlib_main_t * vm,
     {
       if (vec_len (pairs) == 0)
 	{
-	  error = clib_error_return (0, "expected ip4/ip6 locators.");
+	  vlib_cli_output (vm, "expected ip4/ip6 locators");
 	  goto done;
 	}
     }
@@ -142,28 +147,30 @@ lisp_gpe_add_del_fwd_entry_command_fn (vlib_main_t * vm,
   a->is_add = is_add;
   a->is_negative = is_negative;
   a->vni = vni;
-  a->table_id = vrf;
+  a->table_id = dp_table;
   gid_address_copy (&a->lcl_eid, leid);
   gid_address_copy (&a->rmt_eid, reid);
   a->locator_pairs = pairs;
+  a->action = action;
 
   rv = vnet_lisp_gpe_add_del_fwd_entry (a, 0);
   if (0 != rv)
     {
-      error = clib_error_return (0, "failed to %s gpe tunnel!",
-				 is_add ? "add" : "delete");
+      vlib_cli_output (vm, "failed to %s gpe tunnel!",
+		       is_add ? "add" : "delete");
     }
 
 done:
+  unformat_free (line_input);
   vec_free (pairs);
   return error;
 }
 
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (lisp_gpe_add_del_fwd_entry_command, static) = {
-  .path = "lisp gpe entry",
-  .short_help = "lisp gpe entry add/del vni <vni> vrf <vrf> [leid <leid>]"
-      "reid <reid> [loc-pair <lloc> <rloc> p <priority> w <weight>] "
+  .path = "gpe entry",
+  .short_help = "gpe entry add/del vni <vni> vrf/bd <id> [leid <leid>]"
+      "reid <reid> [loc-pair <lloc> <rloc> w <weight>] "
       "[negative action <action>]",
   .function = lisp_gpe_add_del_fwd_entry_command_fn,
 };
@@ -202,6 +209,102 @@ vnet_lisp_gpe_enable_disable (vnet_lisp_gpe_enable_disable_args_t * a)
   return 0;
 }
 
+/** Set GPE encapsulation mode. */
+int
+vnet_gpe_set_encap_mode (gpe_encap_mode_t mode)
+{
+  lisp_gpe_main_t *lgm = &lisp_gpe_main;
+
+  if (mode >= GPE_ENCAP_COUNT)
+    return VNET_API_ERROR_INVALID_GPE_MODE;
+
+  if (pool_elts (lgm->lisp_fwd_entry_pool) != 0)
+    return VNET_API_ERROR_LISP_GPE_ENTRIES_PRESENT;
+
+  lgm->encap_mode = mode;
+  return 0;
+}
+
+/** CLI command to set GPE encap */
+static clib_error_t *
+gpe_set_encap_mode_command_fn (vlib_main_t * vm,
+			       unformat_input_t * input,
+			       vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  gpe_encap_mode_t mode = GPE_ENCAP_COUNT;
+  vnet_api_error_t rv;
+
+  /* Get a line of input. */
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "lisp"))
+	mode = GPE_ENCAP_LISP;
+      else if (unformat (line_input, "vxlan"))
+	mode = GPE_ENCAP_VXLAN;
+      else
+	{
+	  return clib_error_return (0, "parse error: '%U'",
+				    format_unformat_error, line_input);
+	}
+    }
+  rv = vnet_gpe_set_encap_mode (mode);
+  if (rv)
+    {
+      return clib_error_return (0,
+				"Error: invalid mode or GPE entries are present!");
+    }
+
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (gpe_set_encap_mode_command, static) = {
+  .path = "gpe encap",
+  .short_help = "gpe encap [lisp|vxlan]",
+  .function = gpe_set_encap_mode_command_fn,
+};
+/* *INDENT-ON* */
+
+/** Format GPE encap mode. */
+u8 *
+format_vnet_gpe_encap_mode (u8 * s, va_list * args)
+{
+  lisp_gpe_main_t *lgm = &lisp_gpe_main;
+
+  switch (lgm->encap_mode)
+    {
+    case GPE_ENCAP_LISP:
+      return format (s, "lisp");
+    case GPE_ENCAP_VXLAN:
+      return format (s, "vxlan");
+    default:
+      return 0;
+    }
+  return 0;
+}
+
+/** CLI command to show GPE encap */
+static clib_error_t *
+gpe_show_encap_mode_command_fn (vlib_main_t * vm,
+				unformat_input_t * input,
+				vlib_cli_command_t * cmd)
+{
+  vlib_cli_output (vm, "encap mode: %U", format_vnet_gpe_encap_mode);
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (gpe_show_encap_mode_command, static) = {
+  .path = "show gpe encap",
+  .short_help = "show GPE encapulation mode",
+  .function = gpe_show_encap_mode_command_fn,
+};
+/* *INDENT-ON* */
+
 /** CLI command to enable/disable LISP-GPE. */
 static clib_error_t *
 lisp_gpe_enable_disable_command_fn (vlib_main_t * vm,
@@ -211,6 +314,7 @@ lisp_gpe_enable_disable_command_fn (vlib_main_t * vm,
   unformat_input_t _line_input, *line_input = &_line_input;
   u8 is_en = 1;
   vnet_lisp_gpe_enable_disable_args_t _a, *a = &_a;
+  clib_error_t *error = NULL;
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -224,18 +328,24 @@ lisp_gpe_enable_disable_command_fn (vlib_main_t * vm,
 	is_en = 0;
       else
 	{
-	  return clib_error_return (0, "parse error: '%U'",
-				    format_unformat_error, line_input);
+	  error = clib_error_return (0, "parse error: '%U'",
+				     format_unformat_error, line_input);
+	  goto done;
 	}
     }
   a->is_en = is_en;
-  return vnet_lisp_gpe_enable_disable (a);
+  error = vnet_lisp_gpe_enable_disable (a);
+
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (enable_disable_lisp_gpe_command, static) = {
-  .path = "lisp gpe",
-  .short_help = "lisp gpe [enable|disable]",
+  .path = "gpe",
+  .short_help = "gpe [enable|disable]",
   .function = lisp_gpe_enable_disable_command_fn,
 };
 /* *INDENT-ON* */
@@ -271,8 +381,8 @@ lisp_show_iface_command_fn (vlib_main_t * vm,
 
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (lisp_show_iface_command) = {
-    .path = "show lisp gpe interface",
-    .short_help = "show lisp gpe interface",
+    .path = "show gpe interface",
+    .short_help = "show gpe interface",
     .function = lisp_show_iface_command_fn,
 };
 /* *INDENT-ON* */
@@ -284,7 +394,6 @@ format_vnet_lisp_gpe_status (u8 * s, va_list * args)
   lisp_gpe_main_t *lgm = &lisp_gpe_main;
   return format (s, "%s", lgm->is_en ? "enabled" : "disabled");
 }
-
 
 /** LISP-GPE init function. */
 clib_error_t *
@@ -305,6 +414,7 @@ lisp_gpe_init (vlib_main_t * vm)
   lgm->im6 = &ip6_main;
   lgm->lm4 = &ip4_main.lookup_main;
   lgm->lm6 = &ip6_main.lookup_main;
+  lgm->encap_mode = GPE_ENCAP_LISP;
 
   lgm->lisp_gpe_fwd_entries =
     hash_create_mem (0, sizeof (lisp_gpe_fwd_entry_key_t), sizeof (uword));
@@ -313,7 +423,20 @@ lisp_gpe_init (vlib_main_t * vm)
 			 lisp_gpe_ip4_input_node.index, 1 /* is_ip4 */ );
   udp_register_dst_port (vm, UDP_DST_PORT_lisp_gpe6,
 			 lisp_gpe_ip6_input_node.index, 0 /* is_ip4 */ );
+
+  lgm->lisp_stats_index_by_key =
+    hash_create_mem (0, sizeof (lisp_stats_key_t), sizeof (uword));
+  memset (&lgm->counters, 0, sizeof (lgm->counters));
+  lgm->counters.name = "LISP counters";
+
   return 0;
+}
+
+gpe_encap_mode_t
+vnet_gpe_get_encap_mode (void)
+{
+  lisp_gpe_main_t *lgm = &lisp_gpe_main;
+  return lgm->encap_mode;
 }
 
 VLIB_INIT_FUNCTION (lisp_gpe_init);

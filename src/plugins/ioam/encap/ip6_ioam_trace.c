@@ -16,6 +16,7 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
+#include <vpp/app/version.h>
 
 #include <vnet/ip/ip6.h>
 #include <vnet/ip/ip6_hop_by_hop.h>
@@ -27,6 +28,11 @@
 #include <vnet/plugin/plugin.h>
 
 #include <ioam/lib-trace/trace_util.h>
+#include <ioam/lib-trace/trace_config.h>
+#include <ioam/encap/ip6_ioam_trace.h>
+#include <ioam/udp-ping/udp_ping.h>
+#include <ioam/udp-ping/udp_ping_packet.h>
+#include <ioam/udp-ping/udp_ping_util.h>
 
 /* Timestamp precision multipliers for seconds, milliseconds, microseconds
  * and nanoseconds respectively.
@@ -39,16 +45,6 @@ typedef union
   u32 as_u32[2];
 } time_u64_t;
 
-/* *INDENT-OFF* */
-typedef CLIB_PACKED(struct {
-  ip6_hop_by_hop_option_t hdr;
-  u8 ioam_trace_type;
-  u8 data_list_elts_left;
-  u32 elts[0]; /* Variable type. So keep it generic */
-}) ioam_trace_option_t;
-/* *INDENT-ON* */
-
-
 extern ip6_hop_by_hop_ioam_main_t ip6_hop_by_hop_ioam_main;
 extern ip6_main_t ip6_main;
 
@@ -56,7 +52,9 @@ extern ip6_main_t ip6_main;
   _(PROCESSED, "Pkts with ip6 hop-by-hop trace options")                        \
   _(PROFILE_MISS, "Pkts with ip6 hop-by-hop trace options but no profile set") \
   _(UPDATED, "Pkts with trace updated")                                        \
-  _(FULL, "Pkts with trace options but no space")
+  _(FULL, "Pkts with trace options but no space")                              \
+  _(LOOPBACK, "Pkts with trace options Loopback")                              \
+  _(LOOPBACK_REPLY, "Pkts with trace options Loopback Reply")
 
 static char *ip6_hop_by_hop_ioam_trace_stats_strings[] = {
 #define _(sym,string) string,
@@ -200,26 +198,67 @@ ip6_hop_by_hop_ioam_trace_rewrite_handler (u8 * rewrite_string,
     HBH_OPTION_TYPE_DATA_CHANGE_ENROUTE;
   trace_option->hdr.length = 2 /*ioam_trace_type,data_list_elts_left */  +
     trace_option_elts * trace_data_size;
-  trace_option->ioam_trace_type = profile->trace_type & TRACE_TYPE_MASK;
-  trace_option->data_list_elts_left = trace_option_elts;
+  trace_option->trace_hdr.ioam_trace_type =
+    profile->trace_type & TRACE_TYPE_MASK;
+  trace_option->trace_hdr.data_list_elts_left = trace_option_elts;
   *rewrite_size =
     sizeof (ioam_trace_option_t) + (trace_option_elts * trace_data_size);
 
   return 0;
 }
 
+always_inline void
+ip6_hbh_ioam_loopback_handler (vlib_buffer_t * b, ip6_header_t * ip,
+			       ioam_trace_option_t * trace)
+{
+  u32 buf_index;
+  ip6_hop_by_hop_ioam_main_t *hm = &ip6_hop_by_hop_ioam_main;
+  vlib_buffer_t *b0;
+  vlib_frame_t *nf = 0;
+  u32 *to_next;
+  vlib_node_t *next_node;
+  ip6_header_t *ip6;
+  ip6_hop_by_hop_header_t *hbh;
+  ioam_trace_option_t *opt;
+  udp_ping_t *udp;
+
+  next_node = vlib_get_node_by_name (hm->vlib_main, (u8 *) "ip6-lookup");
+  nf = vlib_get_frame_to_node (hm->vlib_main, next_node->index);
+  nf->n_vectors = 0;
+  to_next = vlib_frame_vector_args (nf);
+
+  b0 = vlib_buffer_copy (hm->vlib_main, b);
+  buf_index = vlib_get_buffer_index (hm->vlib_main, b0);
+
+  vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
+  vnet_buffer (b0)->sw_if_index[VLIB_TX] = ~0;
+
+  ip6 = vlib_buffer_get_current (b0);
+  hbh = (ip6_hop_by_hop_header_t *) (ip6 + 1);
+  opt = (ioam_trace_option_t *)
+    ip6_hbh_get_option (hbh, HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST);
+
+  udp = (udp_ping_t *) ((u8 *) hbh + ((hbh->length + 1) << 3));
+  udp_ping_create_reply_from_probe_ip6 (ip6, hbh, udp);
+  ip6_hbh_ioam_trace_set_bit (opt, BIT_LOOPBACK_REPLY);
+
+  *to_next = buf_index;
+  nf->n_vectors++;
+  to_next++;
+
+  vlib_put_frame_to_node (hm->vlib_main, next_node->index, nf);
+  ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_LOOPBACK, 1);
+}
 
 int
 ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 				      ip6_hop_by_hop_option_t * opt)
 {
-  ip6_main_t *im = &ip6_main;
-  ip_lookup_main_t *lm = &im->lookup_main;
   ip6_hop_by_hop_ioam_main_t *hm = &ip6_hop_by_hop_ioam_main;
   u8 elt_index = 0;
   ioam_trace_option_t *trace = (ioam_trace_option_t *) opt;
   u32 adj_index = vnet_buffer (b)->ip.adj_index[VLIB_TX];
-  ip_adjacency_t *adj = ip_get_adjacency (lm, adj_index);
+  ip_adjacency_t *adj = adj_get (adj_index);
   time_u64_t time_u64;
   u32 *elt;
   int rv = 0;
@@ -234,27 +273,34 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
       return (-1);
     }
 
+  /* Don't trace loopback reply packets */
+  if (trace->trace_hdr.ioam_trace_type & BIT_LOOPBACK_REPLY)
+    {
+      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_LOOPBACK_REPLY,
+					      1);
+      return rv;
+    }
 
   time_u64.as_u64 = 0;
 
-  if (PREDICT_TRUE (trace->data_list_elts_left))
+  if (PREDICT_TRUE (trace->trace_hdr.data_list_elts_left))
     {
-      trace->data_list_elts_left--;
+      trace->trace_hdr.data_list_elts_left--;
       /* fetch_trace_data_size returns in bytes. Convert it to 4-bytes
        * to skip to this node's location.
        */
       elt_index =
-	trace->data_list_elts_left *
-	fetch_trace_data_size (trace->ioam_trace_type) / 4;
-      elt = &trace->elts[elt_index];
-      if (trace->ioam_trace_type & BIT_TTL_NODEID)
+	trace->trace_hdr.data_list_elts_left *
+	fetch_trace_data_size (trace->trace_hdr.ioam_trace_type) / 4;
+      elt = &trace->trace_hdr.elts[elt_index];
+      if (trace->trace_hdr.ioam_trace_type & BIT_TTL_NODEID)
 	{
 	  *elt =
 	    clib_host_to_net_u32 ((ip->hop_limit << 24) | profile->node_id);
 	  elt++;
 	}
 
-      if (trace->ioam_trace_type & BIT_ING_INTERFACE)
+      if (trace->trace_hdr.ioam_trace_type & BIT_ING_INTERFACE)
 	{
 	  *elt =
 	    (vnet_buffer (b)->sw_if_index[VLIB_RX] & 0xFFFF) << 16 |
@@ -263,7 +309,7 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 	  elt++;
 	}
 
-      if (trace->ioam_trace_type & BIT_TIMESTAMP)
+      if (trace->trace_hdr.ioam_trace_type & BIT_TIMESTAMP)
 	{
 	  /* Send least significant 32 bits */
 	  f64 time_f64 =
@@ -275,12 +321,21 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
 	  elt++;
 	}
 
-      if (trace->ioam_trace_type & BIT_APPDATA)
+      if (trace->trace_hdr.ioam_trace_type & BIT_APPDATA)
 	{
 	  /* $$$ set elt0->app_data */
 	  *elt = clib_host_to_net_u32 (profile->app_data);
 	  elt++;
 	}
+
+
+      if (PREDICT_FALSE (trace->trace_hdr.ioam_trace_type & BIT_LOOPBACK))
+	{
+	  /* if loopback flag set then copy the packet
+	   * and send it back to source */
+	  ip6_hbh_ioam_loopback_handler (b, ip, trace);
+	}
+
       ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_UPDATED, 1);
     }
   else
@@ -301,17 +356,19 @@ ip6_hbh_ioam_trace_data_list_trace_handler (u8 * s,
 
   trace = (ioam_trace_option_t *) opt;
   s =
-    format (s, "  Trace Type 0x%x , %d elts left\n", trace->ioam_trace_type,
-	    trace->data_list_elts_left);
+    format (s, "  Trace Type 0x%x , %d elts left\n",
+	    trace->trace_hdr.ioam_trace_type,
+	    trace->trace_hdr.data_list_elts_left);
   trace_data_size_in_words =
-    fetch_trace_data_size (trace->ioam_trace_type) / 4;
-  elt = &trace->elts[0];
-  while ((u8 *) elt < ((u8 *) (&trace->elts[0]) + trace->hdr.length - 2
-		       /* -2 accounts for ioam_trace_type,elts_left */ ))
+    fetch_trace_data_size (trace->trace_hdr.ioam_trace_type) / 4;
+  elt = &trace->trace_hdr.elts[0];
+  while ((u8 *) elt <
+	 ((u8 *) (&trace->trace_hdr.elts[0]) + trace->hdr.length - 2
+	  /* -2 accounts for ioam_trace_type,elts_left */ ))
     {
       s = format (s, "    [%d] %U\n", elt_index,
 		  format_ioam_data_list_element,
-		  elt, &trace->ioam_trace_type);
+		  elt, &trace->trace_hdr.ioam_trace_type);
       elt_index++;
       elt += trace_data_size_in_words;
     }
@@ -349,18 +406,12 @@ VLIB_CLI_COMMAND (ip6_show_ioam_trace_cmd, static) = {
 };
 /* *INDENT-ON* */
 
-/*
- * This routine exists to convince the vlib plugin framework that
- * we haven't accidentally copied a random .dll into the plugin directory.
- *
- * Also collects global variable pointers passed from the vpp engine
- */
-clib_error_t *
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-		      int from_early_init)
-{
-  return 0;
-}
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = VPP_BUILD_VER,
+    .description = "Inbound OAM",
+};
+/* *INDENT-ON* */
 
 static clib_error_t *
 ip6_hop_by_hop_ioam_trace_init (vlib_main_t * vm)

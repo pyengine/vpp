@@ -53,6 +53,14 @@ vnet_get_sw_interface (vnet_main_t * vnm, u32 sw_if_index)
 }
 
 always_inline vnet_sw_interface_t *
+vnet_get_sw_interface_safe (vnet_main_t * vnm, u32 sw_if_index)
+{
+  if (!pool_is_free_index (vnm->interface_main.sw_interfaces, sw_if_index))
+    return pool_elt_at_index (vnm->interface_main.sw_interfaces, sw_if_index);
+  return (NULL);
+}
+
+always_inline vnet_sw_interface_t *
 vnet_get_hw_sw_interface (vnet_main_t * vnm, u32 hw_if_index)
 {
   vnet_hw_interface_t *hw = vnet_get_hw_interface (vnm, hw_if_index);
@@ -172,6 +180,26 @@ vnet_sw_interface_is_admin_up (vnet_main_t * vnm, u32 sw_if_index)
 {
   return (vnet_sw_interface_get_flags (vnm, sw_if_index) &
 	  VNET_SW_INTERFACE_FLAG_ADMIN_UP) != 0;
+}
+
+always_inline uword
+vnet_swif_is_api_visible (vnet_sw_interface_t * si)
+{
+  return !(si->flags & VNET_SW_INTERFACE_FLAG_HIDDEN);
+}
+
+always_inline uword
+vnet_sw_interface_is_api_visible (vnet_main_t * vnm, u32 sw_if_index)
+{
+  vnet_sw_interface_t *si = vnet_get_sw_interface (vnm, sw_if_index);
+  return vnet_swif_is_api_visible (si);
+}
+
+always_inline uword
+vnet_sw_interface_is_api_valid (vnet_main_t * vnm, u32 sw_if_index)
+{
+  return !pool_is_free_index (vnm->interface_main.sw_interfaces, sw_if_index)
+    && vnet_sw_interface_is_api_visible (vnm, sw_if_index);
 }
 
 always_inline uword

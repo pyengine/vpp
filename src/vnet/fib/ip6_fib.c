@@ -35,59 +35,7 @@ vnet_ip6_fib_init (u32 fib_index)
     fib_table_entry_special_add(fib_index,
 				&pfx,
 				FIB_SOURCE_DEFAULT_ROUTE,
-				FIB_ENTRY_FLAG_DROP,
-				ADJ_INDEX_INVALID);
-
-    /*
-     * Add ff02::1:ff00:0/104 via local route for all tables.
-     *  This is required for neighbor discovery to work.
-     */
-    ip6_set_solicited_node_multicast_address(&pfx.fp_addr.ip6, 0);
-    pfx.fp_len = 104;
-    fib_table_entry_special_add(fib_index,
-				&pfx,
-				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_LOCAL,
-				ADJ_INDEX_INVALID);
-
-    /*
-     * Add all-routers multicast address via local route for all tables
-     */
-    ip6_set_reserved_multicast_address (&pfx.fp_addr.ip6,
-					IP6_MULTICAST_SCOPE_link_local,
-					IP6_MULTICAST_GROUP_ID_all_routers);
-    pfx.fp_len = 128;
-    fib_table_entry_special_add(fib_index,
-				&pfx,
-				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_LOCAL,
-				ADJ_INDEX_INVALID);
-
-    /*
-     * Add all-nodes multicast address via local route for all tables
-     */
-    ip6_set_reserved_multicast_address (&pfx.fp_addr.ip6,
-					IP6_MULTICAST_SCOPE_link_local,
-					IP6_MULTICAST_GROUP_ID_all_hosts);
-    pfx.fp_len = 128;
-    fib_table_entry_special_add(fib_index,
-				&pfx,
-				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_LOCAL,
-				ADJ_INDEX_INVALID);
-
-    /*
-     *  Add all-mldv2  multicast address via local route for all tables
-     */
-    ip6_set_reserved_multicast_address (&pfx.fp_addr.ip6,
-					IP6_MULTICAST_SCOPE_link_local,
-					IP6_MULTICAST_GROUP_ID_mldv2_routers);
-    pfx.fp_len = 128;
-    fib_table_entry_special_add(fib_index,
-				&pfx,
-				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_LOCAL,
-				ADJ_INDEX_INVALID);
+				FIB_ENTRY_FLAG_DROP);
 
     /*
      * all link local for us
@@ -98,30 +46,36 @@ vnet_ip6_fib_init (u32 fib_index)
     fib_table_entry_special_add(fib_index,
 				&pfx,
 				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_LOCAL,
-				ADJ_INDEX_INVALID);
+				FIB_ENTRY_FLAG_LOCAL);
 }
 
 static u32
 create_fib_with_table_id (u32 table_id)
 {
     fib_table_t *fib_table;
+    ip6_fib_t *v6_fib;
 
     pool_get_aligned(ip6_main.fibs, fib_table, CLIB_CACHE_LINE_BYTES);
-    memset(fib_table, 0, sizeof(*fib_table));
+    pool_get_aligned(ip6_main.v6_fibs, v6_fib, CLIB_CACHE_LINE_BYTES);
 
+    memset(fib_table, 0, sizeof(*fib_table));
+    memset(v6_fib, 0, sizeof(*v6_fib));
+
+    ASSERT((fib_table - ip6_main.fibs) ==
+           (v6_fib - ip6_main.v6_fibs));
+    
     fib_table->ft_proto = FIB_PROTOCOL_IP6;
     fib_table->ft_index =
-	fib_table->v6.index =
-	    (fib_table - ip6_main.fibs);
+	    v6_fib->index =
+                (fib_table - ip6_main.fibs);
 
     hash_set(ip6_main.fib_index_by_table_id, table_id, fib_table->ft_index);
 
     fib_table->ft_table_id =
-	fib_table->v6.table_id =
+	v6_fib->table_id =
 	    table_id;
     fib_table->ft_flow_hash_config = 
-	fib_table->v6.flow_hash_config =
+	v6_fib->flow_hash_config =
 	    IP_FLOW_HASH_DEFAULT;
 
     vnet_ip6_fib_init(fib_table->ft_index);
@@ -239,6 +193,7 @@ ip6_fib_table_destroy (u32 fib_index)
     {
 	hash_unset (ip6_main.fib_index_by_table_id, fib_table->ft_table_id);
     }
+    pool_put_index(ip6_main.v6_fibs, fib_table->ft_index);
     pool_put(ip6_main.fibs, fib_table);
 }
 
@@ -512,27 +467,68 @@ ip6_fib_table_fwding_dpo_remove (u32 fib_index,
     if (--table->dst_address_length_refcounts[len] == 0)
     {
 	table->non_empty_dst_address_length_bitmap =
-            clib_bitmap_set (table->non_empty_dst_address_length_bitmap, 
+            clib_bitmap_set (table->non_empty_dst_address_length_bitmap,
                              128 - len, 0);
 	compute_prefix_lengths_in_search_order (table);
     }
 }
 
+/**
+ * @brief Context when walking the IPv6 table. Since all VRFs are in the
+ * same hash table, we need to filter only those we need as we walk
+ */
+typedef struct ip6_fib_walk_ctx_t_
+{
+    u32 i6w_fib_index;
+    fib_table_walk_fn_t i6w_fn;
+    void *i6w_ctx;
+} ip6_fib_walk_ctx_t;
+
+static int
+ip6_fib_walk_cb (clib_bihash_kv_24_8_t * kvp,
+                 void *arg)
+{
+    ip6_fib_walk_ctx_t *ctx = arg;
+
+    if ((kvp->key[2] >> 32) == ctx->i6w_fib_index)
+    {
+        ctx->i6w_fn(kvp->value, ctx->i6w_ctx);
+    }
+
+    return (1);
+}
+
+void
+ip6_fib_table_walk (u32 fib_index,
+                    fib_table_walk_fn_t fn,
+                    void *arg)
+{
+    ip6_fib_walk_ctx_t ctx = {
+        .i6w_fib_index = fib_index,
+        .i6w_fn = fn,
+        .i6w_ctx = arg,
+    };
+    ip6_main_t *im = &ip6_main;
+
+    BV(clib_bihash_foreach_key_value_pair)(&im->ip6_table[IP6_FIB_TABLE_NON_FWDING].ip6_hash,
+					   ip6_fib_walk_cb,
+					   &ctx);
+
+}
+
 typedef struct ip6_fib_show_ctx_t_ {
-    u32 fib_index;
     fib_node_index_t *entries;
 } ip6_fib_show_ctx_t;
 
-static void
-ip6_fib_table_collect_entries (clib_bihash_kv_24_8_t * kvp,
-			       void *arg)
+static int
+ip6_fib_table_show_walk (fib_node_index_t fib_entry_index,
+                         void *arg)
 {
     ip6_fib_show_ctx_t *ctx = arg;
 
-    if ((kvp->key[2] >> 32) == ctx->fib_index)
-    {
-	vec_add1(ctx->entries, kvp->value);
-    }
+    vec_add1(ctx->entries, fib_entry_index);
+
+    return (1);
 }
 
 static void
@@ -541,15 +537,10 @@ ip6_fib_table_show_all (ip6_fib_t *fib,
 {
     fib_node_index_t *fib_entry_index;
     ip6_fib_show_ctx_t ctx = {
-	.fib_index = fib->index,
 	.entries = NULL,
     };
-    ip6_main_t *im = &ip6_main;
 
-    BV(clib_bihash_foreach_key_value_pair)(&im->ip6_table[IP6_FIB_TABLE_NON_FWDING].ip6_hash,
-					   ip6_fib_table_collect_entries,
-					   &ctx);
-
+    ip6_fib_table_walk(fib->index, ip6_fib_table_show_walk, &ctx);
     vec_sort_with_function(ctx.entries, fib_entry_cmp_for_sort);
 
     vec_foreach(fib_entry_index, ctx.entries)
@@ -567,12 +558,15 @@ static void
 ip6_fib_table_show_one (ip6_fib_t *fib,
 			vlib_main_t * vm,
 			ip6_address_t *address,
-			u32 mask_len)
+			u32 mask_len,
+                        int detail)
 {
     vlib_cli_output(vm, "%U",
                     format_fib_entry,
                     ip6_fib_table_lookup(fib->index, address, mask_len),
-                    FIB_ENTRY_FORMAT_DETAIL);
+                    (detail ?
+                     FIB_ENTRY_FORMAT_DETAIL2:
+                     FIB_ENTRY_FORMAT_DETAIL));
 }
 
 typedef struct {
@@ -580,8 +574,9 @@ typedef struct {
   u64 count_by_prefix_length[129];
 } count_routes_in_fib_at_prefix_length_arg_t;
 
-static void count_routes_in_fib_at_prefix_length 
-(BVT(clib_bihash_kv) * kvp, void *arg)
+static void
+count_routes_in_fib_at_prefix_length (BVT(clib_bihash_kv) * kvp,
+                                      void *arg)
 {
   count_routes_in_fib_at_prefix_length_arg_t * ap = arg;
   int mask_width;
@@ -607,6 +602,7 @@ ip6_show_fib (vlib_main_t * vm,
     ip6_address_t matching_address;
     u32 mask_len  = 128;
     int table_id = -1, fib_index = ~0;
+    int detail = 0;
 
     verbose = 1;
     matching = 0;
@@ -617,6 +613,10 @@ ip6_show_fib (vlib_main_t * vm,
 	    unformat (input, "summary") ||
 	    unformat (input, "sum"))
 	    verbose = 0;
+ 
+	else if (unformat (input, "detail")   ||
+                 unformat (input, "det"))
+	    detail = 1;
 
 	else if (unformat (input, "%U/%d",
 			   unformat_ip6_address, &matching_address, &mask_len))
@@ -635,7 +635,7 @@ ip6_show_fib (vlib_main_t * vm,
 
     pool_foreach (fib_table, im6->fibs,
     ({
-	fib = &(fib_table->v6);
+	fib = pool_elt_at_index(im6->v6_fibs, fib_table->ft_index);
 	if (table_id >= 0 && table_id != (int)fib->table_id)
 	    continue;
 	if (fib_index != ~0 && fib_index != (int)fib->index)
@@ -674,7 +674,7 @@ ip6_show_fib (vlib_main_t * vm,
 	}
 	else
 	{
-	    ip6_fib_table_show_one(fib, vm, &matching_address, mask_len);
+	    ip6_fib_table_show_one(fib, vm, &matching_address, mask_len, detail);
 	}
     }));
 
@@ -778,7 +778,7 @@ ip6_show_fib (vlib_main_t * vm,
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (ip6_show_fib_command, static) = {
     .path = "show ip6 fib",
-    .short_help = "show ip6 fib [summary] [table <table-id>] [index <fib-id>] [<ip6-addr>[/<width>]]",
+    .short_help = "show ip6 fib [summary] [table <table-id>] [index <fib-id>] [<ip6-addr>[/<width>]] [detail]",
     .function = ip6_show_fib,
 };
 /* *INDENT-ON* */

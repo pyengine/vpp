@@ -39,6 +39,7 @@
 
 #include <vlib/vlib.h>
 #include <vppinfra/cpu.h>
+#include <unistd.h>
 
 /* Root of all show commands. */
 /* *INDENT-OFF* */
@@ -708,7 +709,7 @@ test_heap_validate (vlib_main_t * vm, unformat_input_t * input,
     {
         /* *INDENT-OFF* */
         foreach_vlib_main({
-          heap = clib_per_cpu_mheaps[this_vlib_main->cpu_index];
+          heap = clib_per_cpu_mheaps[this_vlib_main->thread_index];
           mheap = mheap_header(heap);
           mheap->flags |= MHEAP_FLAG_VALIDATE;
           // Turn off small object cache because it delays detection of errors
@@ -721,7 +722,7 @@ test_heap_validate (vlib_main_t * vm, unformat_input_t * input,
     {
         /* *INDENT-OFF* */
         foreach_vlib_main({
-          heap = clib_per_cpu_mheaps[this_vlib_main->cpu_index];
+          heap = clib_per_cpu_mheaps[this_vlib_main->thread_index];
           mheap = mheap_header(heap);
           mheap->flags &= ~MHEAP_FLAG_VALIDATE;
           mheap->flags |= MHEAP_FLAG_SMALL_OBJECT_CACHE;
@@ -732,7 +733,7 @@ test_heap_validate (vlib_main_t * vm, unformat_input_t * input,
     {
         /* *INDENT-OFF* */
         foreach_vlib_main({
-          heap = clib_per_cpu_mheaps[this_vlib_main->cpu_index];
+          heap = clib_per_cpu_mheaps[this_vlib_main->thread_index];
           mheap = mheap_header(heap);
           mheap_validate(heap);
         });
@@ -754,6 +755,25 @@ VLIB_CLI_COMMAND (cmd_test_heap_validate,static) = {
     .path = "test heap-validate",
     .short_help = "<on/off/now> validate heap on future allocs/frees or right now",
     .function = test_heap_validate,
+};
+/* *INDENT-ON* */
+
+static clib_error_t *
+restart_cmd_fn (vlib_main_t * vm, unformat_input_t * input,
+		vlib_cli_command_t * cmd)
+{
+  char *newenviron[] = { NULL };
+
+  execve (vm->name, (char **) vm->argv, newenviron);
+
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (restart_cmd,static) = {
+    .path = "restart",
+    .short_help = "restart process",
+    .function = restart_cmd_fn,
 };
 /* *INDENT-ON* */
 

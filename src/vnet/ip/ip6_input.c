@@ -64,6 +64,7 @@ typedef enum
 {
   IP6_INPUT_NEXT_DROP,
   IP6_INPUT_NEXT_LOOKUP,
+  IP6_INPUT_NEXT_LOOKUP_MULTICAST,
   IP6_INPUT_NEXT_ICMP_ERROR,
   IP6_INPUT_N_NEXT,
 } ip6_input_next_t;
@@ -81,7 +82,7 @@ ip6_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
   vlib_node_runtime_t *error_node =
     vlib_node_get_runtime (vm, ip6_input_node.index);
   vlib_simple_counter_main_t *cm;
-  u32 cpu_index = os_get_cpu_number ();
+  u32 thread_index = vlib_get_thread_index ();
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -142,12 +143,27 @@ ip6_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	  sw_if_index0 = vnet_buffer (p0)->sw_if_index[VLIB_RX];
 	  sw_if_index1 = vnet_buffer (p1)->sw_if_index[VLIB_RX];
 
-	  arc0 =
-	    ip6_address_is_multicast (&ip0->dst_address) ?
-	    lm->mcast_feature_arc_index : lm->ucast_feature_arc_index;
-	  arc1 =
-	    ip6_address_is_multicast (&ip1->dst_address) ?
-	    lm->mcast_feature_arc_index : lm->ucast_feature_arc_index;
+	  if (PREDICT_FALSE (ip6_address_is_multicast (&ip0->dst_address)))
+	    {
+	      arc0 = lm->mcast_feature_arc_index;
+	      next0 = IP6_INPUT_NEXT_LOOKUP_MULTICAST;
+	    }
+	  else
+	    {
+	      arc0 = lm->ucast_feature_arc_index;
+	      next0 = IP6_INPUT_NEXT_LOOKUP;
+	    }
+
+	  if (PREDICT_FALSE (ip6_address_is_multicast (&ip1->dst_address)))
+	    {
+	      arc1 = lm->mcast_feature_arc_index;
+	      next1 = IP6_INPUT_NEXT_LOOKUP_MULTICAST;
+	    }
+	  else
+	    {
+	      arc1 = lm->ucast_feature_arc_index;
+	      next1 = IP6_INPUT_NEXT_LOOKUP;
+	    }
 
 	  vnet_buffer (p0)->ip.adj_index[VLIB_RX] = ~0;
 	  vnet_buffer (p1)->ip.adj_index[VLIB_RX] = ~0;
@@ -155,8 +171,8 @@ ip6_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	  vnet_feature_arc_start (arc0, sw_if_index0, &next0, p0);
 	  vnet_feature_arc_start (arc1, sw_if_index1, &next1, p1);
 
-	  vlib_increment_simple_counter (cm, cpu_index, sw_if_index0, 1);
-	  vlib_increment_simple_counter (cm, cpu_index, sw_if_index1, 1);
+	  vlib_increment_simple_counter (cm, thread_index, sw_if_index0, 1);
+	  vlib_increment_simple_counter (cm, thread_index, sw_if_index1, 1);
 
 	  error0 = error1 = IP6_ERROR_NONE;
 
@@ -240,13 +256,21 @@ ip6_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	  ip0 = vlib_buffer_get_current (p0);
 
 	  sw_if_index0 = vnet_buffer (p0)->sw_if_index[VLIB_RX];
-	  arc0 =
-	    ip6_address_is_multicast (&ip0->dst_address) ?
-	    lm->mcast_feature_arc_index : lm->ucast_feature_arc_index;
+	  if (PREDICT_FALSE (ip6_address_is_multicast (&ip0->dst_address)))
+	    {
+	      arc0 = lm->mcast_feature_arc_index;
+	      next0 = IP6_INPUT_NEXT_LOOKUP_MULTICAST;
+	    }
+	  else
+	    {
+	      arc0 = lm->ucast_feature_arc_index;
+	      next0 = IP6_INPUT_NEXT_LOOKUP;
+	    }
+
 	  vnet_buffer (p0)->ip.adj_index[VLIB_RX] = ~0;
 	  vnet_feature_arc_start (arc0, sw_if_index0, &next0, p0);
 
-	  vlib_increment_simple_counter (cm, cpu_index, sw_if_index0, 1);
+	  vlib_increment_simple_counter (cm, thread_index, sw_if_index0, 1);
 	  error0 = IP6_ERROR_NONE;
 
 	  /* Version != 6?  Drop it. */
@@ -313,6 +337,7 @@ VLIB_REGISTER_NODE (ip6_input_node) = {
     [IP6_INPUT_NEXT_DROP] = "error-drop",
     [IP6_INPUT_NEXT_LOOKUP] = "ip6-lookup",
     [IP6_INPUT_NEXT_ICMP_ERROR] = "ip6-icmp-error",
+    [IP6_INPUT_NEXT_LOOKUP_MULTICAST] = "ip6-mfib-forward-lookup",
   },
 
   .format_buffer = format_ip6_header,

@@ -27,10 +27,12 @@
 #include <vnet/l2/l2_input.h>
 #include <vnet/ethernet/ethernet.h>
 #include <vnet/ip/ip4_packet.h>
-#include <vnet/ip/udp.h>
+#include <vnet/udp/udp.h>
 #include <vnet/lisp-cp/lisp_types.h>
 #include <vnet/lisp-gpe/lisp_gpe_packet.h>
 #include <vnet/adj/adj_types.h>
+#include <vppinfra/bihash_24_8.h>
+#include <vppinfra/bihash_template.h>
 
 /** IP4-UDP-LISP encap header */
 /* *INDENT-OFF* */
@@ -65,6 +67,9 @@ typedef enum
     LISP_GPE_INPUT_N_NEXT,
 } lisp_gpe_input_next_t;
 
+/* Arc to nsh-input added only if nsh-input exists */
+#define LISP_GPE_INPUT_NEXT_NSH_INPUT 4
+
 typedef enum
 {
 #define lisp_gpe_error(n,s) LISP_GPE_ERROR_##n,
@@ -84,6 +89,30 @@ typedef struct tunnel_lookup
   // FIXME - Need this?
   uword *vni_by_sw_if_index;
 } tunnel_lookup_t;
+
+typedef struct
+{
+  u32 fwd_entry_index;
+  u32 tunnel_index;
+} lisp_stats_key_t;
+
+typedef struct
+{
+  u32 vni;
+  dp_address_t deid;
+  dp_address_t seid;
+  ip_address_t loc_rloc;
+  ip_address_t rmt_rloc;
+
+  vlib_counter_t counters;
+} lisp_api_stats_t;
+
+typedef enum gpe_encap_mode_e
+{
+  GPE_ENCAP_LISP,
+  GPE_ENCAP_VXLAN,
+  GPE_ENCAP_COUNT
+} gpe_encap_mode_t;
 
 /** LISP-GPE global state*/
 typedef struct lisp_gpe_main
@@ -118,6 +147,21 @@ typedef struct lisp_gpe_main
 
   /** Load-balance for a miss in the table */
   dpo_id_t l2_lb_cp_lkup;
+
+  /* NSH data structures
+   * ================== */
+
+    BVT (clib_bihash) nsh_fib;
+
+  tunnel_lookup_t nsh_ifaces;
+
+  const dpo_id_t *nsh_cp_lkup;
+
+  gpe_encap_mode_t encap_mode;
+
+  u8 *dummy_stats_pool;
+  uword *lisp_stats_index_by_key;
+  vlib_combined_counter_main_t counters;
 
   /** convenience */
   vlib_main_t *vlib_main;
@@ -177,6 +221,8 @@ typedef enum
 /** */
 typedef struct
 {
+  u8 is_src_dst;
+
   u8 is_add;
 
   /** type of mapping */
@@ -213,12 +259,21 @@ typedef struct
     u32 table_id;
 
     /** bridge domain id */
-    u16 bd_id;
+    u32 bd_id;
 
     /** generic access */
     u32 dp_table;
   };
 } vnet_lisp_gpe_add_del_fwd_entry_args_t;
+
+typedef struct
+{
+  u32 fwd_entry_index;
+  u32 dp_table;
+  u32 vni;
+  dp_address_t leid;
+  dp_address_t reid;
+} lisp_api_gpe_fwd_entry_t;
 
 #define foreach_lgpe_ip4_lookup_next    \
   _(DROP, "error-drop")                 \
@@ -245,6 +300,15 @@ typedef enum lgpe_ip6_lookup_next
 } lgpe_ip6_lookup_next_t;
 
 u8 *format_vnet_lisp_gpe_status (u8 * s, va_list * args);
+
+lisp_api_gpe_fwd_entry_t *vnet_lisp_gpe_fwd_entries_get_by_vni (u32 vni);
+gpe_encap_mode_t vnet_gpe_get_encap_mode (void);
+int vnet_gpe_set_encap_mode (gpe_encap_mode_t mode);
+
+u8 vnet_lisp_stats_enable_disable_state (void);
+vnet_api_error_t vnet_lisp_stats_enable_disable (u8 enable);
+lisp_api_stats_t *vnet_lisp_get_stats (void);
+int vnet_lisp_flush_stats (void);
 
 #endif /* included_vnet_lisp_gpe_h */
 

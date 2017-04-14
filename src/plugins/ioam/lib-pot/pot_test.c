@@ -24,6 +24,9 @@
 #include <vlibsocket/api.h>
 #include <vppinfra/error.h>
 
+#define __plugin_msg_base pot_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 /* Declare message IDs */
 #include <ioam/lib-pot/pot_msg_enum.h>
 
@@ -118,48 +121,9 @@ _(POT_PROFILE_ACTIVATE_REPLY, pot_profile_activate_reply)               \
 _(POT_PROFILE_DEL_REPLY, pot_profile_del_reply)                         \
 _(POT_PROFILE_SHOW_CONFIG_DETAILS, pot_profile_show_config_details)
 
-
-/* M: construct, but don't yet send a message */
-
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-#define M2(T,t,n)                                               \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
-
 static int api_pot_profile_add (vat_main_t *vam)
 {
 #define MAX_BITS 64
-    pot_test_main_t * sm = &pot_test_main;
     unformat_input_t *input = vam->input;
     vl_api_pot_profile_add_t *mp;
     u8 *name = NULL;
@@ -168,9 +132,9 @@ static int api_pot_profile_add (vat_main_t *vam)
     u64 secret_key = 0;
     u32  bits = MAX_BITS;
     u64 lpc = 0, poly2 = 0;
-    f64 timeout;
     u8 id = 0;
     int rv = 0;
+    int ret;
 
     while (unformat_check_input(input) != UNFORMAT_END_OF_INPUT)
       {
@@ -204,7 +168,7 @@ static int api_pot_profile_add (vat_main_t *vam)
         goto OUT;
       }
     
-    M2(POT_PROFILE_ADD, pot_profile_add, vec_len(name));
+    M2(POT_PROFILE_ADD, mp, vec_len(name));
 
     mp->list_name_len = vec_len(name);
     clib_memcpy(mp->list_name, name, mp->list_name_len);
@@ -224,7 +188,9 @@ static int api_pot_profile_add (vat_main_t *vam)
     mp->id = id;
     mp->max_bits = bits;
       
-    S; W;
+    S(mp);
+    W (ret);
+    return ret;
   
 OUT:
     vec_free(name);
@@ -234,13 +200,12 @@ OUT:
 static int api_pot_profile_activate (vat_main_t *vam)
 {
 #define MAX_BITS 64
-    pot_test_main_t * sm = &pot_test_main;  
     unformat_input_t *input = vam->input;
     vl_api_pot_profile_activate_t *mp;
     u8 *name = NULL;
     u8 id = 0;
     int rv = 0;
-    f64 timeout;
+    int ret;
     
     while (unformat_check_input(input) != UNFORMAT_END_OF_INPUT)
       {
@@ -259,13 +224,15 @@ static int api_pot_profile_activate (vat_main_t *vam)
         goto OUT;
       }
     
-    M2(POT_PROFILE_ACTIVATE, pot_profile_activate, vec_len(name));
+    M2(POT_PROFILE_ACTIVATE, mp, vec_len(name));
 
     mp->list_name_len = vec_len(name);
     clib_memcpy(mp->list_name, name, mp->list_name_len);
     mp->id = id;
       
-    S; W;
+    S(mp);
+    W (ret);
+    return ret;
   
 OUT:
     vec_free(name);
@@ -275,23 +242,22 @@ OUT:
 
 static int api_pot_profile_del (vat_main_t *vam)
 {
-    pot_test_main_t * sm = &pot_test_main;
     vl_api_pot_profile_del_t *mp;
-    f64 timeout;
+    int ret;
    
-    M(POT_PROFILE_DEL, pot_profile_del);
+    M(POT_PROFILE_DEL, mp);
     mp->list_name_len = 0;
-    S; W;
-    return 0;
+    S(mp);
+    W (ret);
+    return ret;
 }
 
 static int api_pot_profile_show_config_dump (vat_main_t *vam)
 {
-    pot_test_main_t * sm = &pot_test_main;
     unformat_input_t *input = vam->input;
     vl_api_pot_profile_show_config_dump_t *mp;
-    f64 timeout;
     u8 id = 0;
+    int ret;
 
     while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT)
     {
@@ -299,12 +265,13 @@ static int api_pot_profile_show_config_dump (vat_main_t *vam)
       else
         break;
     }
-    M(POT_PROFILE_SHOW_CONFIG_DUMP, pot_profile_show_config_dump);
+    M(POT_PROFILE_SHOW_CONFIG_DUMP, mp);
 
     mp->id = id;
 
-    S; W;
-    return 0;
+    S(mp);
+    W (ret);
+    return ret;
 }
 
 /* 
@@ -320,7 +287,8 @@ _(pot_profile_activate, "name <name> id [0-1] ")    			\
 _(pot_profile_del, "[id <nn>]")                                         \
 _(pot_profile_show_config_dump, "id [0-1]")
 
-void vat_api_hookup (vat_main_t *vam)
+static void 
+pot_vat_api_hookup (vat_main_t *vam)
 {
     pot_test_main_t * sm = &pot_test_main;
     /* Hook up handlers for replies from the data plane plug-in */
@@ -357,7 +325,7 @@ clib_error_t * vat_plugin_register (vat_main_t *vam)
   sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (sm->msg_id_base != (u16) ~0)
-    vat_api_hookup (vam);
+    pot_vat_api_hookup (vam);
   
   vec_free(name);
   

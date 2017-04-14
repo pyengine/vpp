@@ -97,6 +97,22 @@ typedef struct
 
 typedef struct
 {
+  struct in_addr address;
+  vnet_link_t linkt;
+  u64 packets;
+  u64 bytes;
+} ip4_nbr_counter_t;
+
+typedef struct
+{
+  struct in6_addr address;
+  vnet_link_t linkt;
+  u64 packets;
+  u64 bytes;
+} ip6_nbr_counter_t;
+
+typedef struct
+{
   /* vpe input queue */
   unix_shared_memory_queue_t *vl_input_queue;
 
@@ -185,41 +201,18 @@ typedef struct
   u32 *ip4_fib_counters_vrf_id_by_index;
   ip6_fib_counter_t **ip6_fib_counters;
   u32 *ip6_fib_counters_vrf_id_by_index;
+  ip4_nbr_counter_t **ip4_nbr_counters;
+  ip6_nbr_counter_t **ip6_nbr_counters;
 
   /* Convenience */
   vlib_main_t *vlib_main;
 } vat_main_t;
 
-vat_main_t vat_main;
+extern vat_main_t vat_main;
 
-static inline f64
-vat_time_now (vat_main_t * vam)
-{
-#if VPP_API_TEST_BUILTIN
-  return vlib_time_now (vam->vlib_main);
-#else
-  return clib_time_now (&vam->clib_time);
-#endif
-}
-
-#if VPP_API_TEST_BUILTIN
-#define errmsg(fmt,args...)                             \
-do {                                                    \
-  vat_main_t *__vam = &vat_main;                        \
-  vlib_cli_output (__vam->vlib_main, fmt, ##args);      \
- } while(0);
-#else
-#define errmsg(fmt,args...)                                     \
-do {                                                            \
-  vat_main_t *__vam = &vat_main;                                \
-    if(__vam->ifp != stdin)                                     \
-        fformat(__vam->ofp,"%s(%d): \n", __vam->current_file,   \
-                __vam->input_line_number);                      \
-    fformat(__vam->ofp, fmt "\n", ##args);                      \
-    fflush(__vam->ofp);                                         \
-} while(0);
-#endif
-
+void vat_suspend (vlib_main_t * vm, f64 interval);
+f64 vat_time_now (vat_main_t * vam);
+void errmsg (char *fmt, ...);
 void vat_api_hookup (vat_main_t * vam);
 int api_sw_interface_dump (vat_main_t * vam);
 void do_one_file (vat_main_t * vam);

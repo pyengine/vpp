@@ -24,6 +24,7 @@
  */
 
 #include <vnet/vnet.h>
+#include <vpp/app/version.h>
 #include <vnet/plugin/plugin.h>
 #include <flowperpkt/flowperpkt.h>
 
@@ -57,6 +58,9 @@ flowperpkt_main_t flowperpkt_main;
 #include <flowperpkt/flowperpkt_all_api_h.h>
 #undef vl_api_version
 
+#define REPLY_MSG_ID_BASE fm->msg_id_base
+#include <vlibapi/api_helper_macros.h>
+
 /* Define the per-interface configurable features */
 /* *INDENT-OFF* */
 VNET_FEATURE_INIT (flow_perpacket_ipv4, static) =
@@ -74,50 +78,12 @@ VNET_FEATURE_INIT (flow_perpacket_l2, static) =
 };
 /* *INDENT-ON* */
 
-/*
- * A handy macro to set up a message reply.
- * Assumes that the following variables are available:
- * mp - pointer to request message
- * rmp - pointer to reply message type
- * rv - return value
- */
-#define REPLY_MACRO(t)                                          \
-do {                                                            \
-    unix_shared_memory_queue_t * q =                            \
-    vl_api_client_index_to_input_queue (mp->client_index);      \
-    if (!q)                                                     \
-        return;                                                 \
-                                                                \
-    rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t)+fm->msg_id_base);               \
-    rmp->context = mp->context;                                 \
-    rmp->retval = ntohl(rv);                                    \
-                                                                \
-    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
-} while(0);
-
 /* Macro to finish up custom dump fns */
 #define FINISH                                  \
     vec_add1 (s, 0);                            \
     vl_print (handle, (char *)s);               \
     vec_free (s);                               \
     return handle;
-
-#define VALIDATE_SW_IF_INDEX(mp)				\
- do { u32 __sw_if_index = ntohl(mp->sw_if_index);		\
-    vnet_main_t *__vnm = vnet_get_main();                       \
-    if (pool_is_free_index(__vnm->interface_main.sw_interfaces, \
-                           __sw_if_index)) {                    \
-        rv = VNET_API_ERROR_INVALID_SW_IF_INDEX;                \
-        goto bad_sw_if_index;                                   \
-    }                                                           \
-} while(0);
-
-#define BAD_SW_IF_INDEX_LABEL                   \
-do {                                            \
-bad_sw_if_index:                                \
-    ;                                           \
-} while (0);
 
 /**
  * @brief Create an IPFIX template packet rewrite string
@@ -479,30 +445,12 @@ static void *vl_api_flowperpkt_tx_interface_add_del_t_print
 #define foreach_flowperpkt_plugin_api_msg                           \
 _(FLOWPERPKT_TX_INTERFACE_ADD_DEL, flowperpkt_tx_interface_add_del)
 
-/**
- * @brief plugin-api required function
- * @param vm vlib_main_t * vlib main data structure pointer
- * @param h vlib_plugin_handoff_t * handoff structure
- * @param from_early_init int notused
- *
- * <em>Notes:</em>
- * This routine exists to convince the vlib plugin framework that
- * we haven't accidentally copied a random .dll into the plugin directory.
- *
- * Also collects global variable pointers passed from the vpp engine
- */
-clib_error_t *
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-		      int from_early_init)
-{
-  flowperpkt_main_t *fm = &flowperpkt_main;
-  clib_error_t *error = 0;
-
-  fm->vlib_main = vm;
-  fm->vnet_main = h->vnet_main;
-
-  return error;
-}
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = VPP_BUILD_VER,
+    .description = "Flow per Packet",
+};
+/* *INDENT-ON* */
 
 static clib_error_t *
 flowperpkt_tx_interface_add_del_feature_command_fn (vlib_main_t * vm,
@@ -627,6 +575,8 @@ flowperpkt_init (vlib_main_t * vm)
   u32 num_threads;
   u8 *name;
 
+  fm->vnet_main = vnet_get_main ();
+
   /* Construct the API name */
   name = format (0, "flowperpkt_%08x%c", api_version, 0);
 
@@ -643,7 +593,7 @@ flowperpkt_init (vlib_main_t * vm)
   vec_free (name);
 
   /* Decide how many worker threads we have */
-  num_threads = 1 /* main thread */  + tm->n_eal_threads;
+  num_threads = 1 /* main thread */  + tm->n_threads;
 
   /* Allocate per worker thread vectors */
   vec_validate (fm->ipv4_buffers_per_worker, num_threads - 1);

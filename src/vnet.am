@@ -11,10 +11,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-libvnet_la_SOURCES =
-libvnetplugin_la_SOURCES =
+lib_LTLIBRARIES += libvnet.la
 
-libvnet_la_LIBAD = libvppinfra.la libvlib.la libsvm.la
+libvnet_la_SOURCES =
+libvnet_la_DEPENDENCIES = \
+	libvppinfra.la		\
+	libvlib.la		\
+	libsvmdb.la		\
+	libsvm.la 		\
+	libvlibmemory.la
+
+libvnet_la_LIBADD = $(libvnet_la_DEPENDENCIES) -lm -lpthread -ldl -lrt
+
+if WITH_LIBSSL
+libvnet_la_LIBADD += -lcrypto
+endif
 
 ########################################
 # Generic stuff
@@ -29,8 +40,7 @@ libvnet_la_SOURCES +=				\
   vnet/interface_format.c			\
   vnet/interface_output.c			\
   vnet/misc.c					\
-  vnet/replication.c				\
-  vnet/rewrite.c
+  vnet/replication.c
 
 nobase_include_HEADERS +=			\
   vnet/api_errno.h				\
@@ -45,10 +55,10 @@ nobase_include_HEADERS +=			\
   vnet/l3_types.h				\
   vnet/pipeline.h				\
   vnet/replication.h				\
-  vnet/rewrite.h				\
   vnet/vnet.h					\
   vnet/vnet_all_api_h.h				\
-  vnet/vnet_msg_enum.h
+  vnet/vnet_msg_enum.h				\
+  vnet/util/radix.h
 
 API_FILES += vnet/interface.api
 
@@ -59,12 +69,16 @@ API_FILES += vnet/interface.api
 libvnet_la_SOURCES +=				\
   vnet/policer/node_funcs.c			\
   vnet/policer/policer.c			\
-  vnet/policer/xlate.c
+  vnet/policer/xlate.c				\
+  vnet/policer/policer_api.c
 
 nobase_include_HEADERS +=			\
   vnet/policer/police.h				\
   vnet/policer/policer.h			\
-  vnet/policer/xlate.h
+  vnet/policer/xlate.h				\
+  vnet/policer/policer.api.h
+
+API_FILES += vnet/policer/policer.api
 
 ########################################
 # Cop - junk filter
@@ -74,10 +88,14 @@ libvnet_la_SOURCES +=				\
   vnet/cop/cop.c				\
   vnet/cop/node1.c				\
   vnet/cop/ip4_whitelist.c			\
-  vnet/cop/ip6_whitelist.c
+  vnet/cop/ip6_whitelist.c			\
+  vnet/cop/cop_api.c
 
 nobase_include_HEADERS +=			\
-  vnet/cop/cop.h
+  vnet/cop/cop.h					\
+  vnet/cop/cop.api.h
+
+API_FILES += vnet/cop/cop.api
 
 ########################################
 # Layer 2 protocols go here
@@ -92,14 +110,16 @@ libvnet_la_SOURCES +=				\
  vnet/ethernet/init.c				\
  vnet/ethernet/interface.c			\
  vnet/ethernet/node.c				\
- vnet/ethernet/pg.c
+ vnet/ethernet/pg.c				\
+ vnet/ethernet/sfp.c
 
 nobase_include_HEADERS +=			\
  vnet/ethernet/arp_packet.h			\
  vnet/ethernet/error.def			\
  vnet/ethernet/ethernet.h			\
  vnet/ethernet/packet.h				\
- vnet/ethernet/types.def
+ vnet/ethernet/types.def			\
+ vnet/ethernet/sfp.h
 
 ########################################
 # Layer 2 protocol: Ethernet bridging
@@ -256,13 +276,17 @@ libvnet_la_SOURCES +=				\
   vnet/classify/policer_classify.c		\
   vnet/classify/flow_classify.c                 \
   vnet/classify/flow_classify_node.c            \
-  vnet/classify/vnet_classify.h
+  vnet/classify/vnet_classify.h			\
+  vnet/classify/classify_api.c
 
 nobase_include_HEADERS +=			\
   vnet/classify/vnet_classify.h	                \
   vnet/classify/input_acl.h                     \
   vnet/classify/policer_classify.h              \
-  vnet/classify/flow_classify.h
+  vnet/classify/flow_classify.h					\
+  vnet/classify/classify.api.h
+
+API_FILES += vnet/classify/classify.api
 
 ########################################
 # Layer 3 protocols go here
@@ -297,11 +321,7 @@ libvnet_la_SOURCES +=				\
  vnet/ip/ip_input_acl.c				\
  vnet/ip/lookup.c				\
  vnet/ip/ping.c					\
- vnet/ip/punt.c					\
- vnet/ip/udp_format.c				\
- vnet/ip/udp_init.c				\
- vnet/ip/udp_local.c				\
- vnet/ip/udp_pg.c
+ vnet/ip/punt.c
 
 nobase_include_HEADERS +=			\
  vnet/ip/format.h				\
@@ -327,11 +347,7 @@ nobase_include_HEADERS +=			\
  vnet/ip/ports.def				\
  vnet/ip/protocols.def				\
  vnet/ip/punt_error.def				\
- vnet/ip/punt.h					\
- vnet/ip/tcp_packet.h				\
- vnet/ip/udp_error.def				\
- vnet/ip/udp.h					\
- vnet/ip/udp_packet.h
+ vnet/ip/punt.h
 
 API_FILES += vnet/ip/ip.api
 
@@ -351,6 +367,7 @@ libvnet_la_SOURCES +=				\
  vnet/bfd/bfd_udp.c				\
  vnet/bfd/bfd_main.c				\
  vnet/bfd/bfd_protocol.c			\
+ vnet/bfd/bfd_cli.c                             \
  vnet/bfd/bfd_api.c
 
 API_FILES += vnet/bfd/bfd.api
@@ -358,7 +375,7 @@ API_FILES += vnet/bfd/bfd.api
 ########################################
 # Layer 3 protocol: IPSec
 ########################################
-if WITH_IPSEC
+if WITH_LIBSSL
 libvnet_la_SOURCES +=				\
  vnet/ipsec/ipsec.c				\
  vnet/ipsec/ipsec_cli.c				\
@@ -377,15 +394,6 @@ libvnet_la_SOURCES +=				\
  vnet/ipsec/ipsec_api.c
 
 API_FILES += vnet/ipsec/ipsec.api
-
-if WITH_DPDK_CRYPTO
-libvnet_la_SOURCES +=				\
- vnet/devices/dpdk/ipsec/esp_encrypt.c		\
- vnet/devices/dpdk/ipsec/esp_decrypt.c		\
- vnet/devices/dpdk/ipsec/crypto_node.c		\
- vnet/devices/dpdk/ipsec/cli.c			\
- vnet/devices/dpdk/ipsec/ipsec.c
-endif
 endif
 
 libvnet_la_SOURCES +=				\
@@ -397,11 +405,6 @@ nobase_include_HEADERS +=			\
  vnet/ipsec/ikev2.h				\
  vnet/ipsec/ikev2_priv.h			\
  vnet/ipsec/ipsec.api.h
-if WITH_DPDK_CRYPTO
-nobase_include_HEADERS +=			\
- vnet/devices/dpdk/ipsec/ipsec.h		\
- vnet/devices/dpdk/ipsec/esp.h
-endif
 
 ########################################
 # Layer 3 protocol: osi
@@ -440,12 +443,47 @@ test_map_SOURCES =                             \
 test_map_CPPFLAGS = $(AM_CPPFLAGS) -DCLIB_DEBUG
 
 test_map_LDADD = libvnet.la libvppinfra.la libvlib.la	\
-  -lpthread -lvlibmemory -lvlibapi \
-  -ldl -lsvm -lrt
+  -lpthread -lvlibmemory -ldl -lsvm -lrt
 
 test_map_LDFLAGS = -static
 endif
 
+########################################
+# Layer 4 protocol: tcp
+########################################
+libvnet_la_SOURCES +=				\
+ vnet/tcp/tcp_format.c				\
+ vnet/tcp/tcp_pg.c				\
+ vnet/tcp/tcp_syn_filter4.c			\
+ vnet/tcp/tcp_output.c				\
+ vnet/tcp/tcp_input.c				\
+ vnet/tcp/tcp_newreno.c				\
+ vnet/tcp/builtin_client.c			\
+ vnet/tcp/builtin_server.c			\
+ vnet/tcp/tcp_test.c				\
+ vnet/tcp/tcp.c
+
+nobase_include_HEADERS +=			\
+ vnet/tcp/tcp_packet.h				\
+ vnet/tcp/tcp_timer.h				\
+ vnet/tcp/tcp_debug.h				\
+ vnet/tcp/tcp.h
+
+########################################
+# Layer 4 protocol: udp
+########################################
+libvnet_la_SOURCES +=				\
+ vnet/udp/udp.c					\
+ vnet/udp/udp_input.c				\
+ vnet/udp/builtin_server.c			\
+ vnet/udp/udp_format.c				\
+ vnet/udp/udp_local.c				\
+ vnet/udp/udp_pg.c
+
+nobase_include_HEADERS +=			\
+  vnet/udp/udp_error.def                       	\
+  vnet/udp/udp.h                               	\
+  vnet/udp/udp_packet.h
 
 ########################################
 # Tunnel protocol: gre
@@ -490,18 +528,21 @@ libvnet_la_SOURCES +=				\
  vnet/mpls/mpls_lookup.c			\
  vnet/mpls/mpls_output.c			\
  vnet/mpls/mpls_features.c			\
- vnet/mpls/node.c				\
+ vnet/mpls/mpls_input.c				\
  vnet/mpls/interface.c			        \
  vnet/mpls/mpls_tunnel.c		        \
- vnet/mpls/pg.c
+ vnet/mpls/pg.c			        \
+ vnet/mpls/mpls_api.c
 
 nobase_include_HEADERS +=			\
  vnet/mpls/mpls.h				\
  vnet/mpls/mpls_types.h				\
  vnet/mpls/mpls_tunnel.h			\
  vnet/mpls/packet.h				\
- vnet/mpls/error.def
+ vnet/mpls/error.def			\
+ vnet/mpls/mpls.api.h
 
+API_FILES += vnet/mpls/mpls.api
 
 ########################################
 # Tunnel protocol: vxlan-gpe
@@ -548,6 +589,9 @@ libvnet_la_SOURCES +=				\
  vnet/lisp-cp/gid_dictionary.c			\
  vnet/lisp-cp/lisp_msg_serdes.c			\
  vnet/lisp-cp/packets.c				\
+ vnet/lisp-cp/one_cli.c				\
+ vnet/lisp-cp/lisp_cli.c			\
+ vnet/lisp-cp/one_api.c				\
  vnet/lisp-cp/lisp_api.c
 
 nobase_include_HEADERS +=			\
@@ -557,9 +601,11 @@ nobase_include_HEADERS +=			\
  vnet/lisp-cp/lisp_cp_messages.h		\
  vnet/lisp-cp/lisp_msg_serdes.h			\
  vnet/lisp-cp/control.h				\
+ vnet/lisp-cp/one.api.h				\
  vnet/lisp-cp/lisp.api.h
 
 API_FILES += vnet/lisp-cp/lisp.api
+API_FILES += vnet/lisp-cp/one.api
 
 if ENABLE_TESTS
 LDS = \
@@ -568,9 +614,8 @@ LDS = \
   libvlib.la  \
   libsvm.la \
   libsvmdb.la \
-  libvlibapi.la \
   libvlibmemory.la \
-  -lpthread -ldl -lrt -lm -lcrypto
+  -lpthread -ldl -lrt -lm
 
 TESTS += test_cp_serdes test_lisp_types
 
@@ -588,10 +633,8 @@ test_lisp_types_SOURCES =			\
 test_cp_serdes_CPPFLAGS = $(AM_CPPFLAGS) -DCLIB_DEBUG
 test_lisp_types_CPPFLAGS = $(AM_CPPFLAGS) -DCLIB_DEBUG
 
-test_cp_serdes_LDFLAGS = $(DPDK_LD_FLAGS)
-test_cp_serdes_LDADD = $(LDS) $(DPDK_LD_ADD)
-test_lisp_types_LDFLAGS = $(DPDK_LD_FLAGS)
-test_lisp_types_LDADD = $(LDS) $(DPDK_LD_ADD)
+test_cp_serdes_LDADD = $(LDS)
+test_lisp_types_LDADD = $(LDS)
 endif
 
 ########################################
@@ -637,59 +680,64 @@ endif
 ########################################
 libvnet_la_SOURCES +=				\
  vnet/dhcp/client.c				\
- vnet/dhcp/client.h
+ vnet/dhcp/client.h				\
+ vnet/dhcp/dhcp_api.c
 
 nobase_include_HEADERS +=			\
- vnet/dhcp/client.h
+ vnet/dhcp/client.h				\
+ vnet/dhcp/dhcp.api.h
+
+API_FILES += vnet/dhcp/dhcp.api
 
 ########################################
 # DHCP proxy
 ########################################
 libvnet_la_SOURCES +=				\
- vnet/dhcp/proxy_node.c				\
- vnet/dhcp/proxy.h
+ vnet/dhcp/dhcp6_proxy_node.c                   \
+ vnet/dhcp/dhcp4_proxy_node.c			\
+ vnet/dhcp/dhcp_proxy.c
 
 nobase_include_HEADERS +=			\
- vnet/dhcp/packet.h				\
- vnet/dhcp/proxy.h				\
- vnet/dhcp/proxy_error.def
+ vnet/dhcp/dhcp4_packet.h		        \
+ vnet/dhcp/dhcp6_packet.h		        \
+ vnet/dhcp/dhcp_proxy.h				\
+ vnet/dhcp/dhcp6_proxy_error.def                \
+ vnet/dhcp/dhcp4_proxy_error.def
 
 ########################################
 # ipv6 segment routing
 ########################################
 
-if WITH_IPV6SR
+if WITH_LIBSSL
 libvnet_la_SOURCES +=				\
- vnet/sr/sr.c					\
- vnet/sr/sr_replicate.c
+ vnet/sr/sr.c						\
+ vnet/sr/sr_localsid.c				\
+ vnet/sr/sr_policy_rewrite.c		\
+ vnet/sr/sr_steering.c				\
+ vnet/sr/sr_api.c
 endif
 
 nobase_include_HEADERS +=			\
  vnet/sr/sr_packet.h				\
- vnet/sr/sr_error.def				\
- vnet/sr/sr.h
+ vnet/sr/sr.h						\
+ vnet/sr/sr.api.h
 
-########################################
-# DHCPv6 proxy
-########################################
-libvnet_la_SOURCES +=				\
- vnet/dhcpv6/proxy_node.c
-
-nobase_include_HEADERS +=			\
- vnet/dhcpv6/packet.h				\
- vnet/dhcpv6/proxy.h				\
- vnet/dhcpv6/proxy_error.def
+API_FILES += vnet/sr/sr.api
 
 ########################################
 # IPFIX / netflow v10
 ########################################
 libvnet_la_SOURCES +=				\
- vnet/flow/flow_report.c
+ vnet/flow/flow_report.c			\
+ vnet/flow/flow_api.c
 
 nobase_include_HEADERS +=			\
  vnet/flow/flow_report.h			\
  vnet/flow/ipfix_info_elements.h		\
- vnet/flow/ipfix_packet.h
+ vnet/flow/ipfix_packet.h			\
+ vnet/flow/flow.api.h
+
+API_FILES += vnet/flow/flow.api
 
 ########################################
 # IPFIX classify code
@@ -744,29 +792,6 @@ nobase_include_HEADERS +=			\
   vnet/pg/edit.h
 
 ########################################
-# DPDK
-########################################
-if WITH_DPDK
-libvnet_la_SOURCES +=				\
-  vnet/devices/dpdk/dpdk_priv.h		\
-  vnet/devices/dpdk/device.c		\
-  vnet/devices/dpdk/format.c		\
-  vnet/devices/dpdk/init.c			\
-  vnet/devices/dpdk/node.c			\
-  vnet/devices/dpdk/hqos.c			\
-  vnet/devices/dpdk/cli.c
-
-nobase_include_HEADERS +=			\
-  vnet/devices/dpdk/dpdk.h
-else
-libvnet_la_SOURCES +=				\
-  vnet/devices/nic/ixge.c                       \
-  vnet/devices/nic/ixge.h                       \
-  vnet/devices/nic/sfp.c                        \
-  vnet/devices/nic/sfp.h
-endif
-
-########################################
 # virtio
 ########################################
 
@@ -789,6 +814,30 @@ libvnet_la_SOURCES +=				\
 
 nobase_include_HEADERS +=			\
   vnet/devices/ssvm/ssvm_eth.h
+
+########################################
+# session managmeent
+########################################
+
+libvnet_la_SOURCES +=				\
+  vnet/session/session.c			\
+  vnet/session/node.c				\
+  vnet/session/transport.c			\
+  vnet/session/application.c			\
+  vnet/session/session_cli.c			\
+  vnet/session/hashes.c				\
+  vnet/session/application_interface.c		\
+  vnet/session/session_api.c
+
+nobase_include_HEADERS +=			\
+  vnet/session/session.h			\
+  vnet/session/application.h			\
+  vnet/session/transport.h			\
+  vnet/session/application_interface.h		\
+  vnet/session/session_debug.h			\
+  vnet/session/session.api.h
+
+API_FILES += vnet/session/session.api
 
 ########################################
 # Linux packet interface
@@ -887,7 +936,8 @@ libvnet_la_SOURCES +=				\
   vnet/fib/fib_path.c				\
   vnet/fib/fib_path_ext.c			\
   vnet/fib/fib_urpf_list.c			\
-  vnet/fib/fib_attached_export.c
+  vnet/fib/fib_attached_export.c		\
+  vnet/fib/fib_bfd.c
 
 nobase_include_HEADERS +=			\
   vnet/fib/fib.h				\
@@ -907,18 +957,23 @@ nobase_include_HEADERS +=			\
 
 libvnet_la_SOURCES +=				\
   vnet/adj/adj_nbr.c				\
-  vnet/adj/adj_rewrite.c			\
   vnet/adj/adj_glean.c   			\
   vnet/adj/adj_midchain.c   			\
+  vnet/adj/adj_mcast.c   			\
   vnet/adj/adj_l2.c      			\
-  vnet/adj/adj.c
+  vnet/adj/adj_nsh.c      			\
+  vnet/adj/adj.c		                \
+  vnet/adj/rewrite.c				\
+  vnet/adj/adj_bfd.c				\
+  vnet/adj/adj_delegate.c
 
 nobase_include_HEADERS +=			\
   vnet/adj/adj.h				\
   vnet/adj/adj_types.h				\
-  vnet/adj/adj_rewrite.h			\
   vnet/adj/adj_glean.h  			\
-  vnet/adj/adj_nbr.h
+  vnet/adj/adj_nsh.h  				\
+  vnet/adj/adj_nbr.h 				\
+  vnet/adj/rewrite.h
 
 ########################################
 # Data-Plane Objects
@@ -932,8 +987,11 @@ libvnet_la_SOURCES +=				\
   vnet/dpo/receive_dpo.c			\
   vnet/dpo/load_balance.c			\
   vnet/dpo/load_balance_map.c			\
-  vnet/dpo/lookup_dpo.c				\
-  vnet/dpo/classify_dpo.c			\
+  vnet/dpo/lookup_dpo.c   			\
+  vnet/dpo/classify_dpo.c   			\
+  vnet/dpo/replicate_dpo.c   			\
+  vnet/dpo/interface_dpo.c   			\
+  vnet/dpo/mpls_disposition.c   		\
   vnet/dpo/mpls_label_dpo.c
 
 nobase_include_HEADERS +=			\
@@ -947,17 +1005,38 @@ nobase_include_HEADERS +=			\
   vnet/dpo/dpo.h
 
 ########################################
+# Multicast FIB
+########################################
+
+libvnet_la_SOURCES +=				\
+  vnet/mfib/mfib_test.c                         \
+  vnet/mfib/mfib_forward.c                      \
+  vnet/mfib/ip4_mfib.c                          \
+  vnet/mfib/ip6_mfib.c                          \
+  vnet/mfib/mfib_types.c                        \
+  vnet/mfib/mfib_signal.c                       \
+  vnet/mfib/mfib_itf.c                          \
+  vnet/mfib/mfib_entry.c                        \
+  vnet/mfib/mfib_table.c
+
+nobase_include_HEADERS +=			\
+  vnet/mfib/ip4_mfib.h                          \
+  vnet/mfib/mfib_types.h                        \
+  vnet/mfib/mfib_table.h
+
+########################################
+# Utilities
+########################################
+
+libvnet_la_SOURCES +=                    \
+  vnet/util/radix.c
+
+########################################
 # Plugin client library
 ########################################
 
-libvnetplugin_la_SOURCES +=                    \
-  vnet/plugin/p1.c
-
 nobase_include_HEADERS +=                      \
   vnet/plugin/plugin.h
-
-libvnetdir = ${libdir}
-libvnet_LTLIBRARIES = libvnet.la libvnetplugin.la
 
 pcap2pg_SOURCES = 				\
   vnet/unix/pcap2pg.c				\

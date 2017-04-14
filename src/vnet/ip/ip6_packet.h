@@ -40,7 +40,7 @@
 #ifndef included_ip6_packet_h
 #define included_ip6_packet_h
 
-#include <vnet/ip/tcp_packet.h>
+#include <vnet/tcp/tcp_packet.h>
 #include <vnet/ip/ip4_packet.h>
 
 typedef union
@@ -79,22 +79,26 @@ typedef CLIB_PACKED (union {
 #define ip46_address_reset(ip46)	((ip46)->as_u64[0] = (ip46)->as_u64[1] = 0)
 #define ip46_address_cmp(ip46_1, ip46_2) (memcmp(ip46_1, ip46_2, sizeof(*ip46_1)))
 #define ip46_address_is_zero(ip46)	(((ip46)->as_u64[0] == 0) && ((ip46)->as_u64[1] == 0))
+#define ip46_address_is_equal(a1, a2)	(((a1)->as_u64[0] == (a2)->as_u64[0]) \
+                                         && ((a1)->as_u64[1] == (a2)->as_u64[1]))
 
-always_inline void
-ip46_from_addr_buf (u32 is_ipv6, u8 * buf, ip46_address_t * ip)
+always_inline ip46_address_t
+to_ip46 (u32 is_ipv6, u8 * buf)
 {
+  ip46_address_t ip;
   if (is_ipv6)
-    ip->ip6 = *((ip6_address_t *) buf);
+    ip.ip6 = *((ip6_address_t *) buf);
   else
-    ip46_address_set_ip4 (ip, (ip4_address_t *) buf);
+    ip46_address_set_ip4 (&ip, (ip4_address_t *) buf);
+  return ip;
 }
+
 
 always_inline void
 ip6_addr_fib_init (ip6_address_fib_t * addr_fib, ip6_address_t * address,
 		   u32 fib_index)
 {
-  addr_fib->ip6_addr.as_u64[0] = address->as_u64[0];
-  addr_fib->ip6_addr.as_u64[1] = address->as_u64[1];
+  addr_fib->ip6_addr = *address;
   addr_fib->fib_index = fib_index;
 }
 
@@ -373,10 +377,10 @@ ip6_tcp_reply_x1 (ip6_header_t * ip0, tcp_header_t * tcp0)
   {
     u16 src0, dst0;
 
-    src0 = tcp0->ports.src;
-    dst0 = tcp0->ports.dst;
-    tcp0->ports.src = dst0;
-    tcp0->ports.dst = src0;
+    src0 = tcp0->src;
+    dst0 = tcp0->dst;
+    tcp0->src = dst0;
+    tcp0->dst = src0;
   }
 }
 
@@ -400,14 +404,14 @@ ip6_tcp_reply_x2 (ip6_header_t * ip0, ip6_header_t * ip1,
   {
     u16 src0, dst0, src1, dst1;
 
-    src0 = tcp0->ports.src;
-    src1 = tcp1->ports.src;
-    dst0 = tcp0->ports.dst;
-    dst1 = tcp1->ports.dst;
-    tcp0->ports.src = dst0;
-    tcp1->ports.src = dst1;
-    tcp0->ports.dst = src0;
-    tcp1->ports.dst = src1;
+    src0 = tcp0->src;
+    src1 = tcp1->src;
+    dst0 = tcp0->dst;
+    dst1 = tcp1->dst;
+    tcp0->src = dst0;
+    tcp1->src = dst1;
+    tcp0->dst = src0;
+    tcp1->dst = src1;
   }
 }
 
@@ -448,19 +452,46 @@ always_inline u8 ip6_ext_hdr(u8 nexthdr)
    * find out if nexthdr is an extension header or a protocol
    */
   return   (nexthdr == IP_PROTOCOL_IP6_HOP_BY_HOP_OPTIONS) ||
-    (nexthdr == IP_PROTOCOL_IP6_NONXT) ||
     (nexthdr == IP_PROTOCOL_IPV6_FRAGMENTATION)  ||
     (nexthdr == IP_PROTOCOL_IPSEC_AH)      ||
     (nexthdr == IP_PROTOCOL_IPV6_ROUTE)      ||
     (nexthdr == IP_PROTOCOL_IP6_DESTINATION_OPTIONS);
 }
 
-#define ip6_ext_header_len(p)  (((p)->n_data_u64s+1) << 3)
-#define ip6_ext_authhdr_len(p) (((p)->n_data_u64s+2) << 2)
+#define ip6_ext_header_len(p)  ((((ip6_ext_header_t *)(p))->n_data_u64s+1) << 3)
+#define ip6_ext_authhdr_len(p) ((((ip6_ext_header_t *)(p))->n_data_u64s+2) << 2)
 
 always_inline void *
 ip6_ext_next_header (ip6_ext_header_t *ext_hdr )
 { return (void *)((u8 *) ext_hdr + ip6_ext_header_len(ext_hdr)); }
+
+/*
+ * Macro to find the IPv6 ext header of type t
+ * I is the IPv6 header
+ * P is the previous IPv6 ext header (NULL if none)
+ * M is the matched IPv6 ext header of type t
+ */
+#define ip6_ext_header_find_t(i, p, m, t)               \
+if ((i)->protocol == t)                                 \
+{                                                       \
+  (m) = (void *)((i)+1);                                \
+  (p) = NULL;                                           \
+}                                                       \
+else                                                    \
+{                                                       \
+  (m) = NULL;                                           \
+  (p) = (void *)((i)+1);                                \
+  while (ip6_ext_hdr((p)->next_hdr) &&                  \
+    ((ip6_ext_header_t *)(p))->next_hdr != (t))         \
+  {                                                     \
+    (p) = ip6_ext_next_header((p));                     \
+  }                                                     \
+  if ( ((p)->next_hdr) == (t))                          \
+  {                                                     \
+    (m) = (void *)(ip6_ext_next_header((p)));           \
+  }                                                     \
+}
+
 
 typedef CLIB_PACKED (struct {
   u8 next_hdr;

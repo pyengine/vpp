@@ -24,6 +24,9 @@
 #include <vlibsocket/api.h>
 #include <vppinfra/error.h>
 
+#define __plugin_msg_base sample_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 uword unformat_sw_if_index (unformat_input_t * input, va_list * args);
 
 /* Declare message IDs */
@@ -87,42 +90,6 @@ foreach_standard_reply_retval_handler;
 _(SAMPLE_MACSWAP_ENABLE_DISABLE_REPLY, sample_macswap_enable_disable_reply)
 
 
-/* M: construct, but don't yet send a message */
-
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-#define M2(T,t,n)                                               \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
 static int api_sample_macswap_enable_disable (vat_main_t * vam)
 {
     sample_test_main_t * sm = &sample_test_main;
@@ -131,6 +98,7 @@ static int api_sample_macswap_enable_disable (vat_main_t * vam)
     int enable_disable = 1;
     u32 sw_if_index = ~0;
     vl_api_sample_macswap_enable_disable_t * mp;
+    int ret;
 
     /* Parse args required to build the message */
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
@@ -150,15 +118,16 @@ static int api_sample_macswap_enable_disable (vat_main_t * vam)
     }
     
     /* Construct the API message */
-    M(SAMPLE_MACSWAP_ENABLE_DISABLE, sample_macswap_enable_disable);
+    M(SAMPLE_MACSWAP_ENABLE_DISABLE, mp);
     mp->sw_if_index = ntohl (sw_if_index);
     mp->enable_disable = enable_disable;
 
     /* send it... */
-    S;
+    S(mp);
 
     /* Wait for a reply... */
-    W;
+    W (ret);
+    return ret;
 }
 
 /* 
@@ -168,7 +137,7 @@ static int api_sample_macswap_enable_disable (vat_main_t * vam)
 #define foreach_vpe_api_msg \
 _(sample_macswap_enable_disable, "<intfc> [disable]")
 
-void vat_api_hookup (vat_main_t *vam)
+static void sample_api_hookup (vat_main_t *vam)
 {
     sample_test_main_t * sm = &sample_test_main;
     /* Hook up handlers for replies from the data plane plug-in */
@@ -205,7 +174,7 @@ clib_error_t * vat_plugin_register (vat_main_t *vam)
   sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (sm->msg_id_base != (u16) ~0)
-    vat_api_hookup (vam);
+    sample_api_hookup (vam);
   
   vec_free(name);
   

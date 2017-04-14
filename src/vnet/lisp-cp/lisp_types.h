@@ -89,6 +89,7 @@ typedef enum
   GID_ADDR_LCAF,
   GID_ADDR_MAC,
   GID_ADDR_SRC_DST,
+  GID_ADDR_NSH,
   GID_ADDR_NO_ADDRESS,
   GID_ADDR_TYPES
 } gid_address_type_t;
@@ -106,7 +107,8 @@ typedef enum
 typedef enum fid_addr_type_t_
 {
   FID_ADDR_IP_PREF,
-  FID_ADDR_MAC
+  FID_ADDR_MAC,
+  FID_ADDR_NSH
 } __attribute__ ((packed)) fid_addr_type_t;
 
 /* flat address type */
@@ -116,6 +118,7 @@ typedef struct
   {
     ip_prefix_t ippref;
     u8 mac[6];
+    u32 nsh;
   };
   fid_addr_type_t type;
 } fid_address_t;
@@ -123,7 +126,10 @@ typedef struct
 typedef fid_address_t dp_address_t;
 
 #define fid_addr_ippref(_a) (_a)->ippref
+#define fid_addr_prefix_length(_a) ip_prefix_len(&fid_addr_ippref(_a))
+#define fid_addr_ip_version(_a) ip_prefix_version(&fid_addr_ippref(_a))
 #define fid_addr_mac(_a) (_a)->mac
+#define fid_addr_nsh(_a) (_a)->nsh
 #define fid_addr_type(_a) (_a)->type
 u8 *format_fid_address (u8 * s, va_list * args);
 
@@ -155,6 +161,12 @@ typedef struct
 
 typedef struct
 {
+  u32 spi;
+  u8 si;
+} nsh_t;
+
+typedef struct
+{
   /* the union needs to be at the beginning! */
   union
   {
@@ -177,6 +189,7 @@ typedef struct _gid_address_t
     lcaf_t lcaf;
     u8 mac[6];
     source_dest_t sd;
+    nsh_t nsh;
   };
   u8 type;
   u32 vni;
@@ -232,6 +245,7 @@ void gid_address_ip_set (gid_address_t * dst, void *src, u8 version);
 #define gid_address_ip_version(_a) ip_addr_version(&gid_address_ip(_a))
 #define gid_address_lcaf(_a) (_a)->lcaf
 #define gid_address_mac(_a) (_a)->mac
+#define gid_address_nsh(_a) (_a)->nsh
 #define gid_address_vni(_a) (_a)->vni
 #define gid_address_vni_mask(_a) (_a)->vni_mask
 #define gid_address_sd_dst_ippref(_a) sd_dst_ippref(&(_a)->sd)
@@ -249,6 +263,7 @@ void gid_address_ip_set (gid_address_t * dst, void *src, u8 version);
   _(ip_prefix)                    \
   _(lcaf)                         \
   _(mac)                          \
+  _(nsh)                          \
   _(sd)
 
 /* *INDENT-OFF* */
@@ -314,11 +329,15 @@ typedef struct
 
   u32 ttl;
   u8 action;
-  u8 authoritative;
 
-  u8 local;
+  u8 authoritative:1;
+  u8 local:1;
   /* valid only for remote mappings */
-  u8 is_static;
+  u8 is_static:1;
+  u8 pitr_set:1;
+  u8 rsvd:4;
+
+
   u8 *key;
   lisp_key_type_t key_id;
   u8 timer_set;
@@ -342,6 +361,7 @@ void
 build_src_dst (gid_address_t * sd, gid_address_t * src, gid_address_t * dst);
 
 void gid_address_from_ip (gid_address_t * g, ip_address_t * ip);
+void gid_to_dp_address (gid_address_t * g, dp_address_t * d);
 
 #endif /* VNET_LISP_GPE_LISP_TYPES_H_ */
 

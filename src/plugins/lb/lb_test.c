@@ -20,6 +20,9 @@
 #include <vppinfra/error.h>
 #include <lb/lb.h>
 
+#define __plugin_msg_base lb_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 //TODO: Move that to vat/plugin_api.c
 //////////////////////////
 uword unformat_ip46_address (unformat_input_t * input, va_list * args)
@@ -127,38 +130,11 @@ foreach_standard_reply_retval_handler;
   _(LB_ADD_DEL_VIP_REPLY, lb_add_del_vip_reply)                       \
   _(LB_ADD_DEL_AS_REPLY, lb_add_del_as_reply)
 
-/* M: construct, but don't yet send a message */
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memcpy (mp, &mps, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + lbtm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
 static int api_lb_conf (vat_main_t * vam)
 {
-  lb_test_main_t *lbtm = &lb_test_main;
   unformat_input_t *i = vam->input;
-  f64 timeout;
   vl_api_lb_conf_t mps, *mp;
+  int ret;
 
   if (!unformat(i, "%U %U %u %u",
                unformat_ip4_address, &mps.ip4_src_address,
@@ -169,18 +145,17 @@ static int api_lb_conf (vat_main_t * vam)
     return -99;
   }
 
-  M(LB_CONF, lb_conf); S; W;
-
-  /* NOTREACHED */
-  return 0;
+  M(LB_CONF, mp);
+  S(mp);
+  W (ret);
+  return ret;
 }
 
 static int api_lb_add_del_vip (vat_main_t * vam)
 {
-  lb_test_main_t *lbtm = &lb_test_main;
   unformat_input_t * i = vam->input;
-  f64 timeout;
   vl_api_lb_add_del_vip_t mps, *mp;
+  int ret;
   mps.is_del = 0;
   mps.is_gre4 = 0;
 
@@ -208,17 +183,17 @@ static int api_lb_add_del_vip (vat_main_t * vam)
     mps.is_del = 1;
   }
 
-  M(LB_ADD_DEL_VIP, lb_add_del_vip); S; W;
-  /* NOTREACHED */
-  return 0;
+  M(LB_ADD_DEL_VIP, mp);
+  S(mp);
+  W (ret);
+  return ret;
 }
 
 static int api_lb_add_del_as (vat_main_t * vam)
 {
-  lb_test_main_t *lbtm = &lb_test_main;
   unformat_input_t * i = vam->input;
-  f64 timeout;
   vl_api_lb_add_del_as_t mps, *mp;
+  int ret;
   mps.is_del = 0;
 
   if (!unformat(i, "%U %U",
@@ -232,9 +207,10 @@ static int api_lb_add_del_as (vat_main_t * vam)
     mps.is_del = 1;
   }
 
-  M(LB_ADD_DEL_AS, lb_add_del_as); S; W;
-  /* NOTREACHED */
-  return 0;
+  M(LB_ADD_DEL_AS, mp);
+  S(mp);
+  W (ret);
+  return ret;
 }
 
 /*
@@ -246,7 +222,8 @@ _(lb_conf, "<ip4-src-addr> <ip6-src-address> <sticky_buckets_per_core> <flow_tim
 _(lb_add_del_vip, "<ip-prefix> [gre4|gre6] <new_table_len> [del]") \
 _(lb_add_del_as, "<vip-ip-prefix> <address> [del]")
 
-void vat_api_hookup (vat_main_t *vam)
+static void 
+lb_vat_api_hookup (vat_main_t *vam)
 {
   lb_test_main_t * lbtm = &lb_test_main;
   /* Hook up handlers for replies from the data plane plug-in */
@@ -285,7 +262,7 @@ clib_error_t * vat_plugin_register (vat_main_t *vam)
   lbtm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (lbtm->msg_id_base != (u16) ~0)
-    vat_api_hookup (vam);
+    lb_vat_api_hookup (vam);
 
   vec_free(name);
 

@@ -265,6 +265,9 @@ typedef struct
 
   /* Feature arc index */
   u8 output_feature_arc_index;
+
+  /* Allocated loopback instances */
+  uword *bm_loopback_instances;
 } ethernet_main_t;
 
 ethernet_main_t ethernet_main;
@@ -400,7 +403,8 @@ void ethernet_set_rx_redirect (vnet_main_t * vnm, vnet_hw_interface_t * hi,
 
 int
 vnet_arp_set_ip4_over_ethernet (vnet_main_t * vnm,
-				u32 sw_if_index, void *a_arg, int is_static);
+				u32 sw_if_index, void *a_arg,
+				int is_static, int is_no_fib_entry);
 
 int
 vnet_arp_unset_ip4_over_ethernet (vnet_main_t * vnm,
@@ -412,7 +416,8 @@ clib_error_t *next_by_ethertype_init (next_by_ethertype_t * l3_next);
 clib_error_t *next_by_ethertype_register (next_by_ethertype_t * l3_next,
 					  u32 ethertype, u32 next_index);
 
-int vnet_create_loopback_interface (u32 * sw_if_indexp, u8 * mac_address);
+int vnet_create_loopback_interface (u32 * sw_if_indexp, u8 * mac_address,
+				    u8 is_specified, u32 user_instance);
 int vnet_delete_loopback_interface (u32 sw_if_index);
 int vnet_delete_sub_interface (u32 sw_if_index);
 
@@ -547,6 +552,8 @@ void ethernet_update_adjacency (vnet_main_t * vnm, u32 sw_if_index, u32 ai);
 u8 *ethernet_build_rewrite (vnet_main_t * vnm,
 			    u32 sw_if_index,
 			    vnet_link_t link_type, const void *dst_address);
+const u8 *ethernet_ip4_mcast_dst_addr (void);
+const u8 *ethernet_ip6_mcast_dst_addr (void);
 
 extern vlib_node_registration_t ethernet_input_node;
 

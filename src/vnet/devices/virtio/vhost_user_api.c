@@ -46,8 +46,7 @@
 _(CREATE_VHOST_USER_IF, create_vhost_user_if)                           \
 _(MODIFY_VHOST_USER_IF, modify_vhost_user_if)                           \
 _(DELETE_VHOST_USER_IF, delete_vhost_user_if)                           \
-_(SW_INTERFACE_VHOST_USER_DUMP, sw_interface_vhost_user_dump)           \
-_(SW_INTERFACE_VHOST_USER_DETAILS, sw_interface_vhost_user_details)
+_(SW_INTERFACE_VHOST_USER_DUMP, sw_interface_vhost_user_dump)
 
 /*
  * WARNING: replicated pending api refactor completion
@@ -82,7 +81,8 @@ vl_api_create_vhost_user_if_t_handler (vl_api_create_vhost_user_if_t * mp)
   rv = vhost_user_create_if (vnm, vm, (char *) mp->sock_filename,
 			     mp->is_server, &sw_if_index, (u64) ~ 0,
 			     mp->renumber, ntohl (mp->custom_dev_instance),
-			     (mp->use_custom_mac) ? mp->mac_address : NULL);
+			     (mp->use_custom_mac) ? mp->mac_address : NULL,
+			     mp->operation_mode);
 
   /* Remember an interface tag for the new interface */
   if (rv == 0)
@@ -117,7 +117,8 @@ vl_api_modify_vhost_user_if_t_handler (vl_api_modify_vhost_user_if_t * mp)
 
   rv = vhost_user_modify_if (vnm, vm, (char *) mp->sock_filename,
 			     mp->is_server, sw_if_index, (u64) ~ 0,
-			     mp->renumber, ntohl (mp->custom_dev_instance));
+			     mp->renumber, ntohl (mp->custom_dev_instance),
+			     mp->operation_mode);
 
   REPLY_MACRO (VL_API_MODIFY_VHOST_USER_IF_REPLY);
 }
@@ -149,13 +150,6 @@ vl_api_delete_vhost_user_if_t_handler (vl_api_delete_vhost_user_if_t * mp)
 }
 
 static void
-  vl_api_sw_interface_vhost_user_details_t_handler
-  (vl_api_sw_interface_vhost_user_details_t * mp)
-{
-  clib_warning ("BUG");
-}
-
-static void
 send_sw_interface_vhost_user_details (vpe_api_main_t * am,
 				      unix_shared_memory_queue_t * q,
 				      vhost_user_intf_details_t * vui,
@@ -170,6 +164,7 @@ send_sw_interface_vhost_user_details (vpe_api_main_t * am,
   mp->virtio_net_hdr_sz = ntohl (vui->virtio_net_hdr_sz);
   mp->features = clib_net_to_host_u64 (vui->features);
   mp->is_server = vui->is_server;
+  mp->operation_mode = vui->operation_mode;
   mp->num_regions = ntohl (vui->num_regions);
   mp->sock_errno = ntohl (vui->sock_errno);
   mp->context = context;

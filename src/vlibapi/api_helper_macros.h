@@ -17,12 +17,15 @@
  *------------------------------------------------------------------
  */
 
-
 #ifndef __api_helper_macros_h__
 #define __api_helper_macros_h__
 
 #define f64_endian(a)
 #define f64_print(a,b)
+
+#ifndef REPLY_MSG_ID_BASE
+#define REPLY_MSG_ID_BASE 0
+#endif
 
 #define REPLY_MACRO(t)                                          \
 do {                                                            \
@@ -33,7 +36,7 @@ do {                                                            \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = htons((t)+(REPLY_MSG_ID_BASE));           \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
                                                                 \
@@ -49,7 +52,7 @@ do {                                                            \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = htons((t)+(REPLY_MSG_ID_BASE));           \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
     do {body;} while (0);                                       \
@@ -65,7 +68,7 @@ do {                                                            \
         return;                                                 \
                                                                 \
     rmp = vl_msg_api_alloc (sizeof (*rmp) + n);                 \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = htons((t)+(REPLY_MSG_ID_BASE));           \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
     do {body;} while (0);                                       \
@@ -94,7 +97,7 @@ do {                                                            \
         rv = VNET_API_ERROR_TABLE_TOO_BIG;                      \
         is_error = 1;                                           \
       }                                                         \
-    rmp->_vl_msg_id = ntohs((t));                               \
+    rmp->_vl_msg_id = htons((t)+(REPLY_MSG_ID_BASE));           \
     rmp->context = mp->context;                                 \
     rmp->retval = ntohl(rv);                                    \
     if (!is_error)                                              \
@@ -104,11 +107,15 @@ do {                                                            \
 
 /* "trust, but verify" */
 
+static inline uword
+vnet_sw_if_index_is_api_valid (u32 sw_if_index)
+{
+  return vnet_sw_interface_is_api_valid (vnet_get_main (), sw_if_index);
+}
+
 #define VALIDATE_SW_IF_INDEX(mp)				\
  do { u32 __sw_if_index = ntohl(mp->sw_if_index);		\
-    vnet_main_t *__vnm = vnet_get_main();                       \
-    if (pool_is_free_index(__vnm->interface_main.sw_interfaces, \
-                           __sw_if_index)) {                    \
+    if (!vnet_sw_if_index_is_api_valid(__sw_if_index)) {        \
         rv = VNET_API_ERROR_INVALID_SW_IF_INDEX;                \
         goto bad_sw_if_index;                                   \
     }                                                           \
@@ -122,9 +129,7 @@ bad_sw_if_index:                                \
 
 #define VALIDATE_RX_SW_IF_INDEX(mp)				\
  do { u32 __rx_sw_if_index = ntohl(mp->rx_sw_if_index);		\
-    vnet_main_t *__vnm = vnet_get_main();                       \
-    if (pool_is_free_index(__vnm->interface_main.sw_interfaces, \
-                           __rx_sw_if_index)) {			\
+    if (!vnet_sw_if_index_is_api_valid(__rx_sw_if_index)) {     \
         rv = VNET_API_ERROR_INVALID_SW_IF_INDEX;                \
         goto bad_rx_sw_if_index;				\
     }                                                           \
@@ -138,9 +143,7 @@ bad_rx_sw_if_index:				\
 
 #define VALIDATE_TX_SW_IF_INDEX(mp)				\
  do { u32 __tx_sw_if_index = ntohl(mp->tx_sw_if_index);		\
-    vnet_main_t *__vnm = vnet_get_main();                       \
-    if (pool_is_free_index(__vnm->interface_main.sw_interfaces, \
-                           __tx_sw_if_index)) {			\
+    if (!vnet_sw_if_index_is_api_valid(__tx_sw_if_index)) {     \
         rv = VNET_API_ERROR_INVALID_SW_IF_INDEX;                \
         goto bad_tx_sw_if_index;				\
     }                                                           \

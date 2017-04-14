@@ -177,13 +177,29 @@ vlib_node_set_state (vlib_main_t * vm, u32 node_index,
   r->state = new_state;
 }
 
+/** \brief Get node dispatch state.
+ @param vm vlib_main_t pointer, varies by thread
+ @param node_index index of the node
+ @return state for node, see vlib_node_state_t
+*/
+always_inline vlib_node_state_t
+vlib_node_get_state (vlib_main_t * vm, u32 node_index)
+{
+  vlib_node_main_t *nm = &vm->node_main;
+  vlib_node_t *n;
+  n = vec_elt (nm->nodes, node_index);
+  return n->state;
+}
+
 always_inline void
 vlib_node_set_interrupt_pending (vlib_main_t * vm, u32 node_index)
 {
   vlib_node_main_t *nm = &vm->node_main;
   vlib_node_t *n = vec_elt (nm->nodes, node_index);
   ASSERT (n->type == VLIB_NODE_TYPE_INPUT);
+  clib_spinlock_lock_if_init (&nm->pending_interrupt_lock);
   vec_add1 (nm->pending_interrupt_node_runtime_indices, n->runtime_index);
+  clib_spinlock_unlock_if_init (&nm->pending_interrupt_lock);
 }
 
 always_inline vlib_process_t *
@@ -199,9 +215,9 @@ always_inline vlib_frame_t *
 vlib_get_frame_no_check (vlib_main_t * vm, uword frame_index)
 {
   vlib_frame_t *f;
-  u32 cpu_index = frame_index & VLIB_CPU_MASK;
+  u32 thread_index = frame_index & VLIB_CPU_MASK;
   u32 offset = frame_index & VLIB_OFFSET_MASK;
-  vm = vlib_mains ? vlib_mains[cpu_index] : vm;
+  vm = vlib_mains[thread_index];
   f = vm->heap_base + offset;
   return f;
 }
@@ -213,10 +229,10 @@ vlib_frame_index_no_check (vlib_main_t * vm, vlib_frame_t * f)
 
   ASSERT (((uword) f & VLIB_CPU_MASK) == 0);
 
-  vm = vlib_mains ? vlib_mains[f->cpu_index] : vm;
+  vm = vlib_mains[f->thread_index];
 
   i = ((u8 *) f - (u8 *) vm->heap_base);
-  return i | f->cpu_index;
+  return i | f->thread_index;
 }
 
 always_inline vlib_frame_t *
@@ -476,7 +492,7 @@ vlib_process_get_event_data (vlib_main_t * vm,
   vlib_node_main_t *nm = &vm->node_main;
   vlib_process_t *p;
   vlib_process_event_type_t *et;
-  uword t, l;
+  uword t;
   void *event_data_vector;
 
   p = vec_elt (nm->processes, nm->current_process_index);
@@ -490,8 +506,7 @@ vlib_process_get_event_data (vlib_main_t * vm,
   p->non_empty_event_type_bitmap =
     clib_bitmap_andnoti (p->non_empty_event_type_bitmap, t);
 
-  l = _vec_len (p->pending_event_data_by_type_index[t]);
-  ASSERT (l > 0);
+  ASSERT (_vec_len (p->pending_event_data_by_type_index[t]) > 0);
   event_data_vector = p->pending_event_data_by_type_index[t];
   p->pending_event_data_by_type_index[t] = 0;
 

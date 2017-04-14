@@ -13,7 +13,8 @@
  * limitations under the License.
  */
 #include <vlib/vlib.h>
-#include <vnet/dhcp/proxy.h>
+#include <vnet/dhcp/client.h>
+#include <vnet/dhcp/dhcp_proxy.h>
 #include <vnet/fib/fib_table.h>
 
 dhcp_client_main_t dhcp_client_main;
@@ -365,7 +366,7 @@ send_dhcp_pkt (dhcp_client_main_t * dcm, dhcp_client_t * c,
   o = (dhcp_option_t * )dhcp->options;
 
   /* Send option 53, the DHCP message type */
-  o->option = 53;
+  o->option = DHCP_PACKET_OPTION_MSG_TYPE;
   o->length = 1;
   o->data[0] = type;
   o = (dhcp_option_t *) (((uword) o) + (o->length + 2));
@@ -780,8 +781,7 @@ int dhcp_client_add_del (dhcp_client_add_del_args_t * a)
 				      c->sw_if_index),
 				  &all_1s,
 				  FIB_SOURCE_DHCP,
-				  FIB_ENTRY_FLAG_LOCAL,
-				  ADJ_INDEX_INVALID);
+				  FIB_ENTRY_FLAG_LOCAL);
 
      /*
        * enable the interface to RX IPv4 packets

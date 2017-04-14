@@ -42,15 +42,31 @@ static clib_error_t *
 api_main_init (vlib_main_t * vm)
 {
   vat_main_t *vam = &vat_main;
+  int rv;
+  int vat_plugin_init (vat_main_t * vam);
 
   vam->vlib_main = vm;
   vam->my_client_index = (u32) ~ 0;
+  /* Ensure that vam->inbuf is never NULL */
+  vec_validate (vam->inbuf, 0);
   init_error_string_table (vam);
-  vat_api_hookup (vam);
+  rv = vat_plugin_init (vam);
+  if (rv)
+    clib_warning ("vat_plugin_init returned %d", rv);
   return 0;
 }
 
 VLIB_INIT_FUNCTION (api_main_init);
+
+void
+vat_plugin_hash_create (void)
+{
+  vat_main_t *vam = &vat_main;
+
+  vam->sw_if_index_by_interface_name = hash_create_string (0, sizeof (uword));
+  vam->function_by_name = hash_create_string (0, sizeof (uword));
+  vam->help_by_name = hash_create_string (0, sizeof (uword));
+}
 
 static clib_error_t *
 api_command_fn (vlib_main_t * vm,
@@ -68,21 +84,25 @@ api_command_fn (vlib_main_t * vm,
 
   vam->vl_input_queue = am->shmem_hdr->vl_input_queue;
 
-  vec_reset_length (vam->inbuf);
+  /* vec_validated in the init routine */
+  _vec_len (vam->inbuf) = 0;
+
   vam->input = &_input;
 
   while (((c = unformat_get_input (input)) != '\n') &&
 	 (c != UNFORMAT_END_OF_INPUT))
     vec_add1 (vam->inbuf, c);
 
-  /* Add 1 octet's worth of extra space in case there are no args... */
+  /* Null-terminate the command */
   vec_add1 (vam->inbuf, 0);
 
-  /*$$$$ reinstall macro evaluator */
+  /* In case no args given */
+  vec_add1 (vam->inbuf, 0);
 
   /* Split input into cmd + args */
   this_cmd = cmdp = vam->inbuf;
 
+  /* Skip leading whitespace */
   while (cmdp < (this_cmd + vec_len (this_cmd)))
     {
       if (*cmdp == ' ' || *cmdp == '\t' || *cmdp == '\n')
@@ -94,26 +114,33 @@ api_command_fn (vlib_main_t * vm,
     }
 
   argsp = cmdp;
+
+  /* Advance past the command */
   while (argsp < (this_cmd + vec_len (this_cmd)))
     {
-      if (*argsp != ' ' && *argsp != '\t' && *argsp != '\n')
+      if (*argsp != ' ' && *argsp != '\t' && *argsp != '\n' && *argsp != 0)
 	{
 	  argsp++;
 	}
       else
 	break;
     }
+  /* NULL terminate the command */
   *argsp++ = 0;
 
-  while (argsp < (this_cmd + vec_len (this_cmd)))
-    {
-      if (*argsp == ' ' || *argsp == '\t' || *argsp == '\n')
-	{
-	  argsp++;
-	}
-      else
-	break;
-    }
+  /* No arguments? Ensure that argsp points to a proper (empty) string */
+  if (argsp == (this_cmd + vec_len (this_cmd) - 1))
+    argsp[0] = 0;
+  else
+    while (argsp < (this_cmd + vec_len (this_cmd)))
+      {
+	if (*argsp == ' ' || *argsp == '\t' || *argsp == '\n')
+	  {
+	    argsp++;
+	  }
+	else
+	  break;
+      }
 
   /* Blank input line? */
   if (*cmdp == 0)
@@ -139,11 +166,11 @@ api_command_fn (vlib_main_t * vm,
 				"%s error: %U\n", cmdp,
 				format_api_error, vam, rv);
 
-      if (vam->regenerate_interface_table)
-	{
-	  vam->regenerate_interface_table = 0;
-	  api_sw_interface_dump (vam);
-	}
+    }
+  if (vam->regenerate_interface_table)
+    {
+      vam->regenerate_interface_table = 0;
+      api_sw_interface_dump (vam);
     }
   unformat_free (vam->input);
   return 0;
@@ -153,7 +180,7 @@ api_command_fn (vlib_main_t * vm,
 VLIB_CLI_COMMAND (api_command, static) =
 {
   .path = "binary-api",
-  .short_help = "binary-api <name> [<args>]",
+  .short_help = "binary-api [help] <name> [<args>]",
   .function = api_command_fn,
 };
 /* *INDENT-ON* */
@@ -181,6 +208,39 @@ api_cli_output (void *notused, const char *fmt, ...)
     cp->output_function (cp->output_function_arg, s, vec_len (s));
 
   vec_free (s);
+}
+
+u16
+vl_client_get_first_plugin_msg_id (char *plugin_name)
+{
+  api_main_t *am = &api_main;
+  vl_api_msg_range_t *rp;
+  uword *p;
+
+  p = hash_get_mem (am->msg_range_by_name, plugin_name);
+  if (p == 0)
+    return ~0;
+
+  rp = vec_elt_at_index (am->msg_ranges, p[0]);
+
+  return (rp->first_msg_id);
+}
+
+uword
+unformat_sw_if_index (unformat_input_t * input, va_list * args)
+{
+  u32 *result = va_arg (*args, u32 *);
+  vnet_main_t *vnm = vnet_get_main ();
+  u32 sw_if_index = ~0;
+  u8 *if_name;
+  uword *p;
+
+  if (unformat (input, "%U", unformat_vnet_sw_interface, vnm, &sw_if_index))
+    {
+      *result = sw_if_index;
+      return 1;
+    }
+  return 0;
 }
 
 /*

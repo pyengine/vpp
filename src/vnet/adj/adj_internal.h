@@ -17,10 +17,11 @@
 #define __ADJ_INTERNAL_H__
 
 #include <vnet/adj/adj.h>
+#include <vnet/adj/adj_mcast.h>
 #include <vnet/ip/ip.h>
 #include <vnet/mpls/mpls.h>
 #include <vnet/adj/adj_l2.h>
-
+#include <vnet/adj/adj_nsh.h>
 
 /**
  * big switch to turn on Adjacency debugging
@@ -53,6 +54,8 @@ adj_get_rewrite_node (vnet_link_t linkt)
 	return (mpls_output_node.index);
     case VNET_LINK_ETHERNET:
 	return (adj_l2_rewrite_node.index);
+    case VNET_LINK_NSH:
+        return (adj_nsh_rewrite_node.index);
     case VNET_LINK_ARP:
 	break;
     }
@@ -85,11 +88,14 @@ adj_get_index (ip_adjacency_t *adj)
     return (adj - adj_pool);
 }
 
-extern void adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
-					     ip_lookup_next_t adj_next_index,
-					     u32 complete_next_index,
-					     u32 next_index,
-					     u8 *rewrite);
+extern void adj_nbr_update_rewrite_internal(ip_adjacency_t *adj,
+                                            ip_lookup_next_t adj_next_index,
+                                            u32 complete_next_index,
+                                            u32 next_index,
+                                            u8 *rewrite);
+extern void adj_midchain_setup(adj_index_t adj_index,
+                               adj_midchain_fixup_t fixup,
+                               adj_flags_t flags);
 
 extern ip_adjacency_t * adj_alloc(fib_protocol_t proto);
 
@@ -99,6 +105,8 @@ extern void adj_nbr_remove(adj_index_t ai,
 			   const ip46_address_t *nh_addr,
 			   u32 sw_if_index);
 extern void adj_glean_remove(fib_protocol_t proto,
+			     u32 sw_if_index);
+extern void adj_mcast_remove(fib_protocol_t proto,
 			     u32 sw_if_index);
 
 #endif

@@ -92,6 +92,8 @@ af_packet_interface_tx (vlib_main_t * vm,
   struct tpacket2_hdr *tph;
   u32 frame_not_ready = 0;
 
+  clib_spinlock_lock_if_init (&apif->lockp);
+
   while (n_left > 0)
     {
       u32 len;
@@ -119,7 +121,8 @@ af_packet_interface_tx (vlib_main_t * vm,
 		       vlib_buffer_get_current (b0), len);
 	  offset += len;
 	}
-      while ((bi = b0->next_buffer));
+      while ((bi =
+	      (b0->flags & VLIB_BUFFER_NEXT_PRESENT) ? b0->next_buffer : 0));
 
       tph->tp_len = tph->tp_snaplen = offset;
       tph->tp_status = TP_STATUS_SEND_REQUEST;
@@ -151,6 +154,8 @@ af_packet_interface_tx (vlib_main_t * vm,
 			    AF_PACKET_TX_ERROR_TXRING_EAGAIN, n_sent);
 	}
     }
+
+  clib_spinlock_unlock_if_init (&apif->lockp);
 
   if (PREDICT_FALSE (frame_not_ready))
     vlib_error_count (vm, node->node_index,

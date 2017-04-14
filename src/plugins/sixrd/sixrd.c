@@ -19,6 +19,7 @@
 #include <vnet/fib/fib_table.h>
 #include <vnet/fib/ip6_fib.h>
 #include <vnet/adj/adj.h>
+#include <vpp/app/version.h>
 
 /*
  * This code supports the following sixrd modes:
@@ -191,6 +192,7 @@ sixrd_add_domain_command_fn (vlib_main_t *vm,
   u32 num_m_args = 0;
   /* Optional arguments */
   u32 mtu = 0;
+  clib_error_t *error = 0;
 
   /* Get a line of input. */
   if (!unformat_user(input, unformat_line_input, line_input))
@@ -204,19 +206,25 @@ sixrd_add_domain_command_fn (vlib_main_t *vm,
       num_m_args++;
     else if (unformat(line_input, "mtu %d", &mtu))
       num_m_args++;
-    else
-      return clib_error_return(0, "unknown input `%U'",
-                               format_unformat_error, input);
+    else {
+      error = clib_error_return(0, "unknown input `%U'",
+                                format_unformat_error, line_input);
+      goto done;
+    }
   }
-  unformat_free(line_input);
 
-  if (num_m_args < 3)
-    return clib_error_return(0, "mandatory argument(s) missing");
+  if (num_m_args < 3) {
+    error = clib_error_return(0, "mandatory argument(s) missing");
+    goto done;
+  }
 
   sixrd_create_domain(&ip6_prefix, ip6_prefix_len, &ip4_prefix, ip4_prefix_len,
 		      &ip4_src, &sixrd_domain_index, mtu);
 
-  return 0;
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
 static clib_error_t *
@@ -227,6 +235,7 @@ sixrd_del_domain_command_fn (vlib_main_t *vm,
   unformat_input_t _line_input, *line_input = &_line_input;
   u32 num_m_args = 0;
   u32 sixrd_domain_index;
+  clib_error_t *error = 0;
 
   /* Get a line of input. */
   if (! unformat_user(input, unformat_line_input, line_input))
@@ -235,18 +244,24 @@ sixrd_del_domain_command_fn (vlib_main_t *vm,
   while (unformat_check_input(line_input) != UNFORMAT_END_OF_INPUT) {
     if (unformat(line_input, "index %d", &sixrd_domain_index))
       num_m_args++;
-    else
-      return clib_error_return(0, "unknown input `%U'",
-				format_unformat_error, input);
+    else {
+      error = clib_error_return(0, "unknown input `%U'",
+				format_unformat_error, line_input);
+      goto done;
+    }
   }
-  unformat_free(line_input);
 
-  if (num_m_args != 1)
-    return clib_error_return(0, "mandatory argument(s) missing");
+  if (num_m_args != 1) {
+    error = clib_error_return(0, "mandatory argument(s) missing");
+    goto done;
+  }
 
   sixrd_delete_domain(sixrd_domain_index);
 
-  return 0;
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
 static u8 *
@@ -340,27 +355,20 @@ VLIB_CLI_COMMAND(show_sixrd_stats_command, static) = {
   .function = show_sixrd_stats_command_fn,
 };
 
-/* 
- * This routine exists to convince the vlib plugin framework that
- * we haven't accidentally copied a random .dll into the plugin directory.
- *
- * Also collects global variable pointers passed from the vpp engine
- */
-clib_error_t * 
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-                      int from_early_init)
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () ={
+    .version = VPP_BUILD_VER,
+    .description = "IPv6 Rapid Deployment on IPv4 Infrastructure (RFC5969)",
+};
+/* *INDENT-ON* */
+
+static clib_error_t * sixrd_init (vlib_main_t * vm)
 {
-  clib_error_t * error = 0;
   sixrd_main_t *mm = &sixrd_main;
 
   mm->vnet_main = vnet_get_main();
   mm->vlib_main = vm;
 
-  return error;
-}
-
-static clib_error_t * sixrd_init (vlib_main_t * vm)
-{
   sixrd_dpo_module_init ();
 
   return (NULL);

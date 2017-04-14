@@ -17,6 +17,7 @@
 
 AUTOMAKE_OPTIONS = foreign subdir-objects
 ACLOCAL_AMFLAGS = -I m4
+AM_LIBTOOLFLAGS = --quiet
 
 AM_CFLAGS = -Wall
 
@@ -27,27 +28,15 @@ noinst_HEADERS =
 dist_bin_SCRIPTS =
 lib_LTLIBRARIES =
 BUILT_SOURCES =
-
-###############################################################################
-# DPDK
-###############################################################################
-
-if WITH_DPDK
-if ENABLE_DPDK_SHARED
-DPDK_LD_FLAGS = -Wl,--whole-archive,-ldpdk,--no-whole-archive
-else
-DPDK_LD_FLAGS = -Wl,--whole-archive,-l:libdpdk.a,--no-whole-archive
-endif
-if WITH_DPDK_CRYPTO
-DPDK_LD_ADD = -L$(AESNI_MULTI_BUFFER_LIB_PATH) -lIPSec_MB
-endif
-if WITH_DPDK_MLX5_PMD
-DPDK_LD_FLAGS += -libverbs -lmlx5 -lnuma
-endif
-else
-DPDK_LD_FLAGS =
-DPDK_LD_ADD =
-endif
+CLEANFILES =
+install-data-local:
+	@echo "Building vppctl command list..."
+	@DIR_SEARCH="$(srcdir)" ; \
+	DIR_EXCLUDE="examples" ; \
+	GREP_TIME=`time (grep -wIr "\.path = " $$DIR_SEARCH --exclude-dir=$$DIR_EXCLUDE \
+	| cut -d '"' -f2 | sort -u > $(srcdir)/scripts/vppctl-cmd-list) 2>&1` ; \
+	GREP_TIME=`echo $$GREP_TIME | awk '{print $$2}'` ; \
+	echo "Command list built, Time taken: $$GREP_TIME"
 
 ###############################################################################
 # Components
@@ -78,10 +67,12 @@ include vlib-api.am
 include vnet.am
 include vpp.am
 include vpp-api-test.am
+include uri.am
 
 SUBDIRS += plugins
 
 if ENABLE_PAPI
+include vpp-api.am
 SUBDIRS += vpp-api/python
 endif
 
@@ -106,3 +97,5 @@ BUILT_SOURCES += \
 
 endif # if ENABLE_VLIB
 endif # if ENABLE_SVM
+
+CLEANFILES += $(BUILT_SOURCES) $(api_DATA)

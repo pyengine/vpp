@@ -56,32 +56,6 @@ typedef enum
     IP6_HBYH_IOAM_INPUT_N_NEXT,
 } ip6_hbyh_ioam_input_next_t;
 
-
-u32
-ioam_flow_add (u8 encap, u8 * flow_name)
-{
-  ip6_hop_by_hop_ioam_main_t *hm = &ip6_hop_by_hop_ioam_main;
-  flow_data_t *flow = 0;
-  u32 index = 0;
-  u8 i;
-
-  pool_get (hm->flows, flow);
-  memset (flow, 0, sizeof (flow_data_t));
-
-  index = flow - hm->flows;
-  strncpy ((char *) flow->flow_name, (char *) flow_name, 31);
-
-  if (!encap)
-    IOAM_SET_DECAP (index);
-
-  for (i = 0; i < 255; i++)
-    {
-      if (hm->flow_handler[i])
-	flow->ctx[i] = hm->flow_handler[i] (index, 1);
-    }
-  return (index);
-}
-
 static uword
 unformat_opaque_ioam (unformat_input_t * input, va_list * args)
 {
@@ -607,8 +581,6 @@ static uword
 ip6_pop_hop_by_hop_node_fn (vlib_main_t * vm,
 			    vlib_node_runtime_t * node, vlib_frame_t * frame)
 {
-  ip6_main_t *im = &ip6_main;
-  ip_lookup_main_t *lm = &im->lookup_main;
   u32 n_left_from, *from, *to_next;
   ip_lookup_next_t next_index;
   u32 processed = 0;
@@ -666,8 +638,8 @@ ip6_pop_hop_by_hop_node_fn (vlib_main_t * vm,
 	  ip1 = vlib_buffer_get_current (b1);
 	  adj_index0 = vnet_buffer (b0)->ip.adj_index[VLIB_TX];
 	  adj_index1 = vnet_buffer (b1)->ip.adj_index[VLIB_TX];
-	  adj0 = ip_get_adjacency (lm, adj_index0);
-	  adj1 = ip_get_adjacency (lm, adj_index1);
+	  adj0 = adj_get (adj_index0);
+	  adj1 = adj_get (adj_index1);
 
 	  next0 = adj0->lookup_next_index;
 	  next1 = adj1->lookup_next_index;
@@ -755,7 +727,7 @@ ip6_pop_hop_by_hop_node_fn (vlib_main_t * vm,
 
 	  ip0 = vlib_buffer_get_current (b0);
 	  adj_index0 = vnet_buffer (b0)->ip.adj_index[VLIB_TX];
-	  adj0 = ip_get_adjacency (lm, adj_index0);
+	  adj0 = adj_get (adj_index0);
 
 	  /* Default use the next_index from the adjacency. */
 	  next0 = adj0->lookup_next_index;

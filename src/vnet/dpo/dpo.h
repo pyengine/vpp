@@ -67,9 +67,10 @@ typedef enum dpo_proto_t_
     DPO_PROTO_IP6,
     DPO_PROTO_ETHERNET,
     DPO_PROTO_MPLS,
+    DPO_PROTO_NSH,
 } __attribute__((packed)) dpo_proto_t;
 
-#define DPO_PROTO_NUM ((dpo_proto_t)(DPO_PROTO_MPLS+1))
+#define DPO_PROTO_NUM ((dpo_proto_t)(DPO_PROTO_NSH+1))
 #define DPO_PROTO_NONE ((dpo_proto_t)(DPO_PROTO_NUM+1))
 
 #define DPO_PROTOS {		\
@@ -77,11 +78,12 @@ typedef enum dpo_proto_t_
     [DPO_PROTO_IP6]  = "ip6",	\
     [DPO_PROTO_ETHERNET]  = "ethernet", \
     [DPO_PROTO_MPLS] = "mpls",	\
+    [DPO_PROTO_NSH] = "nsh",    \
 }
 
 #define FOR_EACH_DPO_PROTO(_proto)    \
     for (_proto = DPO_PROTO_IP4;      \
-	 _proto <= DPO_PROTO_MPLS;    \
+	 _proto <= DPO_PROTO_NSH;    \
 	 _proto++)
 
 /**
@@ -100,15 +102,21 @@ typedef enum dpo_type_t_ {
      * @brief load-balancing over a choice of [un]equal cost paths
      */
     DPO_LOAD_BALANCE,
+    DPO_REPLICATE,
     DPO_ADJACENCY,
     DPO_ADJACENCY_INCOMPLETE,
     DPO_ADJACENCY_MIDCHAIN,
     DPO_ADJACENCY_GLEAN,
+    DPO_ADJACENCY_MCAST,
+    DPO_ADJACENCY_MCAST_MIDCHAIN,
     DPO_RECEIVE,
     DPO_LOOKUP,
     DPO_LISP_CP,
     DPO_CLASSIFY,
     DPO_MPLS_LABEL,
+    DPO_MPLS_DISPOSITION,
+    DPO_MFIB_ENTRY,
+    DPO_INTERFACE,
     DPO_LAST,
 } __attribute__((packed)) dpo_type_t;
 
@@ -123,12 +131,18 @@ typedef enum dpo_type_t_ {
     [DPO_ADJACENCY_INCOMPLETE] = "dpo-adjacency-incomplete",	\
     [DPO_ADJACENCY_MIDCHAIN] = "dpo-adjacency-midcahin",	\
     [DPO_ADJACENCY_GLEAN] = "dpo-glean",	\
+    [DPO_ADJACENCY_MCAST] = "dpo-adj-mcast",	\
+    [DPO_ADJACENCY_MCAST_MIDCHAIN] = "dpo-adj-mcast-midchain",	\
     [DPO_RECEIVE] = "dpo-receive",	\
     [DPO_LOOKUP] = "dpo-lookup",	\
     [DPO_LOAD_BALANCE] = "dpo-load-balance",	\
+    [DPO_REPLICATE] = "dpo-replicate",	\
     [DPO_LISP_CP] = "dpo-lisp-cp",	\
     [DPO_CLASSIFY] = "dpo-classify",	\
-    [DPO_MPLS_LABEL] = "dpo-mpls-label"	\
+    [DPO_MPLS_LABEL] = "dpo-mpls-label", \
+    [DPO_MPLS_DISPOSITION] = "dpo-mpls-diposition", \
+    [DPO_MFIB_ENTRY] = "dpo-mfib_entry", \
+    [DPO_INTERFACE] = "dpo-interface"	\
 }
 
 /**

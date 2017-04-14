@@ -28,18 +28,64 @@ typedef struct
   u32 pad;
 } ip6_neighbor_key_t;
 
+typedef enum ip6_neighbor_flags_t_
+{
+  IP6_NEIGHBOR_FLAG_STATIC = (1 << 0),
+  IP6_NEIGHBOR_FLAG_DYNAMIC = (1 << 1),
+  IP6_NEIGHBOR_FLAG_NO_FIB_ENTRY = (1 << 2),
+} __attribute__ ((packed)) ip6_neighbor_flags_t;
+
 typedef struct
 {
   ip6_neighbor_key_t key;
   u8 link_layer_address[8];
-  u16 flags;
-#define IP6_NEIGHBOR_FLAG_STATIC (1 << 0)
-#define IP6_NEIGHBOR_FLAG_DYNAMIC  (2 << 0)
+  ip6_neighbor_flags_t flags;
   u64 cpu_time_last_updated;
   fib_node_index_t fib_entry_index;
 } ip6_neighbor_t;
 
-ip6_neighbor_t *ip6_neighbors_entries (u32 sw_if_index);
+extern ip6_neighbor_t *ip6_neighbors_entries (u32 sw_if_index);
+
+extern int ip6_neighbor_ra_config (vlib_main_t * vm, u32 sw_if_index,
+				   u8 suppress, u8 managed, u8 other,
+				   u8 ll_option, u8 send_unicast, u8 cease,
+				   u8 use_lifetime, u32 lifetime,
+				   u32 initial_count, u32 initial_interval,
+				   u32 max_interval, u32 min_interval,
+				   u8 is_no);
+
+extern int ip6_neighbor_ra_prefix (vlib_main_t * vm, u32 sw_if_index,
+				   ip6_address_t * prefix_addr, u8 prefix_len,
+				   u8 use_default, u32 val_lifetime,
+				   u32 pref_lifetime, u8 no_advertise,
+				   u8 off_link, u8 no_autoconfig,
+				   u8 no_onlink, u8 is_no);
+
+extern clib_error_t *ip6_set_neighbor_limit (u32 neighbor_limit);
+
+extern void vnet_register_ip6_neighbor_resolution_event (vnet_main_t * vnm,
+							 void *address_arg,
+							 uword node_index,
+							 uword type_opaque,
+							 uword data);
+
+extern int vnet_set_ip6_ethernet_neighbor (vlib_main_t * vm,
+					   u32 sw_if_index,
+					   ip6_address_t * a,
+					   u8 * link_layer_address,
+					   uword n_bytes_link_layer_address,
+					   int is_static,
+					   int is_no_fib_entry);
+
+extern int vnet_unset_ip6_ethernet_neighbor (vlib_main_t * vm,
+					     u32 sw_if_index,
+					     ip6_address_t * a,
+					     u8 * link_layer_address,
+					     uword
+					     n_bytes_link_layer_address);
+
+extern int ip6_neighbor_proxy_add_del (u32 sw_if_index,
+				       ip6_address_t * addr, u8 is_add);
 
 #endif /* included_ip6_neighbor_h */
 

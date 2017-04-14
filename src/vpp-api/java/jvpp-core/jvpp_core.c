@@ -20,15 +20,6 @@
 #include <vpp/api/vpe_all_api_h.h>
 #undef vl_typedefs
 
-#define vl_endianfun
-#include <vpp/api/vpe_all_api_h.h>
-#undef vl_endianfun
-
-#define vl_print(handle, ...)
-#define vl_printfun
-#include <vpp/api/vpe_all_api_h.h>
-#undef vl_printfun
-
 #include <vnet/api_errno.h>
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
@@ -38,9 +29,6 @@
 
 // TODO: generate jvpp_plugin_name.c files (or at least reuse plugin's main structure)
 typedef struct {
-    /* Base message index for the jvpp-core plugin */
-    u16 msg_id_base;
-
     /* Pointer to shared memory queue */
     unix_shared_memory_queue_t * vl_input_queue;
 
@@ -67,8 +55,14 @@ JNIEXPORT void JNICALL Java_io_fd_vpp_jvpp_core_JVppCoreImpl_init0
     plugin_main->callbackObject = (*env)->NewGlobalRef(env, callback);
     plugin_main->callbackClass = (jclass)(*env)->NewGlobalRef(env, (*env)->GetObjectClass(env, callback));
 
+    // verify API has not changed since jar generation
+    #define _(N)             \
+        get_message_id(env, #N);  \
+        foreach_supported_api_message;
+    #undef _
+
     #define _(N,n)                                  \
-        vl_msg_api_set_handlers(VL_API_##N, #n,     \
+        vl_msg_api_set_handlers(get_message_id(env, #N), #n,     \
                 vl_api_##n##_t_handler,             \
                 vl_noop_handler,                    \
                 vl_noop_handler,              \

@@ -17,6 +17,33 @@
 
 #define IPSEC_FLAG_IPSEC_GRE_TUNNEL (1 << 0)
 
+
+#define foreach_ipsec_output_next                \
+_(DROP, "error-drop")                            \
+_(ESP_ENCRYPT, "esp-encrypt")
+
+#define _(v, s) IPSEC_OUTPUT_NEXT_##v,
+typedef enum
+{
+  foreach_ipsec_output_next
+#undef _
+    IPSEC_OUTPUT_N_NEXT,
+} ipsec_output_next_t;
+
+
+#define foreach_ipsec_input_next                \
+_(DROP, "error-drop")                           \
+_(ESP_DECRYPT, "esp-decrypt")
+
+#define _(v, s) IPSEC_INPUT_NEXT_##v,
+typedef enum
+{
+  foreach_ipsec_input_next
+#undef _
+    IPSEC_INPUT_N_NEXT,
+} ipsec_input_next_t;
+
+
 #define foreach_ipsec_policy_action \
   _(0, BYPASS,  "bypass")          \
   _(1, DISCARD, "discard")         \
@@ -31,20 +58,12 @@ typedef enum
     IPSEC_POLICY_N_ACTION,
 } ipsec_policy_action_t;
 
-#if DPDK_CRYPTO==1
 #define foreach_ipsec_crypto_alg \
   _(0, NONE,  "none")               \
   _(1, AES_CBC_128, "aes-cbc-128")  \
   _(2, AES_CBC_192, "aes-cbc-192")  \
   _(3, AES_CBC_256, "aes-cbc-256")  \
   _(4, AES_GCM_128, "aes-gcm-128")
-#else
-#define foreach_ipsec_crypto_alg \
-  _(0, NONE,  "none")               \
-  _(1, AES_CBC_128, "aes-cbc-128")  \
-  _(2, AES_CBC_192, "aes-cbc-192")  \
-  _(3, AES_CBC_256, "aes-cbc-256")
-#endif
 
 typedef enum
 {
@@ -54,7 +73,6 @@ typedef enum
     IPSEC_CRYPTO_N_ALG,
 } ipsec_crypto_alg_t;
 
-#if DPDK_CRYPTO==1
 #define foreach_ipsec_integ_alg \
   _(0, NONE,  "none")                                                     \
   _(1, MD5_96, "md5-96")           /* RFC2403 */                          \
@@ -63,17 +81,7 @@ typedef enum
   _(4, SHA_256_128, "sha-256-128") /* RFC4868 */                          \
   _(5, SHA_384_192, "sha-384-192") /* RFC4868 */                          \
   _(6, SHA_512_256, "sha-512-256") /* RFC4868 */                          \
-  _(7, AES_GCM_128, "aes-gcm-128")
-#else
-#define foreach_ipsec_integ_alg \
-  _(0, NONE,  "none")                                                     \
-  _(1, MD5_96, "md5-96")           /* RFC2403 */                          \
-  _(2, SHA1_96, "sha1-96")         /* RFC2404 */                          \
-  _(3, SHA_256_96, "sha-256-96")   /* draft-ietf-ipsec-ciph-sha-256-00 */ \
-  _(4, SHA_256_128, "sha-256-128") /* RFC4868 */                          \
-  _(5, SHA_384_192, "sha-384-192") /* RFC4868 */                          \
-  _(6, SHA_512_256, "sha-512-256")	/* RFC4868 */
-#endif
+  _(7, AES_GCM_128, "aes-gcm-128")	/* RFC4106 */
 
 typedef enum
 {
@@ -119,6 +127,9 @@ typedef struct
   u32 last_seq;
   u32 last_seq_hi;
   u64 replay_window;
+
+  /*lifetime data */
+  u64 total_data_size;
 } ipsec_sa_t;
 
 typedef struct
@@ -225,6 +236,12 @@ typedef struct
 
 typedef struct
 {
+  i32 (*add_del_sa_sess_cb) (u32 sa_index, u8 is_add);
+  clib_error_t *(*check_support_cb) (ipsec_sa_t * sa);
+} ipsec_main_callbacks_t;
+
+typedef struct
+{
   /* pool of tunnel instances */
   ipsec_spd_t *spds;
   ipsec_sa_t *sad;
@@ -250,11 +267,16 @@ typedef struct
   uword *sa_index_by_sa_id;
   uword *ipsec_if_pool_index_by_key;
 
-  /* node indexes */
+  /* node indeces */
   u32 error_drop_node_index;
-  u32 ip4_lookup_node_index;
   u32 esp_encrypt_node_index;
+  u32 esp_decrypt_node_index;
+  /* next node indeces */
+  u32 esp_encrypt_next_index;
+  u32 esp_decrypt_next_index;
 
+  /* callbacks */
+  ipsec_main_callbacks_t cb;
 } ipsec_main_t;
 
 ipsec_main_t ipsec_main;
@@ -302,21 +324,21 @@ int ipsec_set_interface_key (vnet_main_t * vnm, u32 hw_if_index,
 always_inline void
 ipsec_alloc_empty_buffers (vlib_main_t * vm, ipsec_main_t * im)
 {
-  u32 cpu_index = os_get_cpu_number ();
-  uword l = vec_len (im->empty_buffers[cpu_index]);
+  u32 thread_index = vlib_get_thread_index ();
+  uword l = vec_len (im->empty_buffers[thread_index]);
   uword n_alloc = 0;
 
   if (PREDICT_FALSE (l < VLIB_FRAME_SIZE))
     {
-      if (!im->empty_buffers[cpu_index])
+      if (!im->empty_buffers[thread_index])
 	{
-	  vec_alloc (im->empty_buffers[cpu_index], 2 * VLIB_FRAME_SIZE);
+	  vec_alloc (im->empty_buffers[thread_index], 2 * VLIB_FRAME_SIZE);
 	}
 
-      n_alloc = vlib_buffer_alloc (vm, im->empty_buffers[cpu_index] + l,
+      n_alloc = vlib_buffer_alloc (vm, im->empty_buffers[thread_index] + l,
 				   2 * VLIB_FRAME_SIZE - l);
 
-      _vec_len (im->empty_buffers[cpu_index]) = l + n_alloc;
+      _vec_len (im->empty_buffers[thread_index]) = l + n_alloc;
     }
 }
 

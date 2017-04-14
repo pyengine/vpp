@@ -53,35 +53,15 @@
 #include <ioam/export-vxlan-gpe/vxlan_gpe_ioam_export_all_api_h.h>
 #undef vl_api_version
 
-/*
- * A handy macro to set up a message reply.
- * Assumes that the following variables are available:
- * mp - pointer to request message
- * rmp - pointer to reply message type
- * rv - return value
- */
-
-#define REPLY_MACRO(t)                                          \
-do {                                                            \
-    unix_shared_memory_queue_t * q =                            \
-    vl_api_client_index_to_input_queue (mp->client_index);      \
-    if (!q)                                                     \
-        return;                                                 \
-                                                                \
-    rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t)+sm->msg_id_base);               \
-    rmp->context = mp->context;                                 \
-    rmp->retval = ntohl(rv);                                    \
-                                                                \
-    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
-} while(0);
-
+#define REPLY_MSG_ID_BASE sm->msg_id_base
+#include <vlibapi/api_helper_macros.h>
 
 /* List of message types that this plugin understands */
-
-
 #define foreach_vxlan_gpe_ioam_export_plugin_api_msg                        \
 _(VXLAN_GPE_IOAM_EXPORT_ENABLE_DISABLE, vxlan_gpe_ioam_export_enable_disable)
+
+ioam_export_main_t vxlan_gpe_ioam_export_main;
+extern vlib_node_registration_t vxlan_export_node;
 
 extern void vxlan_gpe_set_next_override (uword next);
 /* Action function shared between message handler and debug CLI */
@@ -242,6 +222,8 @@ vxlan_gpe_ioam_export_init (vlib_main_t * vm)
   clib_error_t *error = 0;
   u8 *name;
 
+  em->set_id = IPFIX_VXLAN_IOAM_EXPORT_ID;
+
   name = format (0, "vxlan_gpe_ioam_export_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
@@ -254,6 +236,7 @@ vxlan_gpe_ioam_export_init (vlib_main_t * vm)
   em->my_hbh_slot = ~0;
   em->vlib_main = vm;
   em->vnet_main = vnet_get_main ();
+  ioam_export_reset_next_node (em);
   vec_free (name);
 
   return error;

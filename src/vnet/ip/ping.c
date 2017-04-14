@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include <stddef.h>
 #include <vnet/ip/ping.h>
 #include <vnet/fib/ip6_fib.h>
 #include <vnet/fib/ip4_fib.h>
@@ -213,27 +214,6 @@ VLIB_REGISTER_NODE (ip4_icmp_echo_reply_node, static) =
 char *ip6_lookup_next_nodes[] = IP6_LOOKUP_NEXT_NODES;
 char *ip4_lookup_next_nodes[] = IP4_LOOKUP_NEXT_NODES;
 
-/* get first interface address */
-static ip6_address_t *
-ip6_interface_first_address (ip6_main_t * im, u32 sw_if_index)
-{
-  ip_lookup_main_t *lm = &im->lookup_main;
-  ip_interface_address_t *ia = 0;
-  ip6_address_t *result = 0;
-
-  /* *INDENT-OFF* */
-  foreach_ip_interface_address (lm, ia, sw_if_index,
-                                1 /* honor unnumbered */ ,
-  ({
-    ip6_address_t * a =
-      ip_interface_address_get_address (lm, ia);
-    result = a;
-    break;
-  }));
-  /* *INDENT-ON* */
-  return result;
-}
-
 /* Fill in the ICMP ECHO structure, return the safety-checked and possibly shrunk data_len */
 static u16
 init_icmp46_echo_request (icmp46_echo_request_t * icmp46_echo,
@@ -243,15 +223,10 @@ init_icmp46_echo_request (icmp46_echo_request_t * icmp46_echo,
   icmp46_echo->seq = clib_host_to_net_u16 (seq_host);
   icmp46_echo->id = clib_host_to_net_u16 (id_host);
 
-  for (i = 0; i < sizeof (icmp46_echo->data); i++)
-    {
-      icmp46_echo->data[i] = i % 256;
-    }
-
-  if (data_len > sizeof (icmp46_echo_request_t))
-    {
-      data_len = sizeof (icmp46_echo_request_t);
-    }
+  if (data_len > PING_MAXIMUM_DATA_SIZE)
+    data_len = PING_MAXIMUM_DATA_SIZE;
+  for (i = 0; i < data_len; i++)
+    icmp46_echo->data[i] = i % 256;
   return data_len;
 }
 
@@ -259,7 +234,7 @@ static send_ip46_ping_result_t
 send_ip6_ping (vlib_main_t * vm, ip6_main_t * im,
 	       u32 table_id, ip6_address_t * pa6,
 	       u32 sw_if_index, u16 seq_host, u16 id_host, u16 data_len,
-	       u8 verbose)
+	       u32 burst, u8 verbose)
 {
   icmp6_echo_request_header_t *h0;
   u32 bi0 = 0;
@@ -267,11 +242,15 @@ send_ip6_ping (vlib_main_t * vm, ip6_main_t * im,
   vlib_buffer_t *p0;
   vlib_frame_t *f;
   u32 *to_next;
+  vlib_buffer_free_list_t *fl;
 
   if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
     return SEND_PING_ALLOC_FAIL;
 
   p0 = vlib_get_buffer (vm, bi0);
+  fl = vlib_buffer_get_free_list (vm, VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX);
+  vlib_buffer_init_for_free_list (p0, fl);
+  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (p0);
 
   /*
    * if the user did not provide a source interface, use the any interface
@@ -328,6 +307,11 @@ send_ip6_ping (vlib_main_t * vm, ip6_main_t * im,
 
   /* Fill in the correct source now */
   ip6_address_t *a = ip6_interface_first_address (im, sw_if_index);
+  if (!a)
+    {
+      vlib_buffer_free (vm, &bi0, 1);
+      return SEND_PING_NO_SRC_ADDRESS;
+    }
   h0->ip6.src_address = a[0];
 
   /* Fill in icmp fields */
@@ -355,7 +339,15 @@ send_ip6_ping (vlib_main_t * vm, ip6_main_t * im,
   f = vlib_get_frame_to_node (vm, ip6_lookup_node.index);
   to_next = vlib_frame_vector_args (f);
   to_next[0] = bi0;
-  f->n_vectors = 1;
+
+  ASSERT (burst <= VLIB_FRAME_SIZE);
+  f->n_vectors = burst;
+  while (--burst)
+    {
+      vlib_buffer_t *c0 = vlib_buffer_copy (vm, p0);
+      to_next++;
+      to_next[0] = vlib_get_buffer_index (vm, c0);
+    }
   vlib_put_frame_to_node (vm, ip6_lookup_node.index, f);
 
   return SEND_PING_OK;
@@ -367,7 +359,7 @@ send_ip4_ping (vlib_main_t * vm,
 	       u32 table_id,
 	       ip4_address_t * pa4,
 	       u32 sw_if_index,
-	       u16 seq_host, u16 id_host, u16 data_len, u8 verbose)
+	       u16 seq_host, u16 id_host, u16 data_len, u32 burst, u8 verbose)
 {
   icmp4_echo_request_header_t *h0;
   u32 bi0 = 0;
@@ -376,11 +368,15 @@ send_ip4_ping (vlib_main_t * vm,
   vlib_frame_t *f;
   u32 *to_next;
   u32 if_add_index0;
+  vlib_buffer_free_list_t *fl;
 
   if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
     return SEND_PING_ALLOC_FAIL;
 
   p0 = vlib_get_buffer (vm, bi0);
+  fl = vlib_buffer_get_free_list (vm, VLIB_BUFFER_DEFAULT_FREE_LIST_INDEX);
+  vlib_buffer_init_for_free_list (p0, fl);
+  VLIB_BUFFER_TRACE_TRAJECTORY_INIT (p0);
 
   /*
    * if the user did not provide a source interface, use the any interface
@@ -481,7 +477,15 @@ send_ip4_ping (vlib_main_t * vm,
   f = vlib_get_frame_to_node (vm, ip4_lookup_node.index);
   to_next = vlib_frame_vector_args (f);
   to_next[0] = bi0;
-  f->n_vectors = 1;
+
+  ASSERT (burst <= VLIB_FRAME_SIZE);
+  f->n_vectors = burst;
+  while (--burst)
+    {
+      vlib_buffer_t *c0 = vlib_buffer_copy (vm, p0);
+      to_next++;
+      to_next[0] = vlib_get_buffer_index (vm, c0);
+    }
   vlib_put_frame_to_node (vm, ip4_lookup_node.index, f);
 
   return SEND_PING_OK;
@@ -535,7 +539,7 @@ static void
 run_ping_ip46_address (vlib_main_t * vm, u32 table_id, ip4_address_t * pa4,
 		       ip6_address_t * pa6, u32 sw_if_index,
 		       f64 ping_interval, u32 ping_repeat, u32 data_len,
-		       u32 verbose)
+		       u32 ping_burst, u32 verbose)
 {
   int i;
   ping_main_t *pm = &ping_main;
@@ -573,16 +577,16 @@ run_ping_ip46_address (vlib_main_t * vm, u32 table_id, ip4_address_t * pa4,
       if (pa6 &&
 	  (SEND_PING_OK ==
 	   send_ip6_ping (vm, ping_main.ip6_main, table_id, pa6, sw_if_index,
-			  i, icmp_id, data_len, verbose)))
+			  i, icmp_id, data_len, ping_burst, verbose)))
 	{
-	  n_requests++;
+	  n_requests += ping_burst;
 	}
       if (pa4 &&
 	  (SEND_PING_OK ==
 	   send_ip4_ping (vm, ping_main.ip4_main, table_id, pa4, sw_if_index,
-			  i, icmp_id, data_len, verbose)))
+			  i, icmp_id, data_len, ping_burst, verbose)))
 	{
-	  n_requests++;
+	  n_requests += ping_burst;
 	}
       while ((i <= ping_repeat)
 	     &&
@@ -601,7 +605,7 @@ run_ping_ip46_address (vlib_main_t * vm, u32 table_id, ip4_address_t * pa4,
 		int i;
 		for (i = 0; i < vec_len (event_data); i++)
 		  {
-		    u32 bi0 = event_data[0];
+		    u32 bi0 = event_data[i];
 		    print_ip6_icmp_reply (vm, bi0);
 		    n_replies++;
 		    if (0 != bi0)
@@ -616,7 +620,7 @@ run_ping_ip46_address (vlib_main_t * vm, u32 table_id, ip4_address_t * pa4,
 		int i;
 		for (i = 0; i < vec_len (event_data); i++)
 		  {
-		    u32 bi0 = event_data[0];
+		    u32 bi0 = event_data[i];
 		    print_ip4_icmp_reply (vm, bi0);
 		    n_replies++;
 		    if (0 != bi0)
@@ -662,6 +666,7 @@ ping_ip_address (vlib_main_t * vm,
   ip6_address_t a6;
   clib_error_t *error = 0;
   u32 ping_repeat = 5;
+  u32 ping_burst = 1;
   u8 ping_ip4, ping_ip6;
   vnet_main_t *vnm = vnet_get_main ();
   u32 data_len = PING_DEFAULT_DATA_LEN;
@@ -759,6 +764,14 @@ ping_ip_address (vlib_main_t * vm,
 				   format_unformat_error, input);
 	      goto done;
 	    }
+	  if (data_len > PING_MAXIMUM_DATA_SIZE)
+	    {
+	      error =
+		clib_error_return (0,
+				   "%d is bigger than maximum allowed payload size %d",
+				   data_len, PING_MAXIMUM_DATA_SIZE);
+	      goto done;
+	    }
 	}
       else if (unformat (input, "table-id"))
 	{
@@ -793,6 +806,17 @@ ping_ip_address (vlib_main_t * vm,
 	      goto done;
 	    }
 	}
+      else if (unformat (input, "burst"))
+	{
+	  if (!unformat (input, "%u", &ping_burst))
+	    {
+	      error =
+		clib_error_return (0,
+				   "expecting burst count but got `%U'",
+				   format_unformat_error, input);
+	      goto done;
+	    }
+	}
       else if (unformat (input, "verbose"))
 	{
 	  verbose = 1;
@@ -805,9 +829,13 @@ ping_ip_address (vlib_main_t * vm,
 	}
     }
 
+  if (ping_burst < 1 || ping_burst > VLIB_FRAME_SIZE)
+    return clib_error_return (0, "burst size must be between 1 and %u",
+			      VLIB_FRAME_SIZE);
+
   run_ping_ip46_address (vm, table_id, ping_ip4 ? &a4 : NULL,
 			 ping_ip6 ? &a6 : NULL, sw_if_index, ping_interval,
-			 ping_repeat, data_len, verbose);
+			 ping_repeat, data_len, ping_burst, verbose);
 done:
   return error;
 }

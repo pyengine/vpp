@@ -18,69 +18,15 @@
 #include <vlib/unix/unix.h>
 #include <vnet/plugin/plugin.h>
 #include <vnet/ethernet/ethernet.h>
-
+#include <vpp/app/version.h>
 #include <vpp/api/vpe_msg_enum.h>
 
-#if DPDK
-#include <vnet/devices/dpdk/dpdk.h>
-
-/*
- * Called by the dpdk driver's rte_delay_us() function.
- * Return 0 to have the dpdk do a regular delay loop.
- * Return 1 if to skip the delay loop because we are suspending
- * the calling vlib process instead.
- */
-int
-rte_delay_us_override (unsigned us)
-{
-  vlib_main_t *vm;
-
-  /* Don't bother intercepting for short delays */
-  if (us < 10)
-    return 0;
-
-  /*
-   * Only intercept if we are in a vlib process.
-   * If we are called from a vlib worker thread or the vlib main
-   * thread then do not intercept. (Must not be called from an
-   * independent pthread).
-   */
-  if (os_get_cpu_number () == 0)
-    {
-      /*
-       * We're in the vlib main thread or a vlib process. Make sure
-       * the process is running and we're not still initializing.
-       */
-      vm = vlib_get_main ();
-      if (vlib_in_process_context (vm))
-	{
-	  /* Only suspend for the admin_down_process */
-	  vlib_process_t *proc = vlib_get_current_process (vm);
-	  if (!(proc->flags & VLIB_PROCESS_IS_RUNNING) ||
-	      (proc->node_runtime.function != admin_up_down_process))
-	    return 0;
-
-	  f64 delay = 1e-6 * us;
-	  vlib_process_suspend (vm, delay);
-	  return 1;
-	}
-    }
-  return 0;			// no override
-}
-
-#if RTE_VERSION >= RTE_VERSION_NUM(16, 11, 0, 0)
-static void
-rte_delay_us_override_cb (unsigned us)
-{
-  if (rte_delay_us_override (us) == 0)
-    rte_delay_us_block (us);
-}
-#endif
-#endif
 
 static void
 vpe_main_init (vlib_main_t * vm)
 {
+  void vat_plugin_hash_create (void);
+
   if (CLIB_DEBUG > 0)
     vlib_unix_cli_set_prompt ("DBGvpp# ");
   else
@@ -89,28 +35,17 @@ vpe_main_init (vlib_main_t * vm)
   /* Turn off network stack components which we don't want */
   vlib_mark_init_function_complete (vm, srp_init);
 
-#if DPDK
-#if RTE_VERSION >= RTE_VERSION_NUM(16, 11, 0, 0)
-  /* register custom delay function */
-  rte_delay_us_callback_register (rte_delay_us_override_cb);
-#endif
-#endif
+  /*
+   * Create the binary api plugin hashes before loading plugins
+   */
+  vat_plugin_hash_create ();
 }
 
 /*
  * Load plugins from /usr/lib/vpp_plugins by default
  */
 char *vlib_plugin_path = "/usr/lib/vpp_plugins";
-
-void *
-vnet_get_handoff_structure (void)
-{
-  static vnet_plugin_handoff_t _rv, *rv = &_rv;
-
-  rv->vnet_main = vnet_get_main ();
-  rv->ethernet_main = &ethernet_main;
-  return (void *) rv;
-}
+char *vlib_plugin_app_version = VPP_BUILD_VER;
 
 int
 main (int argc, char *argv[])
@@ -121,7 +56,6 @@ main (int argc, char *argv[])
   uword main_heap_size = (1ULL << 30);
   u8 *sizep;
   u32 size;
-  void vlib_set_get_handoff_structure_cb (void *cb);
 
 #if __x86_64__
   CLIB_UNUSED (const char *msg)
@@ -265,10 +199,6 @@ defaulted:
     {
       vm->init_functions_called = hash_create (0, /* value bytes */ 0);
       vpe_main_init (vm);
-#if DPDK == 0
-      unix_physmem_init (vm, 0 /* fail_if_physical_memory_not_present */ );
-#endif
-      vlib_set_get_handoff_structure_cb (&vnet_get_handoff_structure);
       return vlib_unix_main (argc, argv);
     }
   else

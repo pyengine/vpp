@@ -46,21 +46,9 @@
 #include <vppinfra/vector.h>
 #include <vlib/error.h>		/* for vlib_error_t */
 
-#if DPDK > 0
-#include <rte_config.h>
-#define VLIB_BUFFER_DATA_SIZE		(2048)
-#define VLIB_BUFFER_PRE_DATA_SIZE	RTE_PKTMBUF_HEADROOM
-#else
 #include <vlib/config.h>	/* for __PRE_DATA_SIZE */
-#define VLIB_BUFFER_DATA_SIZE		(512)
+#define VLIB_BUFFER_DATA_SIZE		(2048)
 #define VLIB_BUFFER_PRE_DATA_SIZE	__PRE_DATA_SIZE
-#endif
-
-#if defined (CLIB_HAVE_VEC128) || defined (__aarch64__)
-typedef u8x16 vlib_copy_unit_t;
-#else
-typedef u64 vlib_copy_unit_t;
-#endif
 
 /** \file
     vlib buffer structure definition and a few select
@@ -73,6 +61,7 @@ typedef u64 vlib_copy_unit_t;
 typedef struct
 {
   CLIB_CACHE_LINE_ALIGN_MARK (cacheline0);
+  STRUCT_MARK (template_start);
   /* Offset within data[] that we are currently processing.
      If negative current header points into predata area. */
   i16 current_data;  /**< signed offset in data[], pre_data[]
@@ -89,6 +78,7 @@ typedef struct
                 <br> VLIB_BUFFER_REPL_FAIL: packet replication failure
                 <br> VLIB_BUFFER_RECYCLE: as it says
                 <br> VLIB_BUFFER_FLOW_REPORT: buffer is a flow report,
+                <br> VLIB_BUFFER_EXT_HDR_VALID: buffer contains valid external buffer manager header,
                 set to avoid adding it to a flow report
                 <br> VLIB_BUFFER_FLAG_USER(n): user-defined bit N
              */
@@ -100,6 +90,7 @@ typedef struct
 #define VLIB_BUFFER_REPL_FAIL (1 << 4)
 #define VLIB_BUFFER_RECYCLE (1 << 5)
 #define VLIB_BUFFER_FLOW_REPORT (1 << 6)
+#define VLIB_BUFFER_EXT_HDR_VALID (1 << 7)
 
   /* User defined buffer flags. */
 #define LOG2_VLIB_BUFFER_FLAG_USER(n) (32 - (n))
@@ -113,6 +104,7 @@ typedef struct
   /**< Only valid for first buffer in chain. Current length plus
      total length given here give total number of bytes in buffer chain.
   */
+    STRUCT_MARK (template_end);
 
   u32 next_buffer;   /**< Next buffer for this linked-list of buffers.
                         Only valid if VLIB_BUFFER_NEXT_PRESENT flag is set.
@@ -129,7 +121,9 @@ typedef struct
                            feature node
                         */
 
-  u8 dont_waste_me[3]; /**< Available space in the (precious)
+  u8 n_add_refs; /**< Number of additional references to this buffer. */
+
+  u8 dont_waste_me[2]; /**< Available space in the (precious)
                           first 32 octets of buffer metadata
                           Before allocating any of it, discussion required!
                        */
@@ -246,6 +240,74 @@ vlib_get_buffer_opaque2 (vlib_buffer_t * b)
   return (void *) b->opaque2;
 }
 
+/** \brief Get pointer to the end of buffer's data
+ * @param b     pointer to the buffer
+ * @return      pointer to tail of packet's data
+ */
+always_inline u8 *
+vlib_buffer_get_tail (vlib_buffer_t * b)
+{
+  return b->data + b->current_data + b->current_length;
+}
+
+/** \brief Append uninitialized data to buffer
+ * @param b     pointer to the buffer
+ * @param size  number of uninitialized bytes
+ * @return      pointer to beginning of uninitialized data
+ */
+always_inline void *
+vlib_buffer_put_uninit (vlib_buffer_t * b, u8 size)
+{
+  void *p = vlib_buffer_get_tail (b);
+  /* XXX make sure there's enough space */
+  b->current_length += size;
+  return p;
+}
+
+/** \brief Prepend uninitialized data to buffer
+ * @param b     pointer to the buffer
+ * @param size  number of uninitialized bytes
+ * @return      pointer to beginning of uninitialized data
+ */
+always_inline void *
+vlib_buffer_push_uninit (vlib_buffer_t * b, u8 size)
+{
+  ASSERT (b->current_data + VLIB_BUFFER_PRE_DATA_SIZE >= size);
+  b->current_data -= size;
+  b->current_length += size;
+
+  return vlib_buffer_get_current (b);
+}
+
+/** \brief Make head room, typically for packet headers
+ * @param b     pointer to the buffer
+ * @param size  number of head room bytes
+ * @return      pointer to start of buffer (current data)
+ */
+always_inline void *
+vlib_buffer_make_headroom (vlib_buffer_t * b, u8 size)
+{
+  ASSERT (b->current_data + VLIB_BUFFER_PRE_DATA_SIZE >= size);
+  b->current_data += size;
+  return vlib_buffer_get_current (b);
+}
+
+/** \brief Retrieve bytes from buffer head
+ * @param b     pointer to the buffer
+ * @param size  number of bytes to pull
+ * @return      pointer to start of buffer (current data)
+ */
+always_inline void *
+vlib_buffer_pull (vlib_buffer_t * b, u8 size)
+{
+  if (b->current_length + VLIB_BUFFER_PRE_DATA_SIZE < size)
+    return 0;
+
+  void *data = vlib_buffer_get_current (b);
+  vlib_buffer_advance (b, size);
+  return data;
+}
+
 /* Forward declaration. */
 struct vlib_main_t;
 
@@ -268,11 +330,8 @@ typedef struct vlib_buffer_free_list_t
   /* Total number of buffers allocated from this free list. */
   u32 n_alloc;
 
-  /* Vector of free buffers.  Each element is a byte offset into I/O heap.
-     Aligned vectors always has naturally aligned vlib_copy_unit_t sized chunks
-     of buffer indices.  Unaligned vector has any left over.  This is meant to
-     speed up copy routines. */
-  u32 *aligned_buffers, *unaligned_buffers;
+  /* Vector of free buffers.  Each element is a byte offset into I/O heap. */
+  u32 *buffers;
 
   /* Memory chunks allocated for this free list
      recorded here so they can be freed when free list
@@ -295,6 +354,27 @@ typedef struct vlib_buffer_free_list_t
 
   uword buffer_init_function_opaque;
 } __attribute__ ((aligned (16))) vlib_buffer_free_list_t;
+
+typedef struct
+{
+  u32 (*vlib_buffer_alloc_cb) (struct vlib_main_t * vm, u32 * buffers,
+			       u32 n_buffers);
+  u32 (*vlib_buffer_alloc_from_free_list_cb) (struct vlib_main_t * vm,
+					      u32 * buffers, u32 n_buffers,
+					      u32 free_list_index);
+  void (*vlib_buffer_free_cb) (struct vlib_main_t * vm, u32 * buffers,
+			       u32 n_buffers);
+  void (*vlib_buffer_free_no_next_cb) (struct vlib_main_t * vm, u32 * buffers,
+				       u32 n_buffers);
+  void (*vlib_packet_template_init_cb) (struct vlib_main_t * vm, void *t,
+					void *packet_data,
+					uword n_packet_data_bytes,
+					uword
+					min_n_buffers_each_physmem_alloc,
+					u8 * name);
+  void (*vlib_buffer_delete_free_list_cb) (struct vlib_main_t * vm,
+					   u32 free_list_index);
+} vlib_buffer_callbacks_t;
 
 typedef struct
 {
@@ -323,11 +403,14 @@ typedef struct
   /* List of free-lists needing Blue Light Special announcements */
   vlib_buffer_free_list_t **announce_list;
 
-  /*  Vector of rte_mempools per socket */
-#if DPDK == 1
-  struct rte_mempool **pktmbuf_pools;
-#endif
+  /* Callbacks */
+  vlib_buffer_callbacks_t cb;
+  int extern_buffer_mgmt;
 } vlib_buffer_main_t;
+
+void vlib_buffer_cb_init (struct vlib_main_t *vm);
+int vlib_buffer_cb_register (struct vlib_main_t *vm,
+			     vlib_buffer_callbacks_t * cb);
 
 typedef struct
 {
@@ -384,11 +467,6 @@ serialize_vlib_buffer_n_bytes (serialize_main_t * m)
   return sm->tx.n_total_data_bytes + s->current_buffer_index +
     vec_len (s->overflow_buffer);
 }
-
-#if DPDK > 0
-#define rte_mbuf_from_vlib_buffer(x) (((struct rte_mbuf *)x) - 1)
-#define vlib_buffer_from_rte_mbuf(x) ((vlib_buffer_t *)(x+1))
-#endif
 
 /*
  */

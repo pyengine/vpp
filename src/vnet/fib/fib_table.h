@@ -29,18 +29,6 @@
 typedef struct fib_table_t_
 {
     /**
-     * A union of the protocol specific FIBs that provide the
-     * underlying LPM mechanism.
-     * This element is first in the struct so that it is in the
-     * first cache line.
-     */
-    union {
-	ip4_fib_t v4;
-	ip6_fib_t v6;
-	mpls_fib_t mpls;
-    };
-
-    /**
      * Which protocol this table serves. Used to switch on the union above.
      */
     fib_protocol_t ft_proto;
@@ -138,14 +126,16 @@ extern fib_node_index_t fib_table_get_less_specific(u32 fib_index,
 
 /**
  * @brief
- *  Add a 'special' entry to the FIB that links to the adj passed
+ *  Add a 'special' entry to the FIB.
  *  A special entry is an entry that the FIB is not expect to resolve
  *  via the usual mechanisms (i.e. recurisve or neighbour adj DB lookup).
- *  Instead the client/source provides the adj to link to.
+ *  Instead the will link to a DPO valid for the source and/or the flags.
  *  This add is reference counting per-source. So n 'removes' are required
  *  for n 'adds', if the entry is no longer required.
+ *  If the source needs to provide non-default forwarding use:
+ *  fib_table_entry_special_dpo_add()
  *
-  * @param fib_index
+ * @param fib_index
  *  The index of the FIB
  *
  * @param prefix
@@ -157,17 +147,13 @@ extern fib_node_index_t fib_table_get_less_specific(u32 fib_index,
  * @param flags
  *  Flags for the entry.
  *
- * @param adj_index
- *  The adjacency to link to.
- *
  * @return
  *  the index of the fib_entry_t that is created (or exists already).
  */
 extern fib_node_index_t fib_table_entry_special_add(u32 fib_index,
 						    const fib_prefix_t *prefix,
 						    fib_source_t source,
-						    fib_entry_flag_t flags,
-						    adj_index_t adj_index);
+						    fib_entry_flag_t flags);
 
 /**
  * @brief
@@ -728,5 +714,21 @@ extern u32 fib_table_get_num_entries(u32 fib_index,
  */
 extern fib_table_t *fib_table_get(fib_node_index_t index,
 				  fib_protocol_t proto);
+
+/**
+ * @brief Call back function when walking entries in a FIB table
+ */
+typedef int (*fib_table_walk_fn_t)(fib_node_index_t fei,
+                                   void *ctx);
+
+/**
+ * @brief Walk all entries in a FIB table
+ * N.B: This is NOT safe to deletes. If you need to delete walk the whole
+ * table and store elements in a vector, then delete the elements
+ */
+extern void fib_table_walk(u32 fib_index,
+                           fib_protocol_t proto,
+                           fib_table_walk_fn_t fn,
+                           void *ctx);
 
 #endif

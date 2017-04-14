@@ -50,6 +50,7 @@ lisp_gpe_tunnel_build_rewrite (const lisp_gpe_tunnel_t * lgt,
   lisp_gpe_header_t *lisp0;
   u8 *rw = 0;
   int len;
+  gpe_encap_mode_t encap_mode = vnet_gpe_get_encap_mode ();
 
   if (IP4 == ip_addr_version (&lgt->key->lcl))
     {
@@ -111,6 +112,10 @@ lisp_gpe_tunnel_build_rewrite (const lisp_gpe_tunnel_t * lgt,
     }
 
   lisp0->flags = ladj->flags;
+  if (GPE_ENCAP_VXLAN == encap_mode)
+    /* unset P flag */
+    lisp0->flags &= ~LISP_GPE_FLAGS_P;
+
   lisp0->ver_res = 0;
   lisp0->res = 0;
   lisp0->next_protocol = payload_proto;
@@ -174,8 +179,7 @@ lisp_gpe_tunnel_find_or_create_and_lock (const locator_pair_t * pair,
       lgt->fib_entry_index = fib_table_entry_special_add (rloc_fib_index,
 							  &pfx,
 							  FIB_SOURCE_RR,
-							  FIB_ENTRY_FLAG_NONE,
-							  ADJ_INDEX_INVALID);
+							  FIB_ENTRY_FLAG_NONE);
 
       hash_set_mem (lisp_gpe_tunnel_db, &lgt->key,
 		    (lgt - lisp_gpe_tunnel_pool));
@@ -263,7 +267,7 @@ show_lisp_gpe_tunnel_command_fn (vlib_main_t * vm,
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (show_lisp_gpe_tunnel_command, static) =
 {
-  .path = "show lisp gpe tunnel",
+  .path = "show gpe tunnel",
   .function = show_lisp_gpe_tunnel_command_fn,
 };
 /* *INDENT-ON* */

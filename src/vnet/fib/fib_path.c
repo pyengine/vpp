@@ -21,8 +21,11 @@
 #include <vnet/dpo/receive_dpo.h>
 #include <vnet/dpo/load_balance_map.h>
 #include <vnet/dpo/lookup_dpo.h>
+#include <vnet/dpo/interface_dpo.h>
+#include <vnet/dpo/mpls_disposition.h>
 
 #include <vnet/adj/adj.h>
+#include <vnet/adj/adj_mcast.h>
 
 #include <vnet/fib/fib_path.h>
 #include <vnet/fib/fib_node.h>
@@ -31,6 +34,7 @@
 #include <vnet/fib/fib_path_list.h>
 #include <vnet/fib/fib_internal.h>
 #include <vnet/fib/fib_urpf_list.h>
+#include <vnet/fib/mpls_fib.h>
 
 /**
  * Enurmeration of path types
@@ -65,6 +69,10 @@ typedef enum fib_path_type_t_ {
      */
     FIB_PATH_TYPE_DEAG,
     /**
+     * interface receive.
+     */
+    FIB_PATH_TYPE_INTF_RX,
+    /**
      * receive. it's for-us.
      */
     FIB_PATH_TYPE_RECEIVE,
@@ -86,6 +94,7 @@ typedef enum fib_path_type_t_ {
     [FIB_PATH_TYPE_SPECIAL]           = "special",	        \
     [FIB_PATH_TYPE_EXCLUSIVE]         = "exclusive",	        \
     [FIB_PATH_TYPE_DEAG]              = "deag",	                \
+    [FIB_PATH_TYPE_INTF_RX]           = "intf-rx",	        \
     [FIB_PATH_TYPE_RECEIVE]           = "receive",	        \
 }
 
@@ -108,6 +117,10 @@ typedef enum fib_path_oper_attribute_t_ {
      * The path is resolved
      */
     FIB_PATH_OPER_ATTRIBUTE_RESOLVED,
+    /**
+     * The path is attached, despite what the next-hop may say.
+     */
+    FIB_PATH_OPER_ATTRIBUTE_ATTACHED,
     /**
      * The path has become a permanent drop.
      */
@@ -142,6 +155,7 @@ typedef enum fib_path_oper_flags_t_ {
     FIB_PATH_OPER_FLAG_RECURSIVE_LOOP = (1 << FIB_PATH_OPER_ATTRIBUTE_RECURSIVE_LOOP),
     FIB_PATH_OPER_FLAG_DROP = (1 << FIB_PATH_OPER_ATTRIBUTE_DROP),
     FIB_PATH_OPER_FLAG_RESOLVED = (1 << FIB_PATH_OPER_ATTRIBUTE_RESOLVED),
+    FIB_PATH_OPER_FLAG_ATTACHED = (1 << FIB_PATH_OPER_ATTRIBUTE_ATTACHED),
 } __attribute__ ((packed)) fib_path_oper_flags_t;
 
 /**
@@ -213,32 +227,19 @@ typedef struct fib_path_t_ {
 		 * The next-hop
 		 */
 		ip46_address_t fp_ip;
-		/**
-		 * The local label to resolve through.
-		 */
-		mpls_label_t fp_local_label;
+		struct {
+                    /**
+                     * The local label to resolve through.
+                     */
+                    mpls_label_t fp_local_label;
+                    /**
+                     * The EOS bit of the resolving label
+                     */
+                    mpls_eos_bit_t fp_eos;
+                };
 	    } fp_nh;
 	    /**
 	     * The FIB table index in which to find the next-hop.
-	     * This needs to be fixed. We should lookup the adjacencies in
-	     * a separate table of adjacencies, rather than from the FIB.
-	     * Two reasons I can think of:
-	     *   - consider:
-	     *       int ip addr Gig0 10.0.0.1/24
-	     *       ip route 10.0.0.2/32 via Gig1 192.168.1.2
-	     *       ip route 1.1.1.1/32 via Gig0 10.0.0.2
-	     *     this is perfectly valid.
-	     *     Packets addressed to 10.0.0.2 should be sent via Gig1.
-	     *     Packets address to 1.1.1.1 should be sent via Gig0.
-	     *    when we perform the adj resolution from the FIB for the path
-	     *    "via Gig0 10.0.0.2" the lookup will result in the route via Gig1
-	     *    and so we will pick up the adj via Gig1 - which was not what the
-	     *    operator wanted.
-	     *  - we can only return link-type IPv4 and so not the link-type MPLS.
-	     *    more on this in a later commit.
-	     *
-	     * The table ID should only belong to a recursive path and indicate
-	     * which FIB should be used to resolve the next-hop.
 	     */
 	    fib_node_index_t fp_tbl_id;
 	} recursive;
@@ -247,6 +248,10 @@ typedef struct fib_path_t_ {
 	     * The FIB index in which to perfom the next lookup
 	     */
 	    fib_node_index_t fp_tbl_id;
+            /**
+             * The RPF-ID to tag the packets with
+             */
+            fib_rpf_id_t fp_rpf_id;
 	} deag;
 	struct {
 	} special;
@@ -266,6 +271,12 @@ typedef struct fib_path_t_ {
 	     */
 	    ip46_address_t fp_addr;
 	} receive;
+	struct {
+	    /**
+	     * The interface on which the packets will be input.
+	     */
+	    u32 fp_interface;
+	} intf_rx;
     };
     STRUCT_MARK(path_hash_end);
 
@@ -437,9 +448,11 @@ format_fib_path (u8 * s, va_list * args)
     case FIB_PATH_TYPE_RECURSIVE:
 	if (FIB_PROTOCOL_MPLS == path->fp_nh_proto)
 	{
-	    s = format (s, "via %U",
+	    s = format (s, "via %U %U",
 			format_mpls_unicast_label,
-			path->recursive.fp_nh.fp_local_label);
+			path->recursive.fp_nh.fp_local_label,
+			format_mpls_eos_bit,
+			path->recursive.fp_nh.fp_eos);
 	}
 	else
 	{
@@ -458,6 +471,7 @@ format_fib_path (u8 * s, va_list * args)
 
 	break;
     case FIB_PATH_TYPE_RECEIVE:
+    case FIB_PATH_TYPE_INTF_RX:
     case FIB_PATH_TYPE_SPECIAL:
     case FIB_PATH_TYPE_DEAG:
     case FIB_PATH_TYPE_EXCLUSIVE:
@@ -551,12 +565,6 @@ fib_path_attached_next_hop_set (fib_path_t *path)
      * resolve directly via the adjacnecy discribed by the
      * interface and next-hop
      */
-    if (!vnet_sw_interface_is_admin_up(vnet_get_main(),
-				      path->attached_next_hop.fp_interface))
-    {
-	path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
-    }
-
     dpo_set(&path->fp_dpo,
 	    DPO_ADJACENCY,
 	    fib_proto_to_dpo(path->fp_nh_proto),
@@ -571,6 +579,13 @@ fib_path_attached_next_hop_set (fib_path_t *path)
     path->fp_sibling = adj_child_add(path->fp_dpo.dpoi_index,
 				     FIB_NODE_TYPE_PATH,
 				     fib_path_get_index(path));
+
+    if (!vnet_sw_interface_is_admin_up(vnet_get_main(),
+				      path->attached_next_hop.fp_interface) ||
+        !adj_is_up(path->fp_dpo.dpoi_index))
+    {
+	path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
+    }
 }
 
 /*
@@ -646,6 +661,19 @@ fib_path_recursive_adj_update (fib_path_t *path,
             load_balance_map_path_state_change(fib_path_get_index(path));
 	}
     }
+    /*
+     * check for over-riding factors on the FIB entry itself
+     */
+    if (!fib_entry_is_resolved(path->fp_via_fib))
+    {
+        path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
+        dpo_copy(&via_dpo, drop_dpo_get(fib_proto_to_dpo(path->fp_nh_proto)));
+
+        /*
+         * PIC edge trigger. let the load-balance maps know
+         */
+        load_balance_map_path_state_change(fib_path_get_index(path));
+    }
 
     /*
      * update the path's contributed DPO
@@ -715,6 +743,7 @@ fib_path_unresolve (fib_path_t *path)
         break;
     case FIB_PATH_TYPE_SPECIAL:
     case FIB_PATH_TYPE_RECEIVE:
+    case FIB_PATH_TYPE_INTF_RX:
     case FIB_PATH_TYPE_DEAG:
         /*
          * these hold only the path's DPO, which is reset below.
@@ -733,16 +762,24 @@ fib_path_unresolve (fib_path_t *path)
 }
 
 static fib_forward_chain_type_t
-fib_path_proto_to_chain_type (fib_protocol_t proto)
+fib_path_to_chain_type (const fib_path_t *path)
 {
-    switch (proto)
+    switch (path->fp_nh_proto)
     {
     case FIB_PROTOCOL_IP4:
 	return (FIB_FORW_CHAIN_TYPE_UNICAST_IP4);
     case FIB_PROTOCOL_IP6:
 	return (FIB_FORW_CHAIN_TYPE_UNICAST_IP6);
     case FIB_PROTOCOL_MPLS:
-	return (FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS);
+        if (FIB_PATH_TYPE_RECURSIVE == path->fp_type &&
+            MPLS_EOS == path->recursive.fp_nh.fp_eos)
+        {
+            return (FIB_FORW_CHAIN_TYPE_MPLS_EOS);
+        }
+        else
+        {
+            return (FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS);
+        }
     }
     return (FIB_FORW_CHAIN_TYPE_UNICAST_IP4);
 }
@@ -772,7 +809,7 @@ fib_path_back_walk_notify (fib_node_t *node,
 	     */
 	    fib_path_recursive_adj_update(
 		path,
-		fib_path_proto_to_chain_type(path->fp_nh_proto),
+		fib_path_to_chain_type(path),
 		&path->fp_dpo);
 	}
 	if ((FIB_NODE_BW_REASON_FLAG_ADJ_UPDATE & ctx->fnbw_reason) ||
@@ -848,14 +885,15 @@ FIXME comment
                            vnet_get_main(),
                            path->attached_next_hop.fp_interface);
 
-            if (if_is_up)
-            {
-                path->fp_oper_flags |= FIB_PATH_OPER_FLAG_RESOLVED;
-            }
-
             ai = fib_path_attached_next_hop_get_adj(
                      path,
                      fib_proto_to_link(path->fp_nh_proto));
+
+            path->fp_oper_flags &= ~FIB_PATH_OPER_FLAG_RESOLVED;
+            if (if_is_up && adj_is_up(ai))
+            {
+                path->fp_oper_flags |= FIB_PATH_OPER_FLAG_RESOLVED;
+            }
 
             dpo_set(&path->fp_dpo, DPO_ADJACENCY,
                     fib_proto_to_dpo(path->fp_nh_proto),
@@ -909,6 +947,8 @@ FIXME comment
 	    path->fp_oper_flags |= FIB_PATH_OPER_FLAG_DROP;
 	}
 	break;
+    case FIB_PATH_TYPE_INTF_RX:
+        ASSERT(0);
     case FIB_PATH_TYPE_DEAG:
 	/*
 	 * FIXME When VRF delete is allowed this will need a poke.
@@ -960,6 +1000,18 @@ fib_path_route_flags_to_cfg_flags (const fib_route_path_t *rpath)
 	cfg_flags |= FIB_PATH_CFG_FLAG_RESOLVE_HOST;
     if (rpath->frp_flags & FIB_ROUTE_PATH_RESOLVE_VIA_ATTACHED)
 	cfg_flags |= FIB_PATH_CFG_FLAG_RESOLVE_ATTACHED;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_LOCAL)
+	cfg_flags |= FIB_PATH_CFG_FLAG_LOCAL;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_ATTACHED)
+	cfg_flags |= FIB_PATH_CFG_FLAG_ATTACHED;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_INTF_RX)
+	cfg_flags |= FIB_PATH_CFG_FLAG_INTF_RX;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_RPF_ID)
+	cfg_flags |= FIB_PATH_CFG_FLAG_RPF_ID;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_EXCLUSIVE)
+	cfg_flags |= FIB_PATH_CFG_FLAG_EXCLUSIVE;
+    if (rpath->frp_flags & FIB_ROUTE_PATH_DROP)
+	cfg_flags |= FIB_PATH_CFG_FLAG_DROP;
 
     return (cfg_flags);
 }
@@ -972,8 +1024,6 @@ fib_path_route_flags_to_cfg_flags (const fib_route_path_t *rpath)
  */
 fib_node_index_t
 fib_path_create (fib_node_index_t pl_index,
-		 fib_protocol_t nh_proto,
-		 fib_path_cfg_flags_t flags,
 		 const fib_route_path_t *rpath)
 {
     fib_path_t *path;
@@ -986,7 +1036,7 @@ fib_path_create (fib_node_index_t pl_index,
 
     dpo_reset(&path->fp_dpo);
     path->fp_pl_index = pl_index;
-    path->fp_nh_proto = nh_proto;
+    path->fp_nh_proto = rpath->frp_proto;
     path->fp_via_fib = FIB_NODE_INDEX_INVALID;
     path->fp_weight = rpath->frp_weight;
     if (0 == path->fp_weight)
@@ -997,34 +1047,41 @@ fib_path_create (fib_node_index_t pl_index,
          */
         path->fp_weight = 1;
     }
-    path->fp_cfg_flags = flags;
-    path->fp_cfg_flags |= fib_path_route_flags_to_cfg_flags(rpath);
+    path->fp_cfg_flags = fib_path_route_flags_to_cfg_flags(rpath);
 
     /*
      * deduce the path's tpye from the parementers and save what is needed.
      */
-    if (~0 != rpath->frp_sw_if_index)
+    if (path->fp_cfg_flags & FIB_PATH_CFG_FLAG_LOCAL)
     {
-	if (flags & FIB_PATH_CFG_FLAG_LOCAL)
-	{
-	    path->fp_type = FIB_PATH_TYPE_RECEIVE;
-	    path->receive.fp_interface = rpath->frp_sw_if_index;
-            path->receive.fp_addr = rpath->frp_addr;
-	}
-	else
-	{
-	    if (ip46_address_is_zero(&rpath->frp_addr))
-	    {
-		path->fp_type = FIB_PATH_TYPE_ATTACHED;
-		path->attached.fp_interface = rpath->frp_sw_if_index;
-	    }
-	    else
-	    {
-		path->fp_type = FIB_PATH_TYPE_ATTACHED_NEXT_HOP;
-		path->attached_next_hop.fp_interface = rpath->frp_sw_if_index;
-		path->attached_next_hop.fp_nh = rpath->frp_addr;
-	    }
-	}
+        path->fp_type = FIB_PATH_TYPE_RECEIVE;
+        path->receive.fp_interface = rpath->frp_sw_if_index;
+        path->receive.fp_addr = rpath->frp_addr;
+    }
+    else if (path->fp_cfg_flags & FIB_PATH_CFG_FLAG_INTF_RX)
+    {
+        path->fp_type = FIB_PATH_TYPE_INTF_RX;
+        path->intf_rx.fp_interface = rpath->frp_sw_if_index;
+    }
+    else if (path->fp_cfg_flags & FIB_PATH_CFG_FLAG_RPF_ID)
+    {
+        path->fp_type = FIB_PATH_TYPE_DEAG;
+        path->deag.fp_tbl_id = rpath->frp_fib_index;
+        path->deag.fp_rpf_id = rpath->frp_rpf_id;
+    }
+    else if (~0 != rpath->frp_sw_if_index)
+    {
+        if (ip46_address_is_zero(&rpath->frp_addr))
+        {
+            path->fp_type = FIB_PATH_TYPE_ATTACHED;
+            path->attached.fp_interface = rpath->frp_sw_if_index;
+        }
+        else
+        {
+            path->fp_type = FIB_PATH_TYPE_ATTACHED_NEXT_HOP;
+            path->attached_next_hop.fp_interface = rpath->frp_sw_if_index;
+            path->attached_next_hop.fp_nh = rpath->frp_addr;
+        }
     }
     else
     {
@@ -1046,6 +1103,7 @@ fib_path_create (fib_node_index_t pl_index,
 	    if (FIB_PROTOCOL_MPLS == path->fp_nh_proto)
 	    {
 		path->recursive.fp_nh.fp_local_label = rpath->frp_local_label;
+                path->recursive.fp_nh.fp_eos = rpath->frp_eos;
 	    }
 	    else
 	    {
@@ -1199,7 +1257,7 @@ fib_path_cmp_i (const fib_path_t *path1,
     {
 	res = (path1->fp_type - path2->fp_type);
     }
-    if (path1->fp_nh_proto != path2->fp_nh_proto)
+    else if (path1->fp_nh_proto != path2->fp_nh_proto)
     {
 	res = (path1->fp_nh_proto - path2->fp_nh_proto);
     }
@@ -1215,17 +1273,13 @@ fib_path_cmp_i (const fib_path_t *path1,
 	    res = ip46_address_cmp(&path1->attached_next_hop.fp_nh,
 				   &path2->attached_next_hop.fp_nh);
 	    if (0 == res) {
-		res = vnet_sw_interface_compare(
-			  vnet_get_main(),
-			  path1->attached_next_hop.fp_interface,
-			  path2->attached_next_hop.fp_interface);
+		res = (path1->attached_next_hop.fp_interface -
+                       path2->attached_next_hop.fp_interface);
 	    }
 	    break;
 	case FIB_PATH_TYPE_ATTACHED:
-	    res = vnet_sw_interface_compare(
-		      vnet_get_main(),
-		      path1->attached.fp_interface,
-		      path2->attached.fp_interface);
+	    res = (path1->attached.fp_interface -
+                   path2->attached.fp_interface);
 	    break;
 	case FIB_PATH_TYPE_RECURSIVE:
 	    res = ip46_address_cmp(&path1->recursive.fp_nh,
@@ -1238,6 +1292,13 @@ fib_path_cmp_i (const fib_path_t *path1,
 	    break;
 	case FIB_PATH_TYPE_DEAG:
 	    res = (path1->deag.fp_tbl_id - path2->deag.fp_tbl_id);
+	    if (0 == res)
+	    {
+                res = (path1->deag.fp_rpf_id - path2->deag.fp_rpf_id);
+            }
+	    break;
+	case FIB_PATH_TYPE_INTF_RX:
+	    res = (path1->intf_rx.fp_interface - path2->intf_rx.fp_interface);
 	    break;
 	case FIB_PATH_TYPE_SPECIAL:
 	case FIB_PATH_TYPE_RECEIVE:
@@ -1313,22 +1374,22 @@ fib_path_cmp_w_route_path (fib_node_index_t path_index,
 				   &rpath->frp_addr);
 	    if (0 == res)
 	    {
-		res = vnet_sw_interface_compare(
-			  vnet_get_main(),
-			  path->attached_next_hop.fp_interface,
-			  rpath->frp_sw_if_index);
+		res = (path->attached_next_hop.fp_interface -
+                       rpath->frp_sw_if_index);
 	    }
 	    break;
 	case FIB_PATH_TYPE_ATTACHED:
-	    res = vnet_sw_interface_compare(
-		      vnet_get_main(),
-		      path->attached.fp_interface,
-		      rpath->frp_sw_if_index);
+	    res = (path->attached.fp_interface - rpath->frp_sw_if_index);
 	    break;
 	case FIB_PATH_TYPE_RECURSIVE:
             if (FIB_PROTOCOL_MPLS == path->fp_nh_proto)
             {
                 res = path->recursive.fp_nh.fp_local_label - rpath->frp_local_label;
+
+                if (res == 0)
+                {
+                    res = path->recursive.fp_nh.fp_eos - rpath->frp_eos;
+                }
             }
             else
             {
@@ -1341,9 +1402,16 @@ fib_path_cmp_w_route_path (fib_node_index_t path_index,
                 res = (path->recursive.fp_tbl_id - rpath->frp_fib_index);
             }
 	    break;
+	case FIB_PATH_TYPE_INTF_RX:
+	    res = (path->intf_rx.fp_interface - rpath->frp_sw_if_index);
+            break;
 	case FIB_PATH_TYPE_DEAG:
 	    res = (path->deag.fp_tbl_id - rpath->frp_fib_index);
-	    break;
+	    if (0 == res)
+            {
+                res = (path->deag.fp_rpf_id - rpath->frp_rpf_id);
+            }
+            break;
 	case FIB_PATH_TYPE_SPECIAL:
 	case FIB_PATH_TYPE_RECEIVE:
 	case FIB_PATH_TYPE_EXCLUSIVE:
@@ -1442,6 +1510,7 @@ fib_path_recursive_loop_detect (fib_node_index_t path_index,
     case FIB_PATH_TYPE_SPECIAL:
     case FIB_PATH_TYPE_DEAG:
     case FIB_PATH_TYPE_RECEIVE:
+    case FIB_PATH_TYPE_INTF_RX:
     case FIB_PATH_TYPE_EXCLUSIVE:
 	/*
 	 * these path types cannot be part of a loop, since they are the leaves
@@ -1540,7 +1609,9 @@ fib_path_resolve (fib_node_index_t path_index)
 
 	if (FIB_PROTOCOL_MPLS == path->fp_nh_proto)
 	{
-	    fib_prefix_from_mpls_label(path->recursive.fp_nh.fp_local_label, &pfx);
+	    fib_prefix_from_mpls_label(path->recursive.fp_nh.fp_local_label,
+                                       path->recursive.fp_nh.fp_eos,
+                                       &pfx);
 	}
 	else
 	{
@@ -1550,8 +1621,7 @@ fib_path_resolve (fib_node_index_t path_index)
 	fei = fib_table_entry_special_add(path->recursive.fp_tbl_id,
 					  &pfx,
 					  FIB_SOURCE_RR,
-					  FIB_ENTRY_FLAG_NONE,
-					  ADJ_INDEX_INVALID);
+					  FIB_ENTRY_FLAG_NONE);
 
 	path = fib_path_get(path_index);
 	path->fp_via_fib = fei;
@@ -1569,7 +1639,7 @@ fib_path_resolve (fib_node_index_t path_index)
 	 */
 	fib_path_recursive_adj_update(
 	    path,
-	    fib_path_proto_to_chain_type(path->fp_nh_proto),
+	    fib_path_to_chain_type(path),
 	    &path->fp_dpo);
 
 	break;
@@ -1582,16 +1652,25 @@ fib_path_resolve (fib_node_index_t path_index)
                  drop_dpo_get(fib_proto_to_dpo(path->fp_nh_proto)));
 	break;
     case FIB_PATH_TYPE_DEAG:
+    {
 	/*
 	 * Resolve via a lookup DPO.
          * FIXME. control plane should add routes with a table ID
 	 */
-	lookup_dpo_add_or_lock_w_fib_index(path->deag.fp_tbl_id,
-                                          fib_proto_to_dpo(path->fp_nh_proto),
-                                          LOOKUP_INPUT_DST_ADDR,
-                                          LOOKUP_TABLE_FROM_CONFIG,
-                                          &path->fp_dpo);
+        lookup_cast_t cast;
+        
+        cast = (path->fp_cfg_flags & FIB_PATH_CFG_FLAG_RPF_ID ?
+                LOOKUP_MULTICAST :
+                LOOKUP_UNICAST);
+
+        lookup_dpo_add_or_lock_w_fib_index(path->deag.fp_tbl_id,
+                                           fib_proto_to_dpo(path->fp_nh_proto),
+                                           cast,
+                                           LOOKUP_INPUT_DST_ADDR,
+                                           LOOKUP_TABLE_FROM_CONFIG,
+                                           &path->fp_dpo);
 	break;
+    }
     case FIB_PATH_TYPE_RECEIVE:
 	/*
 	 * Resolve via a receive DPO.
@@ -1601,6 +1680,15 @@ fib_path_resolve (fib_node_index_t path_index)
                                 &path->receive.fp_addr,
                                 &path->fp_dpo);
 	break;
+    case FIB_PATH_TYPE_INTF_RX: {
+	/*
+	 * Resolve via a receive DPO.
+	 */
+	interface_dpo_add_or_lock(fib_proto_to_dpo(path->fp_nh_proto),
+                                  path->intf_rx.fp_interface,
+                                  &path->fp_dpo);
+	break;
+    }
     case FIB_PATH_TYPE_EXCLUSIVE:
 	/*
 	 * Resolve via the user provided DPO
@@ -1629,6 +1717,7 @@ fib_path_get_resolving_interface (fib_node_index_t path_index)
 	return (path->receive.fp_interface);
     case FIB_PATH_TYPE_RECURSIVE:
 	return (fib_entry_get_resolving_interface(path->fp_via_fib));    
+    case FIB_PATH_TYPE_INTF_RX:
     case FIB_PATH_TYPE_SPECIAL:
     case FIB_PATH_TYPE_DEAG:
     case FIB_PATH_TYPE_EXCLUSIVE:
@@ -1676,11 +1765,11 @@ fib_path_contribute_urpf (fib_node_index_t path_index,
 {
     fib_path_t *path;
 
-    if (!fib_path_is_resolved(path_index))
-	return;
-
     path = fib_path_get(path_index);
 
+    /*
+     * resolved and unresolved paths contribute to the RPF list.
+     */
     switch (path->fp_type)
     {
     case FIB_PATH_TYPE_ATTACHED_NEXT_HOP:
@@ -1692,7 +1781,14 @@ fib_path_contribute_urpf (fib_node_index_t path_index,
 	break;
 
     case FIB_PATH_TYPE_RECURSIVE:
-	fib_entry_contribute_urpf(path->fp_via_fib, urpf);
+        if (FIB_NODE_INDEX_INVALID != path->fp_via_fib)
+        {
+            /*
+             * there's unresolved due to constraints, and there's unresolved
+             * due to ain't go no via. can't do nowt w'out via.
+             */
+            fib_entry_contribute_urpf(path->fp_via_fib, urpf);
+        }
 	break;
 
     case FIB_PATH_TYPE_EXCLUSIVE:
@@ -1713,10 +1809,49 @@ fib_path_contribute_urpf (fib_node_index_t path_index,
 
     case FIB_PATH_TYPE_DEAG:
     case FIB_PATH_TYPE_RECEIVE:
+    case FIB_PATH_TYPE_INTF_RX:
 	/*
 	 * these path types don't link to an adj
 	 */
 	break;
+    }
+}
+
+void
+fib_path_stack_mpls_disp (fib_node_index_t path_index,
+                          dpo_proto_t payload_proto,
+                          dpo_id_t *dpo)
+{
+    fib_path_t *path;
+
+    path = fib_path_get(path_index);
+
+    ASSERT(path);
+
+    switch (path->fp_type)
+    {
+    case FIB_PATH_TYPE_DEAG:
+    {
+        dpo_id_t tmp = DPO_INVALID;
+
+        dpo_copy(&tmp, dpo);
+        dpo_set(dpo,
+                DPO_MPLS_DISPOSITION,
+                payload_proto,
+                mpls_disp_dpo_create(payload_proto,
+                                     path->deag.fp_rpf_id,
+                                     &tmp));
+        dpo_reset(&tmp);
+        break;
+    }                
+    case FIB_PATH_TYPE_RECEIVE:
+    case FIB_PATH_TYPE_ATTACHED:
+    case FIB_PATH_TYPE_ATTACHED_NEXT_HOP:
+    case FIB_PATH_TYPE_RECURSIVE:
+    case FIB_PATH_TYPE_INTF_RX:
+    case FIB_PATH_TYPE_EXCLUSIVE:
+    case FIB_PATH_TYPE_SPECIAL:
+        break;
     }
 }
 
@@ -1739,7 +1874,7 @@ fib_path_contribute_forwarding (fib_node_index_t path_index,
      * This then represents the path's 'native' protocol; IP.
      * For all others will need to go find something else.
      */
-    if (fib_path_proto_to_chain_type(path->fp_nh_proto) == fct)
+    if (fib_path_to_chain_type(path) == fct)
     {
 	dpo_copy(dpo, &path->fp_dpo);
     }
@@ -1755,6 +1890,7 @@ fib_path_contribute_forwarding (fib_node_index_t path_index,
 	    case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
 	    case FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS:
 	    case FIB_FORW_CHAIN_TYPE_ETHERNET:
+	    case FIB_FORW_CHAIN_TYPE_NSH:
 	    {
 		adj_index_t ai;
 
@@ -1770,8 +1906,11 @@ fib_path_contribute_forwarding (fib_node_index_t path_index,
 
 		break;
 	    }
-	    }
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
 	    break;
+            }
+            break;
 	case FIB_PATH_TYPE_RECURSIVE:
 	    switch (fct)
 	    {
@@ -1779,29 +1918,36 @@ fib_path_contribute_forwarding (fib_node_index_t path_index,
 	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP4:
 	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP6:
 	    case FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS:
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
 		fib_path_recursive_adj_update(path, fct, dpo);
 		break;
 	    case FIB_FORW_CHAIN_TYPE_ETHERNET:
+	    case FIB_FORW_CHAIN_TYPE_NSH:
 		ASSERT(0);
 		break;
 	    }
 	    break;
 	case FIB_PATH_TYPE_DEAG:
-	    switch (fct)
+            switch (fct)
 	    {
 	    case FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS:
                 lookup_dpo_add_or_lock_w_table_id(MPLS_FIB_DEFAULT_TABLE_ID,
                                                   DPO_PROTO_MPLS,
+                                                  LOOKUP_UNICAST,
                                                   LOOKUP_INPUT_DST_ADDR,
                                                   LOOKUP_TABLE_FROM_CONFIG,
                                                   dpo);
                 break;
+	    case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
 	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP4:
 	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP6:
-	    case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
 		dpo_copy(dpo, &path->fp_dpo);
-		break;		
+		break;
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
 	    case FIB_FORW_CHAIN_TYPE_ETHERNET:
+	    case FIB_FORW_CHAIN_TYPE_NSH:
 		ASSERT(0);
 		break;
             }
@@ -1810,12 +1956,47 @@ fib_path_contribute_forwarding (fib_node_index_t path_index,
 	    dpo_copy(dpo, &path->exclusive.fp_ex_dpo);
 	    break;
         case FIB_PATH_TYPE_ATTACHED:
-	case FIB_PATH_TYPE_RECEIVE:
-	case FIB_PATH_TYPE_SPECIAL:
-	    ASSERT(0);
+	    switch (fct)
+	    {
+	    case FIB_FORW_CHAIN_TYPE_MPLS_NON_EOS:
+	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP4:
+	    case FIB_FORW_CHAIN_TYPE_UNICAST_IP6:
+	    case FIB_FORW_CHAIN_TYPE_MPLS_EOS:
+	    case FIB_FORW_CHAIN_TYPE_ETHERNET:
+	    case FIB_FORW_CHAIN_TYPE_NSH:
+                break;
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP4:
+	    case FIB_FORW_CHAIN_TYPE_MCAST_IP6:
+                {
+                    adj_index_t ai;
+
+                    /*
+                     * Create the adj needed for sending IP multicast traffic
+                     */
+                    ai = adj_mcast_add_or_lock(path->fp_nh_proto,
+                                               fib_forw_chain_type_to_link_type(fct),
+                                               path->attached.fp_interface);
+                    dpo_set(dpo, DPO_ADJACENCY,
+                            fib_forw_chain_type_to_dpo_proto(fct),
+                            ai);
+                    adj_unlock(ai);
+                }
+                break;
+            }
+            break;
+        case FIB_PATH_TYPE_INTF_RX:
+            /*
+             * Create the adj needed for sending IP multicast traffic
+             */
+            interface_dpo_add_or_lock(fib_forw_chain_type_to_dpo_proto(fct),
+                                      path->attached.fp_interface,
+                                      dpo);
+            break;
+        case FIB_PATH_TYPE_RECEIVE:
+        case FIB_PATH_TYPE_SPECIAL:
+            dpo_copy(dpo, &path->fp_dpo);
             break;
 	}
-
     }
 }
 

@@ -24,6 +24,9 @@
 #include <vlibsocket/api.h>
 #include <vppinfra/error.h>
 
+#define __plugin_msg_base vxlan_gpe_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 /* Declare message IDs */
 #include <ioam/lib-vxlan-gpe/vxlan_gpe_msg_enum.h>
 
@@ -96,56 +99,16 @@ _(VXLAN_GPE_IOAM_VNI_DISABLE_REPLY, vxlan_gpe_ioam_vni_disable_reply)          \
 _(VXLAN_GPE_IOAM_TRANSIT_ENABLE_REPLY, vxlan_gpe_ioam_transit_enable_reply)    \
 _(VXLAN_GPE_IOAM_TRANSIT_DISABLE_REPLY, vxlan_gpe_ioam_transit_disable_reply)  \
 
-
-/* M: construct, but don't yet send a message */
-
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-#define M2(T,t,n)                                               \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
-
 static int
 api_vxlan_gpe_ioam_enable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
-
   unformat_input_t *input = vam->input;
   vl_api_vxlan_gpe_ioam_enable_t *mp;
-  f64 timeout;
   u32 id = 0;
   int has_trace_option = 0;
   int has_pow_option = 0;
   int has_ppc_option = 0;
+  int ret;
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
@@ -162,38 +125,34 @@ api_vxlan_gpe_ioam_enable (vat_main_t * vam)
       else
 	break;
     }
-  M (VXLAN_GPE_IOAM_ENABLE, vxlan_gpe_ioam_enable);
+  M (VXLAN_GPE_IOAM_ENABLE, mp);
   mp->id = htons (id);
   mp->trace_ppc = has_ppc_option;
   mp->pow_enable = has_pow_option;
   mp->trace_enable = has_trace_option;
 
 
-  S;
-  W;
-
-  return (0);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 
 static int
 api_vxlan_gpe_ioam_disable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
   vl_api_vxlan_gpe_ioam_disable_t *mp;
-  f64 timeout;
+  int ret;
 
-  M (VXLAN_GPE_IOAM_DISABLE, vxlan_gpe_ioam_disable);
-  S;
-  W;
-  return 0;
+  M (VXLAN_GPE_IOAM_DISABLE, mp);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 static int
 api_vxlan_gpe_ioam_vni_enable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
-
   unformat_input_t *line_input = vam->input;
   vl_api_vxlan_gpe_ioam_vni_enable_t *mp;
   ip4_address_t local4, remote4;
@@ -203,7 +162,7 @@ api_vxlan_gpe_ioam_vni_enable (vat_main_t * vam)
   u8 remote_set = 0;
   u32 vni;
   u8 vni_set = 0;
-  f64 timeout;
+  int ret;
 
 
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
@@ -263,7 +222,7 @@ api_vxlan_gpe_ioam_vni_enable (vat_main_t * vam)
       return -99;
     }
 
-  M (VXLAN_GPE_IOAM_VNI_ENABLE, vxlan_gpe_ioam_vni_enable);
+  M (VXLAN_GPE_IOAM_VNI_ENABLE, mp);
 
 
   if (ipv6_set)
@@ -280,17 +239,14 @@ api_vxlan_gpe_ioam_vni_enable (vat_main_t * vam)
   mp->vni = ntohl (vni);
   mp->is_ipv6 = ipv6_set;
 
-  S;
-  W;
-
-  return (0);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 static int
 api_vxlan_gpe_ioam_vni_disable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
-
   unformat_input_t *line_input = vam->input;
   vl_api_vxlan_gpe_ioam_vni_disable_t *mp;
   ip4_address_t local4, remote4;
@@ -300,7 +256,7 @@ api_vxlan_gpe_ioam_vni_disable (vat_main_t * vam)
   u8 remote_set = 0;
   u32 vni;
   u8 vni_set = 0;
-  f64 timeout;
+  int ret;
 
 
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
@@ -360,7 +316,7 @@ api_vxlan_gpe_ioam_vni_disable (vat_main_t * vam)
       return -99;
     }
 
-  M (VXLAN_GPE_IOAM_VNI_DISABLE, vxlan_gpe_ioam_vni_disable);
+  M (VXLAN_GPE_IOAM_VNI_DISABLE, mp);
 
 
   if (ipv6_set)
@@ -377,17 +333,14 @@ api_vxlan_gpe_ioam_vni_disable (vat_main_t * vam)
   mp->vni = ntohl (vni);
   mp->is_ipv6 = ipv6_set;
 
-  S;
-  W;
-
-  return 0;
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 static int
 api_vxlan_gpe_ioam_transit_enable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
-
   unformat_input_t *line_input = vam->input;
   vl_api_vxlan_gpe_ioam_transit_enable_t *mp;
   ip4_address_t local4;
@@ -395,7 +348,7 @@ api_vxlan_gpe_ioam_transit_enable (vat_main_t * vam)
   u8 ipv4_set = 0, ipv6_set = 0;
   u8 local_set = 0;
   u32 outer_fib_index = 0;
-  f64 timeout;
+  int ret;
 
 
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
@@ -433,7 +386,7 @@ api_vxlan_gpe_ioam_transit_enable (vat_main_t * vam)
     }
 
 
-  M (VXLAN_GPE_IOAM_TRANSIT_ENABLE, vxlan_gpe_ioam_transit_enable);
+  M (VXLAN_GPE_IOAM_TRANSIT_ENABLE, mp);
 
 
   if (ipv6_set)
@@ -449,17 +402,14 @@ api_vxlan_gpe_ioam_transit_enable (vat_main_t * vam)
   mp->outer_fib_index = htonl (outer_fib_index);
   mp->is_ipv6 = ipv6_set;
 
-  S;
-  W;
-
-  return (0);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 static int
 api_vxlan_gpe_ioam_transit_disable (vat_main_t * vam)
 {
-  vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
-
   unformat_input_t *line_input = vam->input;
   vl_api_vxlan_gpe_ioam_transit_disable_t *mp;
   ip4_address_t local4;
@@ -467,7 +417,7 @@ api_vxlan_gpe_ioam_transit_disable (vat_main_t * vam)
   u8 ipv4_set = 0, ipv6_set = 0;
   u8 local_set = 0;
   u32 outer_fib_index = 0;
-  f64 timeout;
+  int ret;
 
 
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
@@ -505,7 +455,7 @@ api_vxlan_gpe_ioam_transit_disable (vat_main_t * vam)
     }
 
 
-  M (VXLAN_GPE_IOAM_TRANSIT_DISABLE, vxlan_gpe_ioam_transit_disable);
+  M (VXLAN_GPE_IOAM_TRANSIT_DISABLE, mp);
 
 
   if (ipv6_set)
@@ -520,11 +470,9 @@ api_vxlan_gpe_ioam_transit_disable (vat_main_t * vam)
   mp->outer_fib_index = htonl (outer_fib_index);
   mp->is_ipv6 = ipv6_set;
 
-  S;
-  W;
-
-
-  return (0);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 /*
@@ -545,8 +493,8 @@ _(vxlan_gpe_ioam_transit_disable, ""\
   "dst-ip <dst_ip> [outer-fib-index <outer_fib_index>]") \
 
 
-void
-vat_api_hookup (vat_main_t * vam)
+static void
+vxlan_gpe_vat_api_hookup (vat_main_t * vam)
 {
   vxlan_gpe_test_main_t *sm = &vxlan_gpe_test_main;
   /* Hook up handlers for replies from the data plane plug-in */
@@ -584,7 +532,7 @@ vat_plugin_register (vat_main_t * vam)
   sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (sm->msg_id_base != (u16) ~ 0)
-    vat_api_hookup (vam);
+    vxlan_gpe_vat_api_hookup (vam);
 
   vec_free (name);
 

@@ -18,6 +18,7 @@
 #include <vnet/ip/lookup.h>
 #include <vnet/dpo/dpo.h>
 #include <vnet/fib/fib_table.h>
+#include <vpp/app/version.h>
 
 static ila_main_t ila_main;
 
@@ -735,8 +736,7 @@ ila_add_del_entry (ila_add_del_entry_args_t * args)
 	      fib_table_entry_special_add(0,
 					  &next_hop,
 					  FIB_SOURCE_RR,
-					  FIB_ENTRY_FLAG_NONE,
-					  ADJ_INDEX_INVALID);
+					  FIB_ENTRY_FLAG_NONE);
 	  e->next_hop_child_index =
 	      fib_entry_child_add(e->next_hop_fib_entry_index,
 				  ila_fib_node_type,
@@ -821,14 +821,12 @@ ila_interface (u32 sw_if_index, u8 disable)
   return 0;
 }
 
-clib_error_t *
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-		      int from_early_init)
-{
-  clib_error_t *error = 0;
-
-  return error;
-}
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = VPP_BUILD_VER,
+    .description = "Identifier-locator addressing for IPv6",
+};
+/* *INDENT-ON* */
 
 u8 *format_ila_dpo (u8 * s, va_list * va)
 {
@@ -951,6 +949,7 @@ ila_entry_command_fn (vlib_main_t * vm,
   ila_add_del_entry_args_t args = { 0 };
   u8 next_hop_set = 0;
   int ret;
+  clib_error_t *error = 0;
 
   args.type = ILA_TYPE_IID;
   args.csum_mode = ILA_CSUM_MODE_NO_ACTION;
@@ -988,19 +987,29 @@ ila_entry_command_fn (vlib_main_t * vm,
       else if (unformat (line_input, "del"))
 	args.is_del = 1;
       else
-	return clib_error_return (0, "parse error: '%U'",
-				  format_unformat_error, line_input);
+	{
+	  error = clib_error_return (0, "parse error: '%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
 
-  unformat_free (line_input);
-
   if (!next_hop_set)
-      return clib_error_return (0, "Specified a next hop");
+    {
+      error = clib_error_return (0, "Specified a next hop");
+      goto done;
+    }
 
   if ((ret = ila_add_del_entry (&args)))
-    return clib_error_return (0, "ila_add_del_entry returned error %d", ret);
+    {
+      error = clib_error_return (0, "ila_add_del_entry returned error %d", ret);
+      goto done;
+    }
 
-  return NULL;
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
 VLIB_CLI_COMMAND (ila_entry_command, static) =

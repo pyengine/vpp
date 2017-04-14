@@ -43,11 +43,13 @@
 #include <vnet/fib/ip4_fib.h>
 #include <vnet/fib/ip6_fib.h>
 #include <vnet/mpls/mpls.h>
+#include <vnet/mfib/mfib_table.h>
 #include <vnet/dpo/drop_dpo.h>
 #include <vnet/dpo/classify_dpo.h>
 #include <vnet/dpo/punt_dpo.h>
 #include <vnet/dpo/receive_dpo.h>
 #include <vnet/dpo/ip_null_dpo.h>
+#include <vnet/ip/ip6_neighbor.h>
 
 /**
  * @file
@@ -71,7 +73,10 @@ ip_interface_address_add_del (ip_lookup_main_t * lm,
   a = p ? pool_elt_at_index (lm->if_address_pool, p[0]) : 0;
 
   /* Verify given length. */
-  if ((a && (address_length != a->address_length)) || (address_length == 0))
+  if ((a && (address_length != a->address_length)) ||
+      (address_length == 0) ||
+      (lm->is_ip6 && address_length > 128) ||
+      (!lm->is_ip6 && address_length > 32))
     {
       vnm->api_errno = VNET_API_ERROR_ADDRESS_LENGTH_MISMATCH;
       return clib_error_create
@@ -168,19 +173,24 @@ ip_interface_address_add_del (ip_lookup_main_t * lm,
   return /* no error */ 0;
 }
 
+static clib_error_t *
+ip_sw_interface_add_del (vnet_main_t * vnm, u32 sw_if_index, u32 is_add)
+{
+  vec_validate_init_empty (ip4_main.
+			   lookup_main.if_address_pool_index_by_sw_if_index,
+			   sw_if_index, ~0);
+  vec_validate_init_empty (ip6_main.
+			   lookup_main.if_address_pool_index_by_sw_if_index,
+			   sw_if_index, ~0);
+
+  return (NULL);
+}
+
+VNET_SW_INTERFACE_ADD_DEL_FUNCTION (ip_sw_interface_add_del);
+
 void
 ip_lookup_init (ip_lookup_main_t * lm, u32 is_ip6)
 {
-  /* ensure that adjacency is cacheline aligned and sized */
-  STATIC_ASSERT (STRUCT_OFFSET_OF (ip_adjacency_t, cacheline0) == 0,
-		 "Cache line marker must be 1st element in struct");
-  STATIC_ASSERT (STRUCT_OFFSET_OF (ip_adjacency_t, cacheline1) ==
-		 CLIB_CACHE_LINE_BYTES,
-		 "Data in cache line 0 is bigger than cache line size");
-
-  /* Preallocate three "special" adjacencies */
-  lm->adjacency_heap = adj_pool;
-
   if (!lm->fib_result_n_bytes)
     lm->fib_result_n_bytes = sizeof (uword);
 
@@ -234,7 +244,8 @@ format_ip_flow_hash_config (u8 * s, va_list * args)
 u8 *
 format_ip_lookup_next (u8 * s, va_list * args)
 {
-  ip_lookup_next_t n = va_arg (*args, ip_lookup_next_t);
+  /* int promotion of ip_lookup_next_t */
+  ip_lookup_next_t n = va_arg (*args, int);
   char *t = 0;
 
   switch (n)
@@ -258,6 +269,9 @@ format_ip_lookup_next (u8 * s, va_list * args)
     case IP_LOOKUP_NEXT_GLEAN:
       t = "glean";
       break;
+    case IP_LOOKUP_NEXT_MCAST:
+      t = "mcast";
+      break;
     case IP_LOOKUP_NEXT_REWRITE:
       break;
     }
@@ -271,7 +285,6 @@ format_ip_lookup_next (u8 * s, va_list * args)
 u8 *
 format_ip_adjacency_packet_data (u8 * s, va_list * args)
 {
-  vnet_main_t *vnm = va_arg (*args, vnet_main_t *);
   u32 adj_index = va_arg (*args, u32);
   u8 *packet_data = va_arg (*args, u8 *);
   u32 n_packet_data_bytes = va_arg (*args, u32);
@@ -280,10 +293,9 @@ format_ip_adjacency_packet_data (u8 * s, va_list * args)
   switch (adj->lookup_next_index)
     {
     case IP_LOOKUP_NEXT_REWRITE:
-      s = format (s, "%U",
-		  format_vnet_rewrite_header,
-		  vnm->vlib_main, &adj->rewrite_header, packet_data,
-		  n_packet_data_bytes);
+    case IP_LOOKUP_NEXT_MCAST:
+      s =
+	format (s, "%U", format_hex_bytes, packet_data, n_packet_data_bytes);
       break;
 
     default:
@@ -337,32 +349,6 @@ const ip46_address_t zero_addr = {
   .as_u64 = {
 	     0, 0},
 };
-
-u32
-fib_table_id_find_fib_index (fib_protocol_t proto, u32 table_id)
-{
-  ip4_main_t *im4 = &ip4_main;
-  ip6_main_t *im6 = &ip6_main;
-  uword *p;
-
-  switch (proto)
-    {
-    case FIB_PROTOCOL_IP4:
-      p = hash_get (im4->fib_index_by_table_id, table_id);
-      break;
-    case FIB_PROTOCOL_IP6:
-      p = hash_get (im6->fib_index_by_table_id, table_id);
-      break;
-    default:
-      p = NULL;
-      break;
-    }
-  if (NULL != p)
-    {
-      return (p[0]);
-    }
-  return (~0);
-}
 
 clib_error_t *
 vnet_ip_route_cmd (vlib_main_t * vm,
@@ -435,6 +421,7 @@ vnet_ip_route_cmd (vlib_main_t * vm,
 			 unformat_mpls_unicast_label, &rpath.frp_local_label))
 	{
 	  rpath.frp_weight = 1;
+	  rpath.frp_eos = MPLS_NON_EOS;
 	  rpath.frp_proto = FIB_PROTOCOL_MPLS;
 	  rpath.frp_sw_if_index = ~0;
 	  vec_add1 (rpaths, rpath);
@@ -564,8 +551,6 @@ vnet_ip_route_cmd (vlib_main_t * vm,
 	}
     }
 
-  unformat_free (line_input);
-
   if (vec_len (prefixs) == 0)
     {
       error =
@@ -588,7 +573,7 @@ vnet_ip_route_cmd (vlib_main_t * vm,
     }
   else
     {
-      fib_index = fib_table_id_find_fib_index (prefixs[0].fp_proto, table_id);
+      fib_index = fib_table_find (prefixs[0].fp_proto, table_id);
 
       if (~0 == fib_index)
 	{
@@ -637,8 +622,8 @@ vnet_ip_route_cmd (vlib_main_t * vm,
 		  /*
 		   * the CLI parsing stored table Ids, swap to FIB indicies
 		   */
-		  fi = fib_table_id_find_fib_index (prefixs[i].fp_proto,
-						    rpaths[i].frp_fib_index);
+		  fi = fib_table_find (prefixs[i].fp_proto,
+				       rpaths[i].frp_fib_index);
 
 		  if (~0 == fi)
 		    {
@@ -700,6 +685,7 @@ done:
   vec_free (dpos);
   vec_free (prefixs);
   vec_free (rpaths);
+  unformat_free (line_input);
   return error;
 }
 
@@ -763,6 +749,239 @@ VLIB_CLI_COMMAND (ip_route_command, static) = {
   .path = "ip route",
   .short_help = "ip route [add|del] [count <n>] <dst-ip-addr>/<width> [table <table-id>] [via <next-hop-ip-addr> [<interface>] [weight <weight>]] | [via arp <interface> <adj-hop-ip-addr>] | [via drop|punt|local<id>|arp|classify <classify-idx>] [lookup in table <out-table-id>]",
   .function = vnet_ip_route_cmd,
+  .is_mp_safe = 1,
+};
+/* *INDENT-ON* */
+
+clib_error_t *
+vnet_ip_mroute_cmd (vlib_main_t * vm,
+		    unformat_input_t * main_input, vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  clib_error_t *error = NULL;
+  fib_route_path_t rpath;
+  u32 table_id, is_del;
+  vnet_main_t *vnm;
+  mfib_prefix_t pfx;
+  u32 fib_index;
+  mfib_itf_flags_t iflags = 0;
+  mfib_entry_flags_t eflags = 0;
+  u32 gcount, scount, ss, gg, incr;
+  f64 timet[2];
+
+  gcount = scount = 1;
+  vnm = vnet_get_main ();
+  is_del = 0;
+  table_id = 0;
+  memset (&pfx, 0, sizeof (pfx));
+  memset (&rpath, 0, sizeof (rpath));
+  rpath.frp_sw_if_index = ~0;
+
+  /* Get a line of input. */
+  if (!unformat_user (main_input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "table %d", &table_id))
+	;
+      else if (unformat (line_input, "del"))
+	is_del = 1;
+      else if (unformat (line_input, "add"))
+	is_del = 0;
+      else if (unformat (line_input, "scount %d", &scount))
+	;
+      else if (unformat (line_input, "gcount %d", &gcount))
+	;
+      else if (unformat (line_input, "%U %U",
+			 unformat_ip4_address,
+			 &pfx.fp_src_addr.ip4,
+			 unformat_ip4_address, &pfx.fp_grp_addr.ip4))
+	{
+	  pfx.fp_proto = FIB_PROTOCOL_IP4;
+	  pfx.fp_len = 64;
+	}
+      else if (unformat (line_input, "%U %U",
+			 unformat_ip6_address,
+			 &pfx.fp_src_addr.ip6,
+			 unformat_ip6_address, &pfx.fp_grp_addr.ip6))
+	{
+	  pfx.fp_proto = FIB_PROTOCOL_IP6;
+	  pfx.fp_len = 256;
+	}
+      else if (unformat (line_input, "%U/%d",
+			 unformat_ip4_address,
+			 &pfx.fp_grp_addr.ip4, &pfx.fp_len))
+	{
+	  pfx.fp_proto = FIB_PROTOCOL_IP4;
+	}
+      else if (unformat (line_input, "%U/%d",
+			 unformat_ip6_address,
+			 &pfx.fp_grp_addr.ip6, &pfx.fp_len))
+	{
+	  pfx.fp_proto = FIB_PROTOCOL_IP6;
+	}
+      else if (unformat (line_input, "%U",
+			 unformat_ip4_address, &pfx.fp_grp_addr.ip4))
+	{
+	  memset (&pfx.fp_src_addr.ip4, 0, sizeof (pfx.fp_src_addr.ip4));
+	  pfx.fp_proto = FIB_PROTOCOL_IP4;
+	  pfx.fp_len = 32;
+	}
+      else if (unformat (line_input, "%U",
+			 unformat_ip6_address, &pfx.fp_grp_addr.ip6))
+	{
+	  memset (&pfx.fp_src_addr.ip6, 0, sizeof (pfx.fp_src_addr.ip6));
+	  pfx.fp_proto = FIB_PROTOCOL_IP6;
+	  pfx.fp_len = 128;
+	}
+      else if (unformat (line_input, "via %U",
+			 unformat_vnet_sw_interface, vnm,
+			 &rpath.frp_sw_if_index))
+	{
+	  rpath.frp_weight = 1;
+	  rpath.frp_proto = FIB_PROTOCOL_IP4;
+	}
+      else if (unformat (line_input, "%U", unformat_mfib_itf_flags, &iflags))
+	;
+      else if (unformat (line_input, "%U",
+			 unformat_mfib_entry_flags, &eflags))
+	;
+      else
+	{
+	  error = unformat_parse_error (line_input);
+	  goto done;
+	}
+    }
+
+  if (~0 == table_id)
+    {
+      /*
+       * if no table_id is passed we will manipulate the default
+       */
+      fib_index = 0;
+    }
+  else
+    {
+      fib_index = mfib_table_find (pfx.fp_proto, table_id);
+
+      if (~0 == fib_index)
+	{
+	  error = clib_error_return (0, "Nonexistent table id %d", table_id);
+	  goto done;
+	}
+    }
+
+  timet[0] = vlib_time_now (vm);
+
+  if (FIB_PROTOCOL_IP4 == pfx.fp_proto)
+    {
+      incr = 1 << (32 - (pfx.fp_len % 32));
+    }
+  else
+    {
+      incr = 1 << (128 - (pfx.fp_len % 128));
+    }
+
+  for (ss = 0; ss < scount; ss++)
+    {
+      for (gg = 0; gg < gcount; gg++)
+	{
+	  if (is_del && 0 == rpath.frp_weight)
+	    {
+	      /* no path provided => route delete */
+	      mfib_table_entry_delete (fib_index, &pfx, MFIB_SOURCE_CLI);
+	    }
+	  else if (eflags)
+	    {
+	      mfib_table_entry_update (fib_index, &pfx, MFIB_SOURCE_CLI,
+				       MFIB_RPF_ID_NONE, eflags);
+	    }
+	  else
+	    {
+	      if (is_del)
+		mfib_table_entry_path_remove (fib_index,
+					      &pfx, MFIB_SOURCE_CLI, &rpath);
+	      else
+		mfib_table_entry_path_update (fib_index,
+					      &pfx, MFIB_SOURCE_CLI, &rpath,
+					      iflags);
+	    }
+
+	  if (FIB_PROTOCOL_IP4 == pfx.fp_proto)
+	    {
+	      pfx.fp_grp_addr.ip4.as_u32 =
+		clib_host_to_net_u32 (incr +
+				      clib_net_to_host_u32 (pfx.
+							    fp_grp_addr.ip4.
+							    as_u32));
+	    }
+	  else
+	    {
+	      int bucket = (incr < 64 ? 0 : 1);
+	      pfx.fp_grp_addr.ip6.as_u64[bucket] =
+		clib_host_to_net_u64 (incr +
+				      clib_net_to_host_u64 (pfx.
+							    fp_grp_addr.ip6.as_u64
+							    [bucket]));
+
+	    }
+	}
+      if (FIB_PROTOCOL_IP4 == pfx.fp_proto)
+	{
+	  pfx.fp_src_addr.ip4.as_u32 =
+	    clib_host_to_net_u32 (1 +
+				  clib_net_to_host_u32 (pfx.fp_src_addr.
+							ip4.as_u32));
+	}
+      else
+	{
+	  pfx.fp_src_addr.ip6.as_u64[1] =
+	    clib_host_to_net_u64 (1 +
+				  clib_net_to_host_u64 (pfx.fp_src_addr.
+							ip6.as_u64[1]));
+	}
+    }
+
+  timet[1] = vlib_time_now (vm);
+
+  if (scount > 1 || gcount > 1)
+    vlib_cli_output (vm, "%.6e routes/sec",
+		     (scount * gcount) / (timet[1] - timet[0]));
+
+done:
+  unformat_free (line_input);
+
+  return error;
+}
+
+/*?
+ * This command is used to add or delete IPv4 or IPv6  multicastroutes. All
+ * IP Addresses ('<em><dst-ip-addr>/<width></em>',
+ * '<em><next-hop-ip-addr></em>' and '<em><adj-hop-ip-addr></em>')
+ * can be IPv4 or IPv6, but all must be of the same form in a single
+ * command. To display the current set of routes, use the commands
+ * '<em>show ip mfib</em>' and '<em>show ip6 mfib</em>'.
+ * The full set of support flags for interfaces and route is shown via;
+ * '<em>show mfib route flags</em>' and '<em>show mfib itf flags</em>'
+ * respectively.
+ * @cliexpar
+ * Example of how to add a forwarding interface to a route (and create the
+ * route if it does not exist)
+ * @cliexcmd{ip mroute add 232.1.1.1 via GigabitEthernet2/0/0 Forward}
+ * Example of how to add an accepting interface to a route (and create the
+ * route if it does not exist)
+ * @cliexcmd{ip mroute add 232.1.1.1 via GigabitEthernet2/0/1 Accept}
+ * Example of changing the route's flags to send signals via the API
+ * @cliexcmd{ip mroute add 232.1.1.1 Signal}
+
+ ?*/
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (ip_mroute_command, static) =
+{
+  .path = "ip mroute",
+  .short_help = "ip mroute [add|del] <dst-ip-addr>/<width> [table <table-id>] [via <next-hop-ip-addr> [<interface>],",
+  .function = vnet_ip_mroute_cmd,
   .is_mp_safe = 1,
 };
 /* *INDENT-ON* */
@@ -912,23 +1131,36 @@ probe_neighbor_address (vlib_main_t * vm,
 	  is_ip4 = 0;
 	}
       else
-	return clib_error_return (0, "unknown input '%U'",
-				  format_unformat_error, line_input);
+	{
+	  error = clib_error_return (0, "unknown input '%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
 
-  unformat_free (line_input);
-
   if (sw_if_index == ~0)
-    return clib_error_return (0, "Interface required, not set.");
+    {
+      error = clib_error_return (0, "Interface required, not set.");
+      goto done;
+    }
   if (address_set == 0)
-    return clib_error_return (0, "ip address required, not set.");
+    {
+      error = clib_error_return (0, "ip address required, not set.");
+      goto done;
+    }
   if (address_set > 1)
-    return clib_error_return (0, "Multiple ip addresses not supported.");
+    {
+      error = clib_error_return (0, "Multiple ip addresses not supported.");
+      goto done;
+    }
 
   if (is_ip4)
     error = ip4_probe_neighbor_wait (vm, &a4, sw_if_index, retry_count);
   else
     error = ip6_probe_neighbor_wait (vm, &a6, sw_if_index, retry_count);
+
+done:
+  unformat_free (line_input);
 
   return error;
 }

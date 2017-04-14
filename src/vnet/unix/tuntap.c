@@ -189,7 +189,7 @@ tuntap_tx (vlib_main_t * vm,
   /* Update tuntap interface output stats. */
   vlib_increment_combined_counter (im->combined_sw_if_counters
 				   + VNET_INTERFACE_COUNTER_TX,
-				   vm->cpu_index,
+				   vm->thread_index,
 				   tm->sw_if_index, n_packets, n_bytes);
 
 
@@ -297,7 +297,7 @@ tuntap_rx (vlib_main_t * vm,
     vlib_increment_combined_counter
         (vnet_main.interface_main.combined_sw_if_counters
          + VNET_INTERFACE_COUNTER_RX,
-         os_get_cpu_number(),
+         vlib_get_thread_index(),
          tm->sw_if_index,
          1, n_bytes_in_packet);
 
@@ -351,7 +351,7 @@ tuntap_rx (vlib_main_t * vm,
           next_index = VNET_DEVICE_INPUT_NEXT_DROP;
       }
 
-    vnet_feature_start_device_input_x1 (tm->sw_if_index, &next_index, b, 0);
+    vnet_feature_start_device_input_x1 (tm->sw_if_index, &next_index, b);
 
     vlib_set_next_frame_buffer (vm, node, next_index, bi);
 

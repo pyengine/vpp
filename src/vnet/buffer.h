@@ -61,9 +61,6 @@
 #define ETH_BUFFER_VLAN_BITS (ETH_BUFFER_VLAN_1_DEEP | \
                               ETH_BUFFER_VLAN_2_DEEP)
 
-#define LOG2_VNET_BUFFER_RTE_MBUF_VALID LOG2_VLIB_BUFFER_FLAG_USER(5)
-#define VNET_BUFFER_RTE_MBUF_VALID (1 << LOG2_VNET_BUFFER_RTE_MBUF_VALID)
-
 #define LOG2_BUFFER_HANDOFF_NEXT_VALID LOG2_VLIB_BUFFER_FLAG_USER(6)
 #define BUFFER_HANDOFF_NEXT_VALID (1 << LOG2_BUFFER_HANDOFF_NEXT_VALID)
 
@@ -76,7 +73,6 @@
 #define foreach_buffer_opaque_union_subtype     \
 _(ethernet)                                     \
 _(ip)                                           \
-_(mcast)                                        \
 _(swt)                                          \
 _(l2)                                           \
 _(l2t)                                          \
@@ -134,6 +130,9 @@ typedef struct
 
 	  /* Rewrite length */
 	  u32 save_rewrite_length;
+
+	  /* MFIB RPF ID */
+	  u32 rpf_id;
 	};
 
 	/* ICMP */
@@ -162,15 +161,6 @@ typedef struct
       u8 first;
     } mpls;
 
-    /* Multicast replication */
-    struct
-    {
-      u32 pad[3];
-      u32 mcast_group_index;
-      u32 mcast_current_index;
-      u32 original_free_list_index;
-    } mcast;
-
     /* ip4-in-ip6 softwire termination, only valid there */
     struct
     {
@@ -182,9 +172,11 @@ typedef struct
     struct
     {
       u32 feature_bitmap;
-      u16 bd_index;		// bridge-domain index
-      u8 l2_len;		// ethernet header length
-      u8 shg;			// split-horizon group
+      u16 bd_index;		/* bridge-domain index */
+      u8 l2_len;		/* ethernet header length */
+      u8 shg;			/* split-horizon group */
+      u8 bd_sn;			/* bridge domain seq# */
+      u8 int_sn;		/* interface seq# */
     } l2;
 
     /* l2tpv3 softwire encap, only valid there */
@@ -228,72 +220,6 @@ typedef struct
       u32 flags;
       u32 sad_index;
     } ipsec;
-
-    /* vcgn udp inside input, only valid there */
-    struct
-    {
-      /* This part forms context of the packet. The structure should be
-       * exactly same as spp_ctx_t. Also this should be the first
-       * element of this vcgn_uii structure.
-       */
-      /****** BEGIN spp_ctx_t section ***********************/
-      union
-      {				/* Roddick specific */
-	u32 roddick_info;
-	struct _tx_pkt_info
-	{			/* Used by PI to PI communication for TX */
-	  u32 uidb_index:16;	/* uidb_index to transmit */
-	  u32 packet_type:2;	/* 1-IPv4, 2-Ipv6, - 0,3 - Unused */
-	  u32 ipv4_defrag:1;	/* 0 - Normal, 1 - update first
-				 * segment size
-				 * (set by 6rd defrag node)
-				 */
-
-	  u32 dst_ip_port_idx:4;	/* Index to dst_ip_port_table */
-	  u32 from_node:4;
-	  u32 calc_chksum:1;
-	  u32 reserved:4;
-	} tx;
-	struct _rx_pkt_info
-	{			/* Used by PD / PI communication */
-	  u32 uidb_index:16;	/* uidb_index received in packet */
-	  u32 packet_type:2;	/* 1-IPv4, 2-Ipv6, - 0,3 - Unused */
-	  u32 icmp_type:1;	/* 0-ICMP query type, 1-ICMP error type */
-	  u32 protocol_type:2;	/* 1-TCP, 2-UDP, 3-ICMP, 0 - Unused */
-	  u32 ipv4_defrag:1;	/* 0 - Normal, 1 - update first
-				 * segment size
-				 * (set by 6rd defrag node)
-				 */
-
-	  u32 direction:1;	/* 0-Outside, 1-Inside */
-	  u32 frag:1;		/*IP fragment-1, Otherwise-0 */
-	  u32 option:1;		/* 0-No IP option (v4) present, non-fragHdr
-				 * option hdr present (v6)
-				 */
-	  u32 df_bit:1;		/* IPv4 DF bit copied here */
-	  u32 reserved1:6;
-	} rx;
-      } ru;
-      /****** END  spp_ctx_t section ***********************/
-
-      union
-      {
-	struct
-	{
-	  u32 ipv4;
-	  u16 port;
-	  u16 vrf;		//bit0-13:i/f, bit14-15:protocol
-	} k;
-
-	u64 key64;
-      } key;
-
-      u32 bucket;
-
-      u16 ovrf;			/* Exit interface */
-      u8 frag_pkt;
-      u8 vcgn_unused1;
-    } vcgn_uii;
 
     /* MAP */
     struct
@@ -345,6 +271,16 @@ typedef struct
       u32 saved_next_index;		/**< saved by drivers for short-cut */
       u16 buffer_advance;
     } device_input_feat;
+
+    /* TCP */
+    struct
+    {
+      u32 connection_index;
+      u32 seq_number;
+      u32 seq_end;
+      u32 ack_number;
+      u8 flags;
+    } tcp;
 
     u32 unused[6];
   };

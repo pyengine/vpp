@@ -24,6 +24,9 @@
 #include <vnet/dpo/drop_dpo.h>
 #include <vnet/dpo/receive_dpo.h>
 #include <vnet/dpo/ip_null_dpo.h>
+#include <vnet/bfd/bfd_main.h>
+#include <vnet/dpo/interface_dpo.h>
+#include <vnet/dpo/replicate_dpo.h>
 
 #include <vnet/mpls/mpls.h>
 
@@ -33,6 +36,11 @@
 #include <vnet/fib/fib_node_list.h>
 #include <vnet/fib/fib_urpf_list.h>
 
+/*
+ * Add debugs for passing tests
+ */
+static int fib_test_do_debug;
+
 #define FIB_TEST_I(_cond, _comment, _args...)			\
 ({								\
     int _evald = (_cond);					\
@@ -40,8 +48,9 @@
 	fformat(stderr, "FAIL:%d: " _comment "\n",		\
 		__LINE__, ##_args);				\
     } else {							\
-	fformat(stderr, "PASS:%d: " _comment "\n",		\
-		__LINE__, ##_args);				\
+	if (fib_test_do_debug)                                  \
+            fformat(stderr, "PASS:%d: " _comment "\n",          \
+                    __LINE__, ##_args);				\
     }								\
     _evald;							\
 })
@@ -264,6 +273,7 @@ typedef enum fib_test_lb_bucket_type_t_ {
     FT_LB_O_LB,
     FT_LB_SPECIAL,
     FT_LB_ADJ,
+    FT_LB_INTF,
 } fib_test_lb_bucket_type_t;
 
 typedef struct fib_test_lb_bucket_t_ {
@@ -308,6 +318,31 @@ typedef struct fib_test_lb_bucket_t_ {
     };
 } fib_test_lb_bucket_t;
 
+typedef enum fib_test_rep_bucket_type_t_ {
+    FT_REP_LABEL_O_ADJ,
+    FT_REP_DISP_MFIB_LOOKUP,
+    FT_REP_INTF,
+} fib_test_rep_bucket_type_t;
+
+typedef struct fib_test_rep_bucket_t_ {
+    fib_test_rep_bucket_type_t type;
+
+    union
+    {
+	struct
+	{
+	    mpls_eos_bit_t eos;
+	    mpls_label_t label;
+	    u8 ttl;
+	    adj_index_t adj;
+	} label_o_adj;
+ 	struct
+	{
+	    adj_index_t adj;
+	} adj;
+   };
+} fib_test_rep_bucket_t;
+
 #define FIB_TEST_LB(_cond, _comment, _args...)			\
 {								\
     if (!FIB_TEST_I(_cond, _comment, ##_args)) {		\
@@ -315,7 +350,83 @@ typedef struct fib_test_lb_bucket_t_ {
     }								\
 }
 
-static int
+int
+fib_test_validate_rep_v (const replicate_t *rep,
+                         u16 n_buckets,
+                         va_list ap)
+{
+    const fib_test_rep_bucket_t *exp;
+    const dpo_id_t *dpo;
+    int bucket;
+
+    FIB_TEST_LB((n_buckets == rep->rep_n_buckets),
+                "n_buckets = %d", rep->rep_n_buckets);
+
+    for (bucket = 0; bucket < n_buckets; bucket++)
+    {
+	exp = va_arg(ap, fib_test_rep_bucket_t*);
+
+        dpo = replicate_get_bucket_i(rep, bucket);
+
+	switch (exp->type)
+	{
+	case FT_REP_LABEL_O_ADJ:
+	    {
+		const mpls_label_dpo_t *mld;
+                mpls_label_t hdr;
+		FIB_TEST_LB((DPO_MPLS_LABEL == dpo->dpoi_type),
+                            "bucket %d stacks on %U",
+                            bucket,
+                            format_dpo_type, dpo->dpoi_type);
+	    
+		mld = mpls_label_dpo_get(dpo->dpoi_index);
+                hdr = clib_net_to_host_u32(mld->mld_hdr[0].label_exp_s_ttl);
+
+		FIB_TEST_LB((vnet_mpls_uc_get_label(hdr) ==
+			     exp->label_o_adj.label),
+			    "bucket %d stacks on label %d",
+			    bucket,
+			    exp->label_o_adj.label);
+
+		FIB_TEST_LB((vnet_mpls_uc_get_s(hdr) ==
+			     exp->label_o_adj.eos),
+			    "bucket %d stacks on label %d %U",
+			    bucket,
+			    exp->label_o_adj.label,
+			    format_mpls_eos_bit, exp->label_o_adj.eos);
+
+		FIB_TEST_LB((DPO_ADJACENCY_INCOMPLETE == mld->mld_dpo.dpoi_type),
+			    "bucket %d label stacks on %U",
+			    bucket,
+			    format_dpo_type, mld->mld_dpo.dpoi_type);
+
+		FIB_TEST_LB((exp->label_o_adj.adj == mld->mld_dpo.dpoi_index),
+			    "bucket %d label stacks on adj %d",
+			    bucket,
+			    exp->label_o_adj.adj);
+	    }
+	    break;
+	case FT_REP_INTF:
+            FIB_TEST_LB((DPO_INTERFACE == dpo->dpoi_type),
+                        "bucket %d stacks on %U",
+                        bucket,
+                        format_dpo_type, dpo->dpoi_type);
+
+            FIB_TEST_LB((exp->adj.adj == dpo->dpoi_index),
+                        "bucket %d stacks on adj %d",
+                        bucket,
+                        exp->adj.adj);
+	    break;
+        case FT_REP_DISP_MFIB_LOOKUP:
+//            ASSERT(0);
+            break;
+        }
+    }
+
+    return (!0);
+}
+
+int
 fib_test_validate_lb_v (const load_balance_t *lb,
 			u16 n_buckets,
 			va_list ap)
@@ -477,6 +588,16 @@ fib_test_validate_lb_v (const load_balance_t *lb,
 			bucket,
 			exp->adj.adj);
 	    break;
+	case FT_LB_INTF:
+	    FIB_TEST_I((DPO_INTERFACE == dpo->dpoi_type),
+		       "bucket %d stacks on %U",
+		       bucket,
+		       format_dpo_type, dpo->dpoi_type);
+	    FIB_TEST_LB((exp->adj.adj == dpo->dpoi_index),
+			"bucket %d stacks on adj %d",
+			bucket,
+			exp->adj.adj);
+	    break;
 	case FT_LB_O_LB:
 	    FIB_TEST_I((DPO_LOAD_BALANCE == dpo->dpoi_type),
                        "bucket %d stacks on %U",
@@ -502,14 +623,13 @@ fib_test_validate_lb_v (const load_balance_t *lb,
     return (!0);
 }
 
-static int
+int
 fib_test_validate_entry (fib_node_index_t fei,
 			 fib_forward_chain_type_t fct,
 			 u16 n_buckets,
 			 ...)
 {
     dpo_id_t dpo = DPO_INVALID;
-    const load_balance_t *lb;
     fib_prefix_t pfx;
     index_t fw_lbi;
     u32 fib_index;
@@ -522,47 +642,59 @@ fib_test_validate_entry (fib_node_index_t fei,
     fib_index = fib_entry_get_fib_index(fei);
     fib_entry_contribute_forwarding(fei, fct, &dpo);
 
-    FIB_TEST_LB((DPO_LOAD_BALANCE == dpo.dpoi_type),
-		"Entry links to %U",
-		format_dpo_type, dpo.dpoi_type);
-    lb = load_balance_get(dpo.dpoi_index);
-
-    res = fib_test_validate_lb_v(lb, n_buckets, ap);
-
-    /*
-     * ensure that the LB contributed by the entry is the
-     * same as the LB in the forwarding tables
-     */
-    if (fct == fib_entry_get_default_chain_type(fib_entry_get(fei)))
+    if (DPO_REPLICATE == dpo.dpoi_type)
     {
-        switch (pfx.fp_proto)
+        const replicate_t *rep;
+
+        rep = replicate_get(dpo.dpoi_index);
+        res = fib_test_validate_rep_v(rep, n_buckets, ap);
+    }
+    else
+    {
+        const load_balance_t *lb;
+
+        FIB_TEST_LB((DPO_LOAD_BALANCE == dpo.dpoi_type),
+                    "Entry links to %U",
+                    format_dpo_type, dpo.dpoi_type);
+
+        lb = load_balance_get(dpo.dpoi_index);
+        res = fib_test_validate_lb_v(lb, n_buckets, ap);
+
+        /*
+         * ensure that the LB contributed by the entry is the
+         * same as the LB in the forwarding tables
+         */
+        if (fct == fib_entry_get_default_chain_type(fib_entry_get(fei)))
         {
-        case FIB_PROTOCOL_IP4:
-            fw_lbi = ip4_fib_forwarding_lookup(fib_index, &pfx.fp_addr.ip4);
-            break;
-        case FIB_PROTOCOL_IP6:
-            fw_lbi = ip6_fib_table_fwding_lookup(&ip6_main, fib_index, &pfx.fp_addr.ip6);
-            break;
-        case FIB_PROTOCOL_MPLS:
+            switch (pfx.fp_proto)
             {
-                mpls_unicast_header_t hdr = {
-                    .label_exp_s_ttl = 0,
-                };
-
-                vnet_mpls_uc_set_label(&hdr.label_exp_s_ttl, pfx.fp_label);
-                vnet_mpls_uc_set_s(&hdr.label_exp_s_ttl, pfx.fp_eos);
-                hdr.label_exp_s_ttl = clib_host_to_net_u32(hdr.label_exp_s_ttl);
-
-                fw_lbi = mpls_fib_table_forwarding_lookup(fib_index, &hdr);
+            case FIB_PROTOCOL_IP4:
+                fw_lbi = ip4_fib_forwarding_lookup(fib_index, &pfx.fp_addr.ip4);
                 break;
+            case FIB_PROTOCOL_IP6:
+                fw_lbi = ip6_fib_table_fwding_lookup(&ip6_main, fib_index, &pfx.fp_addr.ip6);
+                break;
+            case FIB_PROTOCOL_MPLS:
+                {
+                    mpls_unicast_header_t hdr = {
+                        .label_exp_s_ttl = 0,
+                    };
+
+                    vnet_mpls_uc_set_label(&hdr.label_exp_s_ttl, pfx.fp_label);
+                    vnet_mpls_uc_set_s(&hdr.label_exp_s_ttl, pfx.fp_eos);
+                    hdr.label_exp_s_ttl = clib_host_to_net_u32(hdr.label_exp_s_ttl);
+
+                    fw_lbi = mpls_fib_table_forwarding_lookup(fib_index, &hdr);
+                    break;
+                }
+            default:
+                fw_lbi = 0;
             }
-        default:
-            fw_lbi = 0;
+            FIB_TEST_LB((fw_lbi == dpo.dpoi_index),
+                        "Contributed LB = FW LB: %U\n %U",
+                        format_load_balance, fw_lbi, 0,
+                        format_load_balance, dpo.dpoi_index, 0);
         }
-        FIB_TEST_LB((fw_lbi == dpo.dpoi_index),
-                    "Contributed LB = FW LB: %U\n %U",
-                    format_load_balance, fw_lbi, 0,
-                    format_load_balance, dpo.dpoi_index, 0);
     }
 
     dpo_reset(&dpo);
@@ -663,14 +795,15 @@ fib_test_v4 (void)
     /*
      * at this stage there are 5 entries in the test FIB (plus 5 in the default),
      * all of which are special sourced and so none of which share path-lists.
-     * There are also 6 entries, and 6 non-shared path-lists, in the v6 default
-     * table
+     * There are also 2 entries, and 2 non-shared path-lists, in the v6 default
+     * table, and 4 path-lists in the v6 MFIB table
      */
-#define NBR (5+5+6)
+#define ENBR (5+5+2)
+#define PNBR (5+5+6)
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -754,9 +887,9 @@ fib_test_v4 (void)
      * +2 interface routes +2 non-shared path-lists
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+2 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNBR+2 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -808,9 +941,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+3 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNBR+3 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -838,9 +971,9 @@ fib_test_v4 (void)
      * -1 shared-path-list
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+2 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNBR+2 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1018,9 +1151,9 @@ fib_test_v4 (void)
      * +2 adj-fibs, and their non-shared path-lists
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+4 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+4 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1054,9 +1187,9 @@ fib_test_v4 (void)
      * +1 entry and a shared path-list
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+5 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+5 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /* 1.1.2.0/24 */
@@ -1087,9 +1220,9 @@ fib_test_v4 (void)
      * +1 entry only
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+6 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1127,9 +1260,9 @@ fib_test_v4 (void)
      * +1 shared-pathlist
      */
     FIB_TEST((2 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+6 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1158,9 +1291,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB is %d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+6 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1203,9 +1336,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((2  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     fib_prefix_t bgp_101_pfx = {
@@ -1239,14 +1372,14 @@ fib_test_v4 (void)
      */
     FIB_TEST((2  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+8 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+8 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
-     * An EXCLUSIVE route; one where the user (me) provides the exclusive
-     * adjacency through which the route will resovle
+     * An special route; one where the user (me) provides the
+     * adjacency through which the route will resovle by setting the flags
      */
     fib_prefix_t ex_pfx = {
 	.fp_len = 32,
@@ -1260,11 +1393,12 @@ fib_test_v4 (void)
     fib_table_entry_special_add(fib_index,
 				&ex_pfx,
 				FIB_SOURCE_SPECIAL,
-				FIB_ENTRY_FLAG_EXCLUSIVE,
-				locked_ai);
+				FIB_ENTRY_FLAG_LOCAL);
     fei = fib_table_lookup_exact_match(fib_index, &ex_pfx);
-    FIB_TEST((ai == fib_entry_get_adj(fei)),
-	     "Exclusive route links to user adj");
+    dpo = fib_entry_contribute_ip_forwarding(fei);
+    dpo = load_balance_get_bucket(dpo->dpoi_index, 0);
+    FIB_TEST((DPO_RECEIVE == dpo->dpoi_type),
+	     "local interface adj is local");
 
     fib_table_entry_special_remove(fib_index,
 				   &ex_pfx,
@@ -1281,6 +1415,7 @@ fib_test_v4 (void)
 
     lookup_dpo_add_or_lock_w_fib_index(fib_index,
                                        DPO_PROTO_IP4,
+                                       LOOKUP_UNICAST,
                                        LOOKUP_INPUT_DST_ADDR,
                                        LOOKUP_TABLE_FROM_CONFIG,
                                        &ex_dpo);
@@ -1368,9 +1503,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((3  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+7 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+7 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+10 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+10 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -1983,9 +2118,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+12 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+12 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2030,9 +2165,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+13 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+13 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2080,9 +2215,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((5  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+9 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+9 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+14 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+14 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2118,9 +2253,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+13 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+13 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2154,9 +2289,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
 	fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	fib_path_list_pool_size());
-    FIB_TEST((NBR+12 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+12 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2185,9 +2320,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+12 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+12 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2215,9 +2350,9 @@ fib_test_v4 (void)
 
     FIB_TEST((3  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+7 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+7 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+10 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+10 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2245,9 +2380,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((2  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+9 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+9 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2355,9 +2490,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -2380,9 +2515,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((2  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+6 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+8 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+8 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     fei = fib_table_lookup_exact_match(fib_index, &bgp_200_pfx);
@@ -2428,9 +2563,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((3  == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NBR+10 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+10 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     ai_03 = adj_nbr_add_or_lock(FIB_PROTOCOL_IP4,
@@ -2492,9 +2627,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
 
@@ -2562,9 +2697,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((4  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+8 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+10 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+10 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -2596,7 +2731,6 @@ fib_test_v4 (void)
 			     1,
 			     NULL,
 			     FIB_ROUTE_PATH_FLAG_NONE);
-
 
     fei = fib_table_lookup(fib_index, &pfx_5_5_5_6_s_32);
     dpo1 = fib_entry_contribute_ip_forwarding(fei);
@@ -2753,9 +2887,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -2830,9 +2964,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3180,9 +3314,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3247,9 +3381,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3297,9 +3431,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3342,9 +3476,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+7 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+7 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3438,9 +3572,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((0  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+4 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+4 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3482,9 +3616,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((1  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+5 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+5 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     fib_table_entry_delete(fib_index,
@@ -3493,9 +3627,9 @@ fib_test_v4 (void)
 
     FIB_TEST((0  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+4 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+4 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+4 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3542,8 +3676,7 @@ fib_test_v4 (void)
     fei = fib_table_entry_special_add(fib_index,
 				      &pfx_4_1_1_1_s_32,
 				      FIB_SOURCE_URPF_EXEMPT,
-				      FIB_ENTRY_FLAG_DROP,
-				      ADJ_INDEX_INVALID);
+				      FIB_ENTRY_FLAG_DROP);
     dpo = fib_entry_contribute_ip_forwarding(fei);
     FIB_TEST(load_balance_is_drop(dpo),
 	     "uRPF exempt 4.1.1.1/32 DROP");
@@ -3554,6 +3687,73 @@ fib_test_v4 (void)
 	     "uRPF list for 0.0.0.0/0 empty");
 
     fib_table_entry_delete(fib_index, &pfx_4_1_1_1_s_32, FIB_SOURCE_URPF_EXEMPT);
+
+    /*
+     * An adj-fib that fails the refinement criteria - no connected cover
+     */
+    fib_prefix_t pfx_12_10_10_2_s_32 = {
+	.fp_len = 32,
+	.fp_proto = FIB_PROTOCOL_IP4,
+	.fp_addr = {
+	    /* 12.10.10.2 */
+	    .ip4.as_u32 = clib_host_to_net_u32(0x0c0a0a02),
+	},
+    };
+
+    fib_table_entry_update_one_path(fib_index,
+				    &pfx_12_10_10_2_s_32,
+				    FIB_SOURCE_ADJ,
+				    FIB_ENTRY_FLAG_ATTACHED,
+				    FIB_PROTOCOL_IP4,
+				    &pfx_12_10_10_2_s_32.fp_addr,
+				    tm->hw[0]->sw_if_index,
+				    ~0, // invalid fib index
+				    1,
+				    NULL,
+				    FIB_ROUTE_PATH_FLAG_NONE);
+
+    fei = fib_table_lookup_exact_match(fib_index, &pfx_12_10_10_2_s_32);
+    dpo = fib_entry_contribute_ip_forwarding(fei);
+    FIB_TEST(!dpo_id_is_valid(dpo),
+	     "no connected cover adj-fib fails refinement");
+
+    fib_table_entry_delete(fib_index,
+			   &pfx_12_10_10_2_s_32,
+			   FIB_SOURCE_ADJ);
+
+    /*
+     * An adj-fib that fails the refinement criteria - cover is connected
+     * but on a different interface
+     */
+    fib_prefix_t pfx_10_10_10_127_s_32 = {
+	.fp_len = 32,
+	.fp_proto = FIB_PROTOCOL_IP4,
+	.fp_addr = {
+	    /* 10.10.10.127 */
+	    .ip4.as_u32 = clib_host_to_net_u32(0x0a0a0a7f),
+	},
+    };
+
+    fib_table_entry_update_one_path(fib_index,
+				    &pfx_10_10_10_127_s_32,
+				    FIB_SOURCE_ADJ,
+				    FIB_ENTRY_FLAG_ATTACHED,
+				    FIB_PROTOCOL_IP4,
+				    &pfx_10_10_10_127_s_32.fp_addr,
+				    tm->hw[1]->sw_if_index,
+				    ~0, // invalid fib index
+				    1,
+				    NULL,
+				    FIB_ROUTE_PATH_FLAG_NONE);
+
+    fei = fib_table_lookup_exact_match(fib_index, &pfx_10_10_10_127_s_32);
+    dpo = fib_entry_contribute_ip_forwarding(fei);
+    FIB_TEST(!dpo_id_is_valid(dpo),
+	     "wrong interface adj-fib fails refinement");
+
+    fib_table_entry_delete(fib_index,
+			   &pfx_10_10_10_127_s_32,
+			   FIB_SOURCE_ADJ);
 
     /*
      * CLEANUP
@@ -3577,9 +3777,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((0  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR+2 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR+2 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR+2 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3619,9 +3819,9 @@ fib_test_v4 (void)
      */
     FIB_TEST((0  == fib_path_list_db_size()),   "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
 
     /*
@@ -3644,11 +3844,11 @@ fib_test_v4 (void)
 
     FIB_TEST((0  == fib_path_list_db_size()), "path list DB population:%d",
     	     fib_path_list_db_size());
-    FIB_TEST((NBR-5 == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNBR-5 == fib_path_list_pool_size()), "path list pool size is %d",
     	     fib_path_list_pool_size());
-    FIB_TEST((NBR-5 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENBR-5 == fib_entry_pool_size()), "entry pool size is %d",
     	     fib_entry_pool_size());
-    FIB_TEST((NBR-5 == pool_elts(fib_urpf_list_pool)), "uRPF pool size is %d",
+    FIB_TEST((ENBR-5 == pool_elts(fib_urpf_list_pool)), "uRPF pool size is %d",
     	     pool_elts(fib_urpf_list_pool));
 
     return 0;
@@ -3720,13 +3920,15 @@ fib_test_v6 (void)
 
     /*
      * At this stage there is one v4 FIB with 5 routes and two v6 FIBs
-     * each with 6 entries. All entries are special so no path-list sharing.
+     * each with 2 entries and a v6 mfib with 4 path-lists.
+     * All entries are special so no path-list sharing.
      */
-#define NPS (5+6+6)
+#define ENPS (5+4)
+#define PNPS (5+4+4)
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NPS == fib_path_list_pool_size()), "path list pool size is %d",
+    FIB_TEST((PNPS == fib_path_list_pool_size()), "path list pool size is %d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -3816,9 +4018,9 @@ fib_test_v6 (void)
      * +2 entries. +2 unshared path-lists
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB is empty");
-    FIB_TEST((NPS+2 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+2 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -3862,9 +4064,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+3 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+3 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -3890,9 +4092,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+2 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+2 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+2 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4006,9 +4208,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+4 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+4 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+4 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+4 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4073,9 +4275,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+5 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+5 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+6 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4201,9 +4403,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+5 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+5 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+6 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4275,9 +4477,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+7 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+7 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+8 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+8 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
 
@@ -4401,9 +4603,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((1 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS+7 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS+7 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS+8 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS+8 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4501,9 +4703,9 @@ fib_test_v6 (void)
      */
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     /*
@@ -4513,9 +4715,9 @@ fib_test_v6 (void)
 
     FIB_TEST((0 == fib_path_list_db_size()),   "path list DB population:%d",
 	     fib_path_list_db_size());
-    FIB_TEST((NPS-6 == fib_path_list_pool_size()), "path list pool size is%d",
+    FIB_TEST((PNPS-2 == fib_path_list_pool_size()), "path list pool size is%d",
 	     fib_path_list_pool_size());
-    FIB_TEST((NPS-6 == fib_entry_pool_size()), "entry pool size is %d",
+    FIB_TEST((ENPS-2 == fib_entry_pool_size()), "entry pool size is %d",
 	     fib_entry_pool_size());
 
     adj_unlock(ai_02);
@@ -5657,7 +5859,7 @@ fib_test_label (void)
 				     &a_o_10_10_11_1,
 				     &adj_o_10_10_11_2),
 	     "1.1.1.1/32 LB 2 buckets via: "
-	     "adj over 10.10.11.1",
+	     "adj over 10.10.11.1, "
 	     "adj-v4 over 10.10.11.2");
 
     fei = fib_table_lookup(MPLS_FIB_DEFAULT_TABLE_ID,
@@ -5668,7 +5870,7 @@ fib_test_label (void)
 				     &a_o_10_10_11_1,
 				     &adj_o_10_10_11_2),
 	     "24001/eos LB 2 buckets via: "
-	     "adj over 10.10.11.1",
+	     "adj over 10.10.11.1, "
 	     "adj-v4 over 10.10.11.2");
 
     fei = fib_table_lookup(MPLS_FIB_DEFAULT_TABLE_ID,
@@ -6667,6 +6869,509 @@ fib_test_walk (void)
     return (0);
 }
 
+/*
+ * declaration of the otherwise static callback functions
+ */
+void fib_bfd_notify (bfd_listen_event_e event,
+                     const bfd_session_t *session);
+void adj_bfd_notify (bfd_listen_event_e event,
+                     const bfd_session_t *session);
+
+/**
+ * Test BFD session interaction with FIB
+ */
+static int
+fib_test_bfd (void)
+{
+    fib_node_index_t fei;
+    test_main_t *tm;
+    int n_feis;
+
+    /* via 10.10.10.1 */
+    ip46_address_t nh_10_10_10_1 = {
+        .ip4.as_u32 = clib_host_to_net_u32(0x0a0a0a01),
+    };
+    /* via 10.10.10.2 */
+    ip46_address_t nh_10_10_10_2 = {
+        .ip4.as_u32 = clib_host_to_net_u32(0x0a0a0a02),
+    };
+    /* via 10.10.10.10 */
+    ip46_address_t nh_10_10_10_10 = {
+        .ip4.as_u32 = clib_host_to_net_u32(0x0a0a0a0a),
+    };
+    n_feis = fib_entry_pool_size();
+
+    tm = &test_main;
+
+    /*
+     * add interface routes. we'll assume this works. it's tested elsewhere
+     */
+    fib_prefix_t pfx_10_10_10_10_s_24 = {
+        .fp_len = 24,
+        .fp_proto = FIB_PROTOCOL_IP4,
+        .fp_addr = nh_10_10_10_10,
+    };
+
+    fib_table_entry_update_one_path(0, &pfx_10_10_10_10_s_24,
+                                    FIB_SOURCE_INTERFACE,
+                                    (FIB_ENTRY_FLAG_CONNECTED |
+                                     FIB_ENTRY_FLAG_ATTACHED),
+                                    FIB_PROTOCOL_IP4,
+                                    NULL,
+                                    tm->hw[0]->sw_if_index,
+                                    ~0, // invalid fib index
+                                    1, // weight
+                                    NULL,
+                                    FIB_ROUTE_PATH_FLAG_NONE);
+
+    fib_prefix_t pfx_10_10_10_10_s_32 = {
+        .fp_len = 32,
+        .fp_proto = FIB_PROTOCOL_IP4,
+        .fp_addr = nh_10_10_10_10,
+    };
+    fib_table_entry_update_one_path(0, &pfx_10_10_10_10_s_32,
+                                    FIB_SOURCE_INTERFACE,
+                                    (FIB_ENTRY_FLAG_CONNECTED |
+                                     FIB_ENTRY_FLAG_LOCAL),
+                                    FIB_PROTOCOL_IP4,
+                                    NULL,
+                                    tm->hw[0]->sw_if_index,
+                                    ~0, // invalid fib index
+                                    1, // weight
+                                    NULL,
+                                    FIB_ROUTE_PATH_FLAG_NONE);
+
+    /*
+     * A BFD session via a neighbour we do not yet know
+     */
+    bfd_session_t bfd_10_10_10_1 = {
+        .udp = {
+            .key = {
+                .fib_index = 0,
+                .peer_addr = nh_10_10_10_1,
+            },
+        },
+        .hop_type = BFD_HOP_TYPE_MULTI,
+        .local_state = BFD_STATE_init,
+    };
+
+    fib_bfd_notify (BFD_LISTEN_EVENT_CREATE, &bfd_10_10_10_1);
+
+    /*
+     * A new entry will be created that forwards via the adj
+     */
+    adj_index_t ai_10_10_10_1 = adj_nbr_add_or_lock(FIB_PROTOCOL_IP4,
+                                                    VNET_LINK_IP4,
+                                                    &nh_10_10_10_1,
+                                                    tm->hw[0]->sw_if_index);
+    fib_prefix_t pfx_10_10_10_1_s_32 = {
+        .fp_addr = nh_10_10_10_1,
+        .fp_len = 32,
+        .fp_proto = FIB_PROTOCOL_IP4,
+    };
+    fib_test_lb_bucket_t adj_o_10_10_10_1 = {
+        .type = FT_LB_ADJ,
+        .adj = {
+            .adj = ai_10_10_10_1,
+        },
+    };
+
+    fei = fib_table_lookup_exact_match(0, &pfx_10_10_10_1_s_32);
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     1,
+                                     &adj_o_10_10_10_1),
+             "BFD sourced %U via %U",
+             format_fib_prefix, &pfx_10_10_10_1_s_32,
+             format_ip_adjacency, ai_10_10_10_1, FORMAT_IP_ADJACENCY_NONE);
+
+    /*
+     * Delete the BFD session. Expect the fib_entry to be removed
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_DELETE, &bfd_10_10_10_1);
+
+    fei = fib_table_lookup_exact_match(0, &pfx_10_10_10_1_s_32);
+    FIB_TEST(FIB_NODE_INDEX_INVALID == fei,
+             "BFD sourced %U removed",
+             format_fib_prefix, &pfx_10_10_10_1_s_32);
+
+    /*
+     * Add the BFD source back
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_CREATE, &bfd_10_10_10_1);
+
+    /*
+     * source the entry via the ADJ fib
+     */
+    fei = fib_table_entry_update_one_path(0,
+                                          &pfx_10_10_10_1_s_32,
+                                          FIB_SOURCE_ADJ,
+                                          FIB_ENTRY_FLAG_ATTACHED,
+                                          FIB_PROTOCOL_IP4,
+                                          &nh_10_10_10_1,
+                                          tm->hw[0]->sw_if_index,
+                                          ~0, // invalid fib index
+                                          1,
+                                          NULL,
+                                          FIB_ROUTE_PATH_FLAG_NONE);
+
+    /*
+     * Delete the BFD session. Expect the fib_entry to remain
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_DELETE, &bfd_10_10_10_1);
+
+    fei = fib_table_lookup_exact_match(0, &pfx_10_10_10_1_s_32);
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     1,
+                                     &adj_o_10_10_10_1),
+             "BFD sourced %U remains via %U",
+             format_fib_prefix, &pfx_10_10_10_1_s_32,
+             format_ip_adjacency, ai_10_10_10_1, FORMAT_IP_ADJACENCY_NONE);
+
+    /*
+     * Add the BFD source back
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_CREATE, &bfd_10_10_10_1);
+
+    /*
+     * Create another ADJ FIB
+     */
+    fib_prefix_t pfx_10_10_10_2_s_32 = {
+        .fp_addr = nh_10_10_10_2,
+        .fp_len = 32,
+        .fp_proto = FIB_PROTOCOL_IP4,
+    };
+    fib_table_entry_update_one_path(0,
+                                    &pfx_10_10_10_2_s_32,
+                                    FIB_SOURCE_ADJ,
+                                    FIB_ENTRY_FLAG_ATTACHED,
+                                    FIB_PROTOCOL_IP4,
+                                    &nh_10_10_10_2,
+                                    tm->hw[0]->sw_if_index,
+                                    ~0, // invalid fib index
+                                    1,
+                                    NULL,
+                                    FIB_ROUTE_PATH_FLAG_NONE);
+    /*
+     * A BFD session for the new ADJ FIB
+     */
+    bfd_session_t bfd_10_10_10_2 = {
+        .udp = {
+            .key = {
+                .fib_index = 0,
+                .peer_addr = nh_10_10_10_2,
+            },
+        },
+        .hop_type = BFD_HOP_TYPE_MULTI,
+        .local_state = BFD_STATE_init,
+    };
+
+    fib_bfd_notify (BFD_LISTEN_EVENT_CREATE, &bfd_10_10_10_2);
+
+    /*
+     * remove the adj-fib source whilst the session is present
+     * then add it back
+     */
+    fib_table_entry_delete(0, &pfx_10_10_10_2_s_32, FIB_SOURCE_ADJ);
+    fib_table_entry_update_one_path(0,
+                                    &pfx_10_10_10_2_s_32,
+                                    FIB_SOURCE_ADJ,
+                                    FIB_ENTRY_FLAG_ATTACHED,
+                                    FIB_PROTOCOL_IP4,
+                                    &nh_10_10_10_2,
+                                    tm->hw[0]->sw_if_index,
+                                    ~0, // invalid fib index
+                                    1,
+                                    NULL,
+                                    FIB_ROUTE_PATH_FLAG_NONE);
+
+    /*
+     * Before adding a recursive via the BFD tracked ADJ-FIBs,
+     * bring one of the sessions UP, leave the other down
+     */
+    bfd_10_10_10_1.local_state = BFD_STATE_up;
+    fib_bfd_notify (BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_1);
+    bfd_10_10_10_2.local_state = BFD_STATE_down;
+    fib_bfd_notify (BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_2);
+
+    /*
+     * A recursive prefix via both of the ADJ FIBs
+     */
+    fib_prefix_t pfx_200_0_0_0_s_24 = {
+        .fp_proto = FIB_PROTOCOL_IP4,
+        .fp_len = 32,
+        .fp_addr = {
+            .ip4.as_u32 = clib_host_to_net_u32(0xc8000000),
+        },
+    };
+    const dpo_id_t *dpo_10_10_10_1, *dpo_10_10_10_2;
+
+    dpo_10_10_10_1 =
+        fib_entry_contribute_ip_forwarding(
+            fib_table_lookup_exact_match(0, &pfx_10_10_10_1_s_32));
+    dpo_10_10_10_2 =
+        fib_entry_contribute_ip_forwarding(
+            fib_table_lookup_exact_match(0, &pfx_10_10_10_2_s_32));
+
+    fib_test_lb_bucket_t lb_o_10_10_10_1 = {
+        .type = FT_LB_O_LB,
+        .lb = {
+            .lb = dpo_10_10_10_1->dpoi_index,
+        },
+    };
+    fib_test_lb_bucket_t lb_o_10_10_10_2 = {
+        .type = FT_LB_O_LB,
+        .lb = {
+            .lb = dpo_10_10_10_2->dpoi_index,
+        },
+    };
+
+    /*
+     * A prefix via the adj-fib that is BFD down => DROP
+     */
+    fei = fib_table_entry_path_add(0,
+                                   &pfx_200_0_0_0_s_24,
+                                   FIB_SOURCE_API,
+                                   FIB_ENTRY_FLAG_NONE,
+                                   FIB_PROTOCOL_IP4,
+                                   &nh_10_10_10_2,
+                                   ~0, // recursive
+                                   0, // default fib index
+                                   1,
+                                   NULL,
+                                   FIB_ROUTE_PATH_FLAG_NONE);
+    FIB_TEST(load_balance_is_drop(fib_entry_contribute_ip_forwarding(fei)),
+             "%U resolves via drop",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * add a path via the UP BFD adj-fib.
+     *  we expect that the DOWN BFD ADJ FIB is not used.
+     */
+    fei = fib_table_entry_path_add(0,
+                                   &pfx_200_0_0_0_s_24,
+                                   FIB_SOURCE_API,
+                                   FIB_ENTRY_FLAG_NONE,
+                                   FIB_PROTOCOL_IP4,
+                                   &nh_10_10_10_1,
+                                   ~0, // recursive
+                                   0, // default fib index
+                                   1,
+                                   NULL,
+                                   FIB_ROUTE_PATH_FLAG_NONE);
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     1,
+                                     &lb_o_10_10_10_1),
+             "Recursive %U only UP BFD adj-fibs",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * Send a BFD state change to UP - both sessions are now up
+     *  the recursive prefix should LB over both
+     */
+    bfd_10_10_10_2.local_state = BFD_STATE_up;
+    fib_bfd_notify (BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_2);
+
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     2,
+                                     &lb_o_10_10_10_1,
+                                     &lb_o_10_10_10_2),
+             "Recursive %U via both UP BFD adj-fibs",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * Send a BFD state change to DOWN
+     *  the recursive prefix should exclude the down
+     */
+    bfd_10_10_10_2.local_state = BFD_STATE_down;
+    fib_bfd_notify (BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_2);
+
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     1,
+                                     &lb_o_10_10_10_1),
+             "Recursive %U via only UP",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * Delete the BFD session while it is in the DOWN state.
+     *  FIB should consider the entry's state as back up
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_DELETE, &bfd_10_10_10_2);
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     2,
+                                     &lb_o_10_10_10_1,
+                                     &lb_o_10_10_10_2),
+             "Recursive %U via both UP BFD adj-fibs post down session delete",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * Delete the BFD other session while it is in the UP state.
+     */
+    fib_bfd_notify (BFD_LISTEN_EVENT_DELETE, &bfd_10_10_10_1);
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     2,
+                                     &lb_o_10_10_10_1,
+                                     &lb_o_10_10_10_2),
+             "Recursive %U via both UP BFD adj-fibs post up session delete",
+             format_fib_prefix, &pfx_200_0_0_0_s_24);
+
+    /*
+     * cleaup
+     */
+    fib_table_entry_delete(0, &pfx_200_0_0_0_s_24, FIB_SOURCE_API);
+    fib_table_entry_delete(0, &pfx_10_10_10_1_s_32, FIB_SOURCE_ADJ);
+    fib_table_entry_delete(0, &pfx_10_10_10_2_s_32, FIB_SOURCE_ADJ);
+
+    fib_table_entry_delete(0, &pfx_10_10_10_10_s_32, FIB_SOURCE_INTERFACE);
+    fib_table_entry_delete(0, &pfx_10_10_10_10_s_24, FIB_SOURCE_INTERFACE);
+
+    adj_unlock(ai_10_10_10_1);
+     /*
+     * test no-one left behind
+     */
+    FIB_TEST((n_feis == fib_entry_pool_size()), "Entries gone");
+    FIB_TEST(0 == adj_nbr_db_size(), "All adjacencies removed");
+
+    /*
+     * Single-hop BFD tests
+     */
+    bfd_10_10_10_1.hop_type = BFD_HOP_TYPE_SINGLE;
+    bfd_10_10_10_1.udp.key.sw_if_index = tm->hw[0]->sw_if_index;
+
+    adj_bfd_notify(BFD_LISTEN_EVENT_CREATE, &bfd_10_10_10_1);
+
+    ai_10_10_10_1 = adj_nbr_add_or_lock(FIB_PROTOCOL_IP4,
+                                        VNET_LINK_IP4,
+                                        &nh_10_10_10_1,
+                                        tm->hw[0]->sw_if_index);
+    /*
+     * whilst the BFD session is not signalled, the adj is up
+     */
+    FIB_TEST(adj_is_up(ai_10_10_10_1), "Adj state up on uninit session");
+
+    /*
+     * bring the BFD session up
+     */
+    bfd_10_10_10_1.local_state = BFD_STATE_up;
+    adj_bfd_notify(BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_1);
+    FIB_TEST(adj_is_up(ai_10_10_10_1), "Adj state up on UP session");
+
+    /*
+     * bring the BFD session down
+     */
+    bfd_10_10_10_1.local_state = BFD_STATE_down;
+    adj_bfd_notify(BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_1);
+    FIB_TEST(!adj_is_up(ai_10_10_10_1), "Adj state down on DOWN session");
+
+
+    /*
+     * add an attached next hop FIB entry via the down adj
+     */
+    fib_prefix_t pfx_5_5_5_5_s_32 = {
+        .fp_addr = {
+            .ip4 = {
+                .as_u32 = clib_host_to_net_u32(0x05050505),
+            },
+        },
+        .fp_len = 32,
+        .fp_proto = FIB_PROTOCOL_IP4,
+    };
+
+    fei = fib_table_entry_path_add(0,
+                                   &pfx_5_5_5_5_s_32,
+                                   FIB_SOURCE_CLI,
+                                   FIB_ENTRY_FLAG_NONE,
+                                   FIB_PROTOCOL_IP4,
+                                   &nh_10_10_10_1,
+                                   tm->hw[0]->sw_if_index,
+                                   ~0, // invalid fib index
+                                   1,
+                                   NULL,
+                                   FIB_ROUTE_PATH_FLAG_NONE);
+    FIB_TEST(load_balance_is_drop(fib_entry_contribute_ip_forwarding(fei)),
+             "%U resolves via drop",
+             format_fib_prefix, &pfx_5_5_5_5_s_32);
+
+    /*
+     * Add a path via an ADJ that is up
+     */
+    adj_index_t ai_10_10_10_2 = adj_nbr_add_or_lock(FIB_PROTOCOL_IP4,
+                                                    VNET_LINK_IP4,
+                                                    &nh_10_10_10_2,
+                                                    tm->hw[0]->sw_if_index);
+
+    fib_test_lb_bucket_t adj_o_10_10_10_2 = {
+        .type = FT_LB_ADJ,
+        .adj = {
+            .adj = ai_10_10_10_2,
+        },
+    };
+    adj_o_10_10_10_1.adj.adj = ai_10_10_10_1;
+
+    fei = fib_table_entry_path_add(0,
+                                   &pfx_5_5_5_5_s_32,
+                                   FIB_SOURCE_CLI,
+                                   FIB_ENTRY_FLAG_NONE,
+                                   FIB_PROTOCOL_IP4,
+                                   &nh_10_10_10_2,
+                                   tm->hw[0]->sw_if_index,
+                                   ~0, // invalid fib index
+                                   1,
+                                   NULL,
+                                   FIB_ROUTE_PATH_FLAG_NONE);
+
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     1,
+                                     &adj_o_10_10_10_2),
+             "BFD sourced %U via %U",
+             format_fib_prefix, &pfx_5_5_5_5_s_32,
+             format_ip_adjacency, ai_10_10_10_2, FORMAT_IP_ADJACENCY_NONE);
+
+    /*
+     * Bring up the down session - should now LB
+     */
+    bfd_10_10_10_1.local_state = BFD_STATE_up;
+    adj_bfd_notify(BFD_LISTEN_EVENT_UPDATE, &bfd_10_10_10_1);
+    FIB_TEST(fib_test_validate_entry(fei,
+                                     FIB_FORW_CHAIN_TYPE_UNICAST_IP4,
+                                     2,
+                                     &adj_o_10_10_10_1,
+                                     &adj_o_10_10_10_2),
+             "BFD sourced %U via noth adjs",
+             format_fib_prefix, &pfx_5_5_5_5_s_32);
+
+    /*
+     * remove the BFD session state from the adj
+     */
+    adj_bfd_notify(BFD_LISTEN_EVENT_DELETE, &bfd_10_10_10_1);
+
+    /*
+     * clean-up
+     */
+    fib_table_entry_delete(0, &pfx_5_5_5_5_s_32, FIB_SOURCE_CLI);
+    adj_unlock(ai_10_10_10_1);
+    adj_unlock(ai_10_10_10_2);
+
+    /*
+     * test no-one left behind
+     */
+    FIB_TEST((n_feis == fib_entry_pool_size()), "Entries gone");
+    FIB_TEST(0 == adj_nbr_db_size(), "All adjacencies removed");
+    return (0);
+}
+
 static int
 lfib_test (void)
 {
@@ -6913,6 +7618,7 @@ lfib_test (void)
     fib_route_path_t *rpaths = NULL, rpath = {
     	.frp_proto = FIB_PROTOCOL_MPLS,
     	.frp_local_label = 1200,
+        .frp_eos = MPLS_NON_EOS,
     	.frp_sw_if_index = ~0, // recurive
     	.frp_fib_index = 0, // Default MPLS fib
     	.frp_weight = 1,
@@ -7028,6 +7734,146 @@ lfib_test (void)
     dpo_reset(&ip_1200);
 
     /*
+     * An rx-interface route.
+     *  like the tail of an mcast LSP
+     */
+    dpo_id_t idpo = DPO_INVALID;
+
+    interface_dpo_add_or_lock(DPO_PROTO_IP4,
+                              tm->hw[0]->sw_if_index,
+                              &idpo);
+
+    fib_prefix_t pfx_2500 = {
+	.fp_len = 21,
+	.fp_proto = FIB_PROTOCOL_MPLS,
+	.fp_label = 2500,
+	.fp_eos = MPLS_EOS,
+	.fp_payload_proto = DPO_PROTO_IP4,
+    };
+    fib_test_lb_bucket_t rx_intf_0 = {
+        .type = FT_LB_INTF,
+        .adj = {
+            .adj = idpo.dpoi_index,
+        },
+    };
+
+    lfe = fib_table_entry_update_one_path(fib_index,
+					  &pfx_2500,
+					  FIB_SOURCE_API,
+					  FIB_ENTRY_FLAG_NONE,
+					  FIB_PROTOCOL_IP4,
+					  NULL,
+					  tm->hw[0]->sw_if_index,
+					  ~0, // invalid fib index
+					  0,
+					  NULL,
+					  FIB_ROUTE_PATH_INTF_RX);
+    FIB_TEST(fib_test_validate_entry(lfe,
+    				     FIB_FORW_CHAIN_TYPE_MPLS_EOS,
+    				     1,
+    				     &rx_intf_0),
+    	     "2500 rx-interface 0");
+    fib_table_entry_delete(fib_index, &pfx_2500, FIB_SOURCE_API);
+
+    /*
+     * An MPLS mulicast entry
+     */
+    fib_prefix_t pfx_3500 = {
+	.fp_len = 21,
+	.fp_proto = FIB_PROTOCOL_MPLS,
+	.fp_label = 3500,
+	.fp_eos = MPLS_EOS,
+	.fp_payload_proto = DPO_PROTO_IP4,
+    };
+    fib_test_rep_bucket_t mc_0 = {
+        .type = FT_REP_LABEL_O_ADJ,
+	.label_o_adj = {
+	    .adj = ai_mpls_10_10_10_1,
+	    .label = 3300,
+	    .eos = MPLS_EOS,
+	},
+    };
+    fib_test_rep_bucket_t mc_intf_0 = {
+        .type = FT_REP_INTF,
+        .adj = {
+            .adj = idpo.dpoi_index,
+        },
+    };
+    mpls_label_t *l3300 = NULL;
+    vec_add1(l3300, 3300);
+
+    lfe = fib_table_entry_update_one_path(lfib_index,
+					  &pfx_3500,
+					  FIB_SOURCE_API,
+					  FIB_ENTRY_FLAG_MULTICAST,
+					  FIB_PROTOCOL_IP4,
+					  &nh_10_10_10_1,
+					  tm->hw[0]->sw_if_index,
+					  ~0, // invalid fib index
+					  1,
+					  l3300,
+					  FIB_ROUTE_PATH_FLAG_NONE);
+    FIB_TEST(fib_test_validate_entry(lfe,
+    				     FIB_FORW_CHAIN_TYPE_MPLS_EOS,
+    				     1,
+    				     &mc_0),
+    	     "3500 via replicate over 10.10.10.1");
+
+    /*
+     * MPLS Bud-node. Add a replication via an interface-receieve path
+     */
+    lfe = fib_table_entry_path_add(lfib_index,
+				   &pfx_3500,
+				   FIB_SOURCE_API,
+				   FIB_ENTRY_FLAG_MULTICAST,
+				   FIB_PROTOCOL_IP4,
+                                   NULL,
+                                   tm->hw[0]->sw_if_index,
+                                   ~0, // invalid fib index
+                                   0,
+                                   NULL,
+                                   FIB_ROUTE_PATH_INTF_RX);
+    FIB_TEST(fib_test_validate_entry(lfe,
+                                     FIB_FORW_CHAIN_TYPE_MPLS_EOS,
+                                     2,
+                                     &mc_0,
+                                     &mc_intf_0),
+    	     "3500 via replicate over 10.10.10.1 and interface-rx");
+
+    /*
+     * Add a replication via an interface-free for-us path
+     */
+    fib_test_rep_bucket_t mc_disp = {
+        .type = FT_REP_DISP_MFIB_LOOKUP,
+        .adj = {
+            .adj = idpo.dpoi_index,
+        },
+    };
+    lfe = fib_table_entry_path_add(lfib_index,
+				   &pfx_3500,
+				   FIB_SOURCE_API,
+				   FIB_ENTRY_FLAG_MULTICAST,
+				   FIB_PROTOCOL_IP4,
+                                   NULL,
+                                   5, // rpf-id
+                                   0, // default table
+                                   0,
+                                   NULL,
+                                   FIB_ROUTE_PATH_RPF_ID);
+    FIB_TEST(fib_test_validate_entry(lfe,
+                                     FIB_FORW_CHAIN_TYPE_MPLS_EOS,
+                                     3,
+                                     &mc_0,
+                                     &mc_disp,
+                                     &mc_intf_0),
+    	     "3500 via replicate over 10.10.10.1 and interface-rx");
+
+
+    
+    fib_table_entry_delete(fib_index, &pfx_3500, FIB_SOURCE_API);
+    dpo_reset(&idpo);
+
+    /*
      * cleanup
      */
     mpls_sw_interface_enable_disable(&mpls_main,
@@ -7037,6 +7883,9 @@ lfib_test (void)
     FIB_TEST(lb_count == pool_elts(load_balance_pool),
 	     "Load-balance resources freed %d of %d",
              lb_count, pool_elts(load_balance_pool));
+    FIB_TEST(0 == pool_elts(interface_dpo_pool),
+	     "interface_dpo resources freed %d of %d",
+             0, pool_elts(interface_dpo_pool));
 
     return (0);
 }
@@ -7050,6 +7899,11 @@ fib_test (vlib_main_t * vm,
 
     res = 0;
     fib_test_mk_intf(4);
+
+    if (unformat (input, "debug"))
+    {
+        fib_test_do_debug = 1;
+    }
 
     if (unformat (input, "ip"))
     {
@@ -7072,6 +7926,10 @@ fib_test (vlib_main_t * vm,
     {
 	res += fib_test_walk();
     }
+    else if (unformat (input, "bfd"))
+    {
+	res += fib_test_bfd();
+    }
     else
     {
         /*
@@ -7083,6 +7941,7 @@ fib_test (vlib_main_t * vm,
 	res += fib_test_v4();
 	res += fib_test_v6();
 	res += fib_test_ae();
+	res += fib_test_bfd();
 	res += fib_test_label();
 	res += lfib_test();
     }

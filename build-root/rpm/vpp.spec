@@ -43,7 +43,6 @@ Group: System Environment/Libraries
 %description lib
 This package contains the VPP shared libraries, including:
 vppinfra - foundation library supporting vectors, hashes, bitmaps, pools, and string formatting.
-dpdk - DPDK library
 svm - vm library
 vlib - vector processing library
 vlib-api - binary API library
@@ -90,7 +89,7 @@ This package contains the java bindings for the vpp api
 %package api-python
 Summary: VPP api python bindings
 Group: Development/Libraries
-Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}, python-setuptools
+Requires: vpp = %{_version}-%{_release}, vpp-lib = %{_version}-%{_release}, python-setuptools libffi-devel
 
 %description api-python
 This package contains the python bindings for the vpp api
@@ -98,13 +97,12 @@ This package contains the python bindings for the vpp api
 %prep
 %setup -q -n %{name}-%{_version}
 
-%build
-make bootstrap
-make build-release
-
 %pre
 # Add the vpp group
 groupadd -f -r vpp
+
+%build
+cd %{_mu_build_dir}/../src/vpp-api/python && %py2_build
 
 %install
 #
@@ -112,7 +110,7 @@ groupadd -f -r vpp
 #
 mkdir -p -m755 %{buildroot}%{_bindir}
 mkdir -p -m755 %{buildroot}%{_unitdir}
-install -p -m 755 %{_mu_build_dir}/%{_vpp_install_dir}/*/bin/* %{buildroot}%{_bindir}
+install -p -m 755 %{_mu_build_dir}/%{_vpp_install_dir}/vpp/bin/* %{buildroot}%{_bindir}
 
 # api
 mkdir -p -m755 %{buildroot}/usr/share/vpp/api
@@ -123,12 +121,14 @@ mkdir -p -m755 %{buildroot}/usr/share/vpp/api
 mkdir -p -m755 %{buildroot}/etc/vpp
 mkdir -p -m755 %{buildroot}/etc/sysctl.d
 install -p -m 644 %{_mu_build_dir}/rpm/vpp.service %{buildroot}%{_unitdir}
-install -p -m 644 %{_mu_build_dir}/../src/vpp/conf/startup.uiopcigeneric.conf %{buildroot}/etc/vpp/startup.conf
+install -p -m 644 %{_mu_build_dir}/../src/vpp/conf/startup.conf %{buildroot}/etc/vpp/startup.conf
 install -p -m 644 %{_mu_build_dir}/../src/vpp/conf/80-vpp.conf %{buildroot}/etc/sysctl.d
 #
 # libraries
 #
 mkdir -p -m755 %{buildroot}%{_libdir}
+mkdir -p -m755 %{buildroot}/etc/bash_completion.d
+mkdir -p -m755 %{buildroot}/usr/share/vpp
 for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/*/lib* -type f -name '*.so.*.*.*' -print )
 do
 	install -p -m 755 $file %{buildroot}%{_libdir}
@@ -145,6 +145,8 @@ for file in $(find %{_mu_build_dir}/%{_vpp_install_dir}/vpp/share/vpp/api  -type
 do
 	install -p -m 644 $file %{buildroot}/usr/share/vpp/api
 done
+install -p -m 644 %{_mu_build_dir}/../src/scripts/vppctl_completion %{buildroot}/etc/bash_completion.d
+install -p -m 644 %{_mu_build_dir}/../src/scripts/vppctl-cmd-list %{buildroot}/usr/share/vpp
 
 # Lua bindings
 mkdir -p -m755 %{buildroot}/usr/share/doc/vpp/examples/lua/examples/cli
@@ -163,8 +165,7 @@ do
 done
 
 # Python bindings
-mkdir -p -m755 %{buildroot}%{python2_sitelib}
-install -p -m 666 %{_mu_build_dir}/%{_vpp_install_dir}/*/lib/python2.7/site-packages/vpp_papi-*.egg %{buildroot}%{python2_sitelib}
+cd %{_mu_build_dir}/../src/vpp-api/python && %py2_install
 
 #
 # devel
@@ -227,14 +228,8 @@ done
 sysctl --system
 %systemd_post vpp.service
 
-%post api-python
-easy_install -z %{python2_sitelib}/vpp_papi-*.egg
-
 %preun
 %systemd_preun vpp.service
-
-%preun api-python
-easy_install -mxNq vpp_papi
 
 %postun
 %systemd_postun
@@ -245,7 +240,7 @@ pci_dirs=`find /sys/bus/pci/drivers -type d -name igb_uio -o -name uio_pci_gener
 for d in $pci_dirs; do
     for f in ${d}/*; do
         [ -e "${f}/config" ] || continue
-        echo 1 > ${f}/remove
+        echo ${f##*/} > ${d}/unbind
         basename `dirname ${f}` | xargs echo -n "Removing driver"; echo " for PCI ID" `basename ${f}`
         removed=y
     done
@@ -273,9 +268,11 @@ fi
 %exclude %{_libdir}/vpp_api_test_plugins
 %{_libdir}/*
 /usr/share/vpp/api/*
+/etc/bash_completion.d/vppctl_completion
+/usr/share/vpp/vppctl-cmd-list
 
 %files api-lua
-%defattr(644,root,root)
+%defattr(644,root,root,644)
 /usr/share/doc/vpp/examples/lua
 
 %files api-java
@@ -284,7 +281,7 @@ fi
 
 %files api-python
 %defattr(644,root,root)
-%{python2_sitelib}/vpp_papi-*.egg
+%{python2_sitelib}/vpp_papi*
 
 %files devel
 %defattr(-,bin,bin)

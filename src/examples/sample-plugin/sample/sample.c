@@ -50,55 +50,20 @@
 #include <sample/sample_all_api_h.h>
 #undef vl_api_version
 
-/* 
- * A handy macro to set up a message reply.
- * Assumes that the following variables are available:
- * mp - pointer to request message
- * rmp - pointer to reply message type
- * rv - return value
- */
-
-#define REPLY_MACRO(t)                                          \
-do {                                                            \
-    unix_shared_memory_queue_t * q =                            \
-    vl_api_client_index_to_input_queue (mp->client_index);      \
-    if (!q)                                                     \
-        return;                                                 \
-                                                                \
-    rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t)+sm->msg_id_base);               \
-    rmp->context = mp->context;                                 \
-    rmp->retval = ntohl(rv);                                    \
-                                                                \
-    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
-} while(0);
-
+#define REPLY_MSG_ID_BASE sm->msg_id_base
+#include <vlibapi/api_helper_macros.h>
 
 /* List of message types that this plugin understands */
 
 #define foreach_sample_plugin_api_msg                           \
 _(SAMPLE_MACSWAP_ENABLE_DISABLE, sample_macswap_enable_disable)
 
-/* 
- * This routine exists to convince the vlib plugin framework that
- * we haven't accidentally copied a random .dll into the plugin directory.
- *
- * Also collects global variable pointers passed from the vpp engine
- */
-
-clib_error_t * 
-vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
-                      int from_early_init)
-{
-  sample_main_t * sm = &sample_main;
-  clib_error_t * error = 0;
-
-  sm->vlib_main = vm;
-  sm->vnet_main = h->vnet_main;
-  sm->ethernet_main = h->ethernet_main;
-
-  return error;
-}
+/* *INDENT-OFF* */
+VLIB_PLUGIN_REGISTER () = {
+    .version = SAMPLE_PLUGIN_BUILD_VER,
+    .description = "Sample of VPP Plugin",
+};
+/* *INDENT-ON* */
 
 /* Action function shared between message handler and debug CLI */
 
@@ -228,6 +193,8 @@ static clib_error_t * sample_init (vlib_main_t * vm)
   sample_main_t * sm = &sample_main;
   clib_error_t * error = 0;
   u8 * name;
+
+  sm->vnet_main =  vnet_get_main ();
 
   name = format (0, "sample_%08x%c", api_version, 0);
 

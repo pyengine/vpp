@@ -140,7 +140,11 @@ l2learn_process (vlib_node_runtime_t * node,
       counter_base[L2LEARN_ERROR_HIT] += 1;
       if (PREDICT_FALSE (result0->fields.timestamp != timestamp))
 	result0->fields.timestamp = timestamp;
-
+      if (PREDICT_FALSE
+	  (result0->fields.int_sn != vnet_buffer (b0)->l2.int_sn))
+	result0->fields.int_sn = vnet_buffer (b0)->l2.int_sn;
+      if (PREDICT_FALSE (result0->fields.bd_sn != vnet_buffer (b0)->l2.bd_sn))
+	result0->fields.bd_sn = vnet_buffer (b0)->l2.bd_sn;
     }
   else if (result0->raw == ~0)
     {
@@ -167,6 +171,8 @@ l2learn_process (vlib_node_runtime_t * node,
 	  result0->raw = 0;	/* clear all fields */
 	  result0->fields.sw_if_index = sw_if_index0;
 	  result0->fields.timestamp = timestamp;
+	  result0->fields.bd_sn = vnet_buffer (b0)->l2.bd_sn;
+	  result0->fields.int_sn = vnet_buffer (b0)->l2.int_sn;
 	  kv.key = key0->raw;
 	  kv.value = result0->raw;
 
@@ -204,6 +210,8 @@ l2learn_process (vlib_node_runtime_t * node,
 	  result0->raw = 0;	/* clear all fields */
 	  result0->fields.sw_if_index = sw_if_index0;
 	  result0->fields.timestamp = timestamp;
+	  result0->fields.bd_sn = vnet_buffer (b0)->l2.bd_sn;
+	  result0->fields.int_sn = vnet_buffer (b0)->l2.int_sn;
 
 	  kv.key = key0->raw;
 	  kv.value = result0->raw;
@@ -231,9 +239,9 @@ done:
 }
 
 
-static uword
-l2learn_node_fn (vlib_main_t * vm,
-		 vlib_node_runtime_t * node, vlib_frame_t * frame)
+static_always_inline uword
+l2learn_node_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
+		     vlib_frame_t * frame, int do_trace)
 {
   u32 n_left_from, *from, *to_next;
   l2learn_next_t next_index;
@@ -320,7 +328,7 @@ l2learn_node_fn (vlib_main_t * vm,
 	  h2 = vlib_buffer_get_current (b2);
 	  h3 = vlib_buffer_get_current (b3);
 
-	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+	  if (do_trace)
 	    {
 	      if (b0->flags & VLIB_BUFFER_IS_TRACED)
 		{
@@ -426,8 +434,7 @@ l2learn_node_fn (vlib_main_t * vm,
 
 	  h0 = vlib_buffer_get_current (b0);
 
-	  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)
-			     && (b0->flags & VLIB_BUFFER_IS_TRACED)))
+	  if (do_trace && PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED))
 	    {
 	      l2learn_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
 	      t->sw_if_index = sw_if_index0;
@@ -461,6 +468,14 @@ l2learn_node_fn (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
+static uword
+l2learn_node_fn (vlib_main_t * vm,
+		 vlib_node_runtime_t * node, vlib_frame_t * frame)
+{
+  if (PREDICT_FALSE ((node->flags & VLIB_NODE_FLAG_TRACE)))
+    return l2learn_node_inline (vm, node, frame, 1 /* do_trace */ );
+  return l2learn_node_inline (vm, node, frame, 0 /* do_trace */ );
+}
 
 /* *INDENT-OFF* */
 VLIB_REGISTER_NODE (l2learn_node,static) = {

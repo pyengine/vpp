@@ -37,6 +37,7 @@ netmap_create_command_fn (vlib_main_t * vm, unformat_input_t * input,
   u8 is_pipe = 0;
   u8 is_master = 0;
   u32 sw_if_index = ~0;
+  clib_error_t *error = NULL;
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -57,37 +58,101 @@ netmap_create_command_fn (vlib_main_t * vm, unformat_input_t * input,
       else if (unformat (line_input, "slave"))
 	is_master = 0;
       else
-	return clib_error_return (0, "unknown input `%U'",
-				  format_unformat_error, input);
+	{
+	  error = clib_error_return (0, "unknown input `%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
-  unformat_free (line_input);
 
   if (host_if_name == NULL)
-    return clib_error_return (0, "missing host interface name");
+    {
+      error = clib_error_return (0, "missing host interface name");
+      goto done;
+    }
 
   r =
     netmap_create_if (vm, host_if_name, hw_addr_ptr, is_pipe, is_master,
 		      &sw_if_index);
 
   if (r == VNET_API_ERROR_SYSCALL_ERROR_1)
-    return clib_error_return (0, "%s (errno %d)", strerror (errno), errno);
+    {
+      error = clib_error_return (0, "%s (errno %d)", strerror (errno), errno);
+      goto done;
+    }
 
   if (r == VNET_API_ERROR_INVALID_INTERFACE)
-    return clib_error_return (0, "Invalid interface name");
+    {
+      error = clib_error_return (0, "Invalid interface name");
+      goto done;
+    }
 
   if (r == VNET_API_ERROR_SUBIF_ALREADY_EXISTS)
-    return clib_error_return (0, "Interface already exists");
+    {
+      error = clib_error_return (0, "Interface already exists");
+      goto done;
+    }
 
   vlib_cli_output (vm, "%U\n", format_vnet_sw_if_index_name, vnet_get_main (),
 		   sw_if_index);
-  return 0;
+
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
+/*?
+ * '<em>netmap</em>' is a framework for very fast packet I/O from userspace.
+ * '<em>VALE</em>' is an equally fast in-kernel software switch using the
+ * netmap API. '<em>netmap</em>' includes '<em>netmap pipes</em>', a shared
+ * memory packet transport channel. Together, they provide a high speed
+ * user-space interface that allows VPP to patch into a linux namespace, a
+ * linux container, or a physical NIC without the use of DPDK. Netmap/VALE
+ * generates the '<em>netmap.ko</em>' kernel module that needs to be loaded
+ * before netmap interfaces can be created.
+ * - https://github.com/luigirizzo/netmap - Netmap/VALE repo.
+ * - https://github.com/vpp-dev/netmap - VPP development package for Netmap/VALE,
+ * which is a snapshot of the Netmap/VALE repo with minor changes to work
+ * with containers and modified kernel drivers to work with NICs.
+ *
+ * Create a netmap interface that will attach to a linux interface.
+ * The interface must already exist. Once created, a new netmap interface
+ * will exist in VPP with the name '<em>netmap-<ifname></em>', where
+ * '<em><ifname></em>' takes one of two forms:
+ * - <b>ifname</b> - Linux interface to bind too.
+ * - <b>valeXXX:YYY</b> -
+ *   - Where '<em>valeXXX</em>' is an arbitrary name for a VALE
+ *     interface that must start with '<em>vale</em>' and is less
+ *     than 16 characters.
+ *   - Where '<em>YYY</em>' is an existing linux namespace.
+ *
+ * This command has the following optional parameters:
+ *
+ * - <b>hw-addr <mac-addr></b> - Optional ethernet address, can be in either
+ * X:X:X:X:X:X unix or X.X.X cisco format.
+ *
+ * - <b>pipe</b> - Optional flag to indicate that a '<em>netmap pipe</em>'
+ * instance should be created.
+ *
+ * - <b>master | slave</b> - Optional flag to indicate whether VPP should
+ * be the master or slave of the '<em>netmap pipe</em>'. Only considered
+ * if '<em>pipe</em>' is entered. Defaults to '<em>slave</em>' if not entered.
+ *
+ * @cliexpar
+ * Example of how to create a netmap interface tied to the linux
+ * namespace '<em>vpp1</em>':
+ * @cliexstart{create netmap name vale00:vpp1 hw-addr 02:FE:3F:34:15:9B pipe master}
+ * netmap-vale00:vpp1
+ * @cliexend
+ * Once the netmap interface is created, enable the interface using:
+ * @cliexcmd{set interface state netmap-vale00:vpp1 up}
+?*/
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (netmap_create_command, static) = {
   .path = "create netmap",
-  .short_help = "create netmap name [<intf name>|valeXXX:YYY] "
-    "[hw-addr <mac>] [pipe] [master|slave]",
+  .short_help = "create netmap name <ifname>|valeXXX:YYY "
+    "[hw-addr <mac-addr>] [pipe] [master|slave]",
   .function = netmap_create_command_fn,
 };
 /* *INDENT-ON* */
@@ -98,6 +163,7 @@ netmap_delete_command_fn (vlib_main_t * vm, unformat_input_t * input,
 {
   unformat_input_t _line_input, *line_input = &_line_input;
   u8 *host_if_name = NULL;
+  clib_error_t *error = NULL;
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -108,23 +174,47 @@ netmap_delete_command_fn (vlib_main_t * vm, unformat_input_t * input,
       if (unformat (line_input, "name %s", &host_if_name))
 	;
       else
-	return clib_error_return (0, "unknown input `%U'",
-				  format_unformat_error, input);
+	{
+	  error = clib_error_return (0, "unknown input `%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
     }
-  unformat_free (line_input);
 
   if (host_if_name == NULL)
-    return clib_error_return (0, "missing host interface name");
+    {
+      error = clib_error_return (0, "missing host interface name");
+      goto done;
+    }
 
   netmap_delete_if (vm, host_if_name);
 
-  return 0;
+done:
+  unformat_free (line_input);
+
+  return error;
 }
 
+/*?
+ * Delete a netmap interface. Use the '<em><ifname></em>' to identify
+ * the netmap interface to be deleted. In VPP, netmap interfaces are
+ * named as '<em>netmap-<ifname></em>', where '<em><ifname></em>'
+ * takes one of two forms:
+ * - <b>ifname</b> - Linux interface to bind too.
+ * - <b>valeXXX:YYY</b> -
+ *   - Where '<em>valeXXX</em>' is an arbitrary name for a VALE
+ *     interface that must start with '<em>vale</em>' and is less
+ *     than 16 characters.
+ *   - Where '<em>YYY</em>' is an existing linux namespace.
+ *
+ * @cliexpar
+ * Example of how to delete a netmap interface named '<em>netmap-vale00:vpp1</em>':
+ * @cliexcmd{delete netmap name vale00:vpp1}
+?*/
 /* *INDENT-OFF* */
 VLIB_CLI_COMMAND (netmap_delete_command, static) = {
   .path = "delete netmap",
-  .short_help = "delete netmap name <interface name>",
+  .short_help = "delete netmap name <ifname>|valeXXX:YYY",
   .function = netmap_delete_command_fn,
 };
 /* *INDENT-ON* */

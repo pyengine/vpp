@@ -196,7 +196,7 @@ slow_path (vlib_main_t * vm,
  */
 static_always_inline void
 incr_output_stats (vnet_main_t * vnm,
-		   u32 cpu_index,
+		   u32 thread_index,
 		   u32 length,
 		   u32 sw_if_index,
 		   u32 * last_sw_if_index, u32 * n_packets, u32 * n_bytes)
@@ -216,7 +216,7 @@ incr_output_stats (vnet_main_t * vnm,
 
 	  vlib_increment_combined_counter (im->combined_sw_if_counters
 					   + VNET_INTERFACE_COUNTER_TX,
-					   cpu_index,
+					   thread_index,
 					   *last_sw_if_index,
 					   *n_packets, *n_bytes);
 	}
@@ -240,7 +240,7 @@ vnet_interface_output_node_flatten (vlib_main_t * vm,
   u32 n_left_to_tx, *from, *from_end, *to_tx;
   u32 n_bytes, n_buffers, n_packets;
   u32 last_sw_if_index;
-  u32 cpu_index = vm->cpu_index;
+  u32 thread_index = vm->thread_index;
 
   n_buffers = frame->n_vectors;
 
@@ -266,7 +266,7 @@ vnet_interface_output_node_flatten (vlib_main_t * vm,
 
       cm = vec_elt_at_index (vnm->interface_main.sw_if_counters,
 			     VNET_INTERFACE_COUNTER_TX_ERROR);
-      vlib_increment_simple_counter (cm, cpu_index,
+      vlib_increment_simple_counter (cm, thread_index,
 				     rt->sw_if_index, n_buffers);
       return vlib_error_drop_buffers (vm, node, from,
 				      /* buffer stride */ 1,
@@ -341,18 +341,18 @@ vnet_interface_output_node_flatten (vlib_main_t * vm,
 		  from += 1;
 		  to_tx += n_buffers;
 		  n_left_to_tx -= n_buffers;
-		  incr_output_stats (vnm, cpu_index, n_slow_bytes,
+		  incr_output_stats (vnm, thread_index, n_slow_bytes,
 				     vnet_buffer (b)->sw_if_index[VLIB_TX],
 				     &last_sw_if_index, &n_packets, &n_bytes);
 		}
 	    }
 	  else
 	    {
-	      incr_output_stats (vnm, cpu_index,
+	      incr_output_stats (vnm, thread_index,
 				 vlib_buffer_length_in_chain (vm, b0),
 				 vnet_buffer (b0)->sw_if_index[VLIB_TX],
 				 &last_sw_if_index, &n_packets, &n_bytes);
-	      incr_output_stats (vnm, cpu_index,
+	      incr_output_stats (vnm, thread_index,
 				 vlib_buffer_length_in_chain (vm, b0),
 				 vnet_buffer (b1)->sw_if_index[VLIB_TX],
 				 &last_sw_if_index, &n_packets, &n_bytes);
@@ -396,7 +396,7 @@ vnet_interface_output_node_flatten (vlib_main_t * vm,
 	      to_tx += n_buffers;
 	      n_left_to_tx -= n_buffers;
 	    }
-	  incr_output_stats (vnm, cpu_index,
+	  incr_output_stats (vnm, thread_index,
 			     vlib_buffer_length_in_chain (vm, b0),
 			     vnet_buffer (b0)->sw_if_index[VLIB_TX],
 			     &last_sw_if_index, &n_packets, &n_bytes);
@@ -408,7 +408,7 @@ vnet_interface_output_node_flatten (vlib_main_t * vm,
     }
 
   /* Final update of interface stats. */
-  incr_output_stats (vnm, cpu_index, 0, ~0,	/* ~0 will flush stats */
+  incr_output_stats (vnm, thread_index, 0, ~0,	/* ~0 will flush stats */
 		     &last_sw_if_index, &n_packets, &n_bytes);
 
   return n_buffers;
@@ -427,8 +427,8 @@ vnet_interface_output_node (vlib_main_t * vm,
   vnet_hw_interface_t *hi;
   u32 n_left_to_tx, *from, *from_end, *to_tx;
   u32 n_bytes, n_buffers, n_packets;
-  u32 n_bytes_b0, n_bytes_b1;
-  u32 cpu_index = vm->cpu_index;
+  u32 n_bytes_b0, n_bytes_b1, n_bytes_b2, n_bytes_b3;
+  u32 thread_index = vm->thread_index;
   vnet_interface_main_t *im = &vnm->interface_main;
   u32 next_index = VNET_INTERFACE_OUTPUT_NEXT_TX;
   u32 current_config_index = ~0;
@@ -458,7 +458,7 @@ vnet_interface_output_node (vlib_main_t * vm,
 
       cm = vec_elt_at_index (vnm->interface_main.sw_if_counters,
 			     VNET_INTERFACE_COUNTER_TX_ERROR);
-      vlib_increment_simple_counter (cm, cpu_index,
+      vlib_increment_simple_counter (cm, thread_index,
 				     rt->sw_if_index, n_buffers);
 
       return vlib_error_drop_buffers (vm, node, from,
@@ -492,65 +492,100 @@ vnet_interface_output_node (vlib_main_t * vm,
          than VNET_FRAME_SIZE vectors in it. */
       vlib_get_new_next_frame (vm, node, next_index, to_tx, n_left_to_tx);
 
-      while (from + 4 <= from_end && n_left_to_tx >= 2)
+      while (from + 8 <= from_end && n_left_to_tx >= 4)
 	{
-	  u32 bi0, bi1;
-	  vlib_buffer_t *b0, *b1;
-	  u32 tx_swif0, tx_swif1;
+	  u32 bi0, bi1, bi2, bi3;
+	  vlib_buffer_t *b0, *b1, *b2, *b3;
+	  u32 tx_swif0, tx_swif1, tx_swif2, tx_swif3;
 
 	  /* Prefetch next iteration. */
-	  vlib_prefetch_buffer_with_index (vm, from[2], LOAD);
-	  vlib_prefetch_buffer_with_index (vm, from[3], LOAD);
+	  vlib_prefetch_buffer_with_index (vm, from[4], LOAD);
+	  vlib_prefetch_buffer_with_index (vm, from[5], LOAD);
+	  vlib_prefetch_buffer_with_index (vm, from[6], LOAD);
+	  vlib_prefetch_buffer_with_index (vm, from[7], LOAD);
 
 	  bi0 = from[0];
 	  bi1 = from[1];
+	  bi2 = from[2];
+	  bi3 = from[3];
 	  to_tx[0] = bi0;
 	  to_tx[1] = bi1;
-	  from += 2;
-	  to_tx += 2;
-	  n_left_to_tx -= 2;
+	  to_tx[2] = bi2;
+	  to_tx[3] = bi3;
+	  from += 4;
+	  to_tx += 4;
+	  n_left_to_tx -= 4;
 
 	  b0 = vlib_get_buffer (vm, bi0);
 	  b1 = vlib_get_buffer (vm, bi1);
+	  b2 = vlib_get_buffer (vm, bi2);
+	  b3 = vlib_get_buffer (vm, bi3);
 
 	  /* Be grumpy about zero length buffers for benefit of
 	     driver tx function. */
 	  ASSERT (b0->current_length > 0);
 	  ASSERT (b1->current_length > 0);
+	  ASSERT (b2->current_length > 0);
+	  ASSERT (b3->current_length > 0);
 
 	  n_bytes_b0 = vlib_buffer_length_in_chain (vm, b0);
 	  n_bytes_b1 = vlib_buffer_length_in_chain (vm, b1);
+	  n_bytes_b2 = vlib_buffer_length_in_chain (vm, b2);
+	  n_bytes_b3 = vlib_buffer_length_in_chain (vm, b3);
 	  tx_swif0 = vnet_buffer (b0)->sw_if_index[VLIB_TX];
 	  tx_swif1 = vnet_buffer (b1)->sw_if_index[VLIB_TX];
+	  tx_swif2 = vnet_buffer (b2)->sw_if_index[VLIB_TX];
+	  tx_swif3 = vnet_buffer (b3)->sw_if_index[VLIB_TX];
 
 	  n_bytes += n_bytes_b0 + n_bytes_b1;
-	  n_packets += 2;
+	  n_bytes += n_bytes_b2 + n_bytes_b3;
+	  n_packets += 4;
 
 	  if (PREDICT_FALSE (current_config_index != ~0))
 	    {
 	      b0->feature_arc_index = arc;
 	      b1->feature_arc_index = arc;
+	      b2->feature_arc_index = arc;
+	      b3->feature_arc_index = arc;
 	      b0->current_config_index = current_config_index;
 	      b1->current_config_index = current_config_index;
-	    }
-
-	  if (PREDICT_FALSE (tx_swif0 != rt->sw_if_index))
-	    {
-	      /* update vlan subif tx counts, if required */
-	      vlib_increment_combined_counter (im->combined_sw_if_counters +
-					       VNET_INTERFACE_COUNTER_TX,
-					       cpu_index, tx_swif0, 1,
-					       n_bytes_b0);
+	      b2->current_config_index = current_config_index;
+	      b3->current_config_index = current_config_index;
 	    }
 
 	  /* update vlan subif tx counts, if required */
+	  if (PREDICT_FALSE (tx_swif0 != rt->sw_if_index))
+	    {
+	      vlib_increment_combined_counter (im->combined_sw_if_counters +
+					       VNET_INTERFACE_COUNTER_TX,
+					       thread_index, tx_swif0, 1,
+					       n_bytes_b0);
+	    }
+
 	  if (PREDICT_FALSE (tx_swif1 != rt->sw_if_index))
 	    {
 
 	      vlib_increment_combined_counter (im->combined_sw_if_counters +
 					       VNET_INTERFACE_COUNTER_TX,
-					       cpu_index, tx_swif1, 1,
+					       thread_index, tx_swif1, 1,
 					       n_bytes_b1);
+	    }
+
+	  if (PREDICT_FALSE (tx_swif2 != rt->sw_if_index))
+	    {
+
+	      vlib_increment_combined_counter (im->combined_sw_if_counters +
+					       VNET_INTERFACE_COUNTER_TX,
+					       thread_index, tx_swif2, 1,
+					       n_bytes_b2);
+	    }
+	  if (PREDICT_FALSE (tx_swif3 != rt->sw_if_index))
+	    {
+
+	      vlib_increment_combined_counter (im->combined_sw_if_counters +
+					       VNET_INTERFACE_COUNTER_TX,
+					       thread_index, tx_swif3, 1,
+					       n_bytes_b3);
 	    }
 	}
 
@@ -588,7 +623,7 @@ vnet_interface_output_node (vlib_main_t * vm,
 
 	      vlib_increment_combined_counter (im->combined_sw_if_counters +
 					       VNET_INTERFACE_COUNTER_TX,
-					       cpu_index, tx_swif0, 1,
+					       thread_index, tx_swif0, 1,
 					       n_bytes_b0);
 	    }
 	}
@@ -599,7 +634,7 @@ vnet_interface_output_node (vlib_main_t * vm,
   /* Update main interface stats. */
   vlib_increment_combined_counter (im->combined_sw_if_counters
 				   + VNET_INTERFACE_COUNTER_TX,
-				   cpu_index,
+				   thread_index,
 				   rt->sw_if_index, n_packets, n_bytes);
   return n_buffers;
 }
@@ -858,7 +893,7 @@ process_drop_punt (vlib_main_t * vm,
   u32 current_sw_if_index, n_errors_current_sw_if_index;
   u64 current_counter;
   vlib_simple_counter_main_t *cm;
-  u32 cpu_index = vm->cpu_index;
+  u32 thread_index = vm->thread_index;
 
   static vlib_error_t memory[VNET_ERROR_N_DISPOSITION];
   static char memory_init[VNET_ERROR_N_DISPOSITION];
@@ -930,19 +965,19 @@ process_drop_punt (vlib_main_t * vm,
 	  current_counter -= 2;
 	  n_errors_current_sw_if_index -= 2;
 
-	  vlib_increment_simple_counter (cm, cpu_index, sw_if_index0, 1);
-	  vlib_increment_simple_counter (cm, cpu_index, sw_if_index1, 1);
+	  vlib_increment_simple_counter (cm, thread_index, sw_if_index0, 1);
+	  vlib_increment_simple_counter (cm, thread_index, sw_if_index1, 1);
 
 	  /* Increment super-interface drop/punt counters for
 	     sub-interfaces. */
 	  sw_if0 = vnet_get_sw_interface (vnm, sw_if_index0);
 	  vlib_increment_simple_counter
-	    (cm, cpu_index, sw_if0->sup_sw_if_index,
+	    (cm, thread_index, sw_if0->sup_sw_if_index,
 	     sw_if0->sup_sw_if_index != sw_if_index0);
 
 	  sw_if1 = vnet_get_sw_interface (vnm, sw_if_index1);
 	  vlib_increment_simple_counter
-	    (cm, cpu_index, sw_if1->sup_sw_if_index,
+	    (cm, thread_index, sw_if1->sup_sw_if_index,
 	     sw_if1->sup_sw_if_index != sw_if_index1);
 
 	  em->counters[current_counter_index] = current_counter;
@@ -978,11 +1013,12 @@ process_drop_punt (vlib_main_t * vm,
       sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 
       /* Increment drop/punt counters. */
-      vlib_increment_simple_counter (cm, cpu_index, sw_if_index0, 1);
+      vlib_increment_simple_counter (cm, thread_index, sw_if_index0, 1);
 
       /* Increment super-interface drop/punt counters for sub-interfaces. */
       sw_if0 = vnet_get_sw_interface (vnm, sw_if_index0);
-      vlib_increment_simple_counter (cm, cpu_index, sw_if0->sup_sw_if_index,
+      vlib_increment_simple_counter (cm, thread_index,
+				     sw_if0->sup_sw_if_index,
 				     sw_if0->sup_sw_if_index != sw_if_index0);
 
       if (PREDICT_FALSE (e0 != current_error))
@@ -1006,12 +1042,12 @@ process_drop_punt (vlib_main_t * vm,
     {
       vnet_sw_interface_t *si;
 
-      vlib_increment_simple_counter (cm, cpu_index, current_sw_if_index,
+      vlib_increment_simple_counter (cm, thread_index, current_sw_if_index,
 				     n_errors_current_sw_if_index);
 
       si = vnet_get_sw_interface (vnm, current_sw_if_index);
       if (si->sup_sw_if_index != current_sw_if_index)
-	vlib_increment_simple_counter (cm, cpu_index, si->sup_sw_if_index,
+	vlib_increment_simple_counter (cm, thread_index, si->sup_sw_if_index,
 				       n_errors_current_sw_if_index);
     }
 
@@ -1223,7 +1259,6 @@ VNET_FEATURE_ARC_INIT (interface_output, static) =
 {
   .arc_name  = "interface-output",
   .start_nodes = VNET_FEATURES (0),
-  .end_node = "interface-tx",
   .arc_index_ptr = &vnet_main.interface_main.output_feature_arc_index,
 };
 
@@ -1357,8 +1392,8 @@ pcap_drop_trace_command_fn (vlib_main_t * vm,
 
 	  if (im->pcap_filename)
 	    vec_free (im->pcap_filename);
-	  vec_add1 (filename, 0);
 	  im->pcap_filename = chroot_filename;
+	  im->pcap_main.file_name = (char *) im->pcap_filename;
 	  matched = 1;
 	}
       else if (unformat (input, "status"))

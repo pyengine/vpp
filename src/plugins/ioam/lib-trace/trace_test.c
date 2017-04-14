@@ -24,6 +24,9 @@
 #include <vlibsocket/api.h>
 #include <vppinfra/error.h>
 
+#define __plugin_msg_base trace_test_main.msg_id_base
+#include <vlibapi/vat_helper_macros.h>
+
 /* Declare message IDs */
 #include <ioam/lib-trace/trace_msg_enum.h>
 
@@ -115,57 +118,17 @@ _(TRACE_PROFILE_ADD_REPLY, trace_profile_add_reply)                         \
 _(TRACE_PROFILE_DEL_REPLY, trace_profile_del_reply)                         \
 _(TRACE_PROFILE_SHOW_CONFIG_REPLY, trace_profile_show_config_reply)
 
-
-/* M: construct, but don't yet send a message */
-
-#define M(T,t)                                                  \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp));                         \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-#define M2(T,t,n)                                               \
-do {                                                            \
-    vam->result_ready = 0;                                      \
-    mp = vl_msg_api_alloc(sizeof(*mp)+(n));                     \
-    memset (mp, 0, sizeof (*mp));                               \
-    mp->_vl_msg_id = ntohs (VL_API_##T + sm->msg_id_base);      \
-    mp->client_index = vam->my_client_index;                    \
-} while(0);
-
-/* S: send a message */
-#define S (vl_msg_api_send_shmem (vam->vl_input_queue, (u8 *)&mp))
-
-/* W: wait for results, with timeout */
-#define W                                       \
-do {                                            \
-    timeout = vat_time_now (vam) + 1.0;         \
-                                                \
-    while (vat_time_now (vam) < timeout) {      \
-        if (vam->result_ready == 1) {           \
-            return (vam->retval);               \
-        }                                       \
-    }                                           \
-    return -99;                                 \
-} while(0);
-
-
 static int
 api_trace_profile_add (vat_main_t * vam)
 {
-  trace_test_main_t *sm = &trace_test_main;
   unformat_input_t *input = vam->input;
   vl_api_trace_profile_add_t *mp;
   u8 trace_type = 0;
   u8 num_elts = 0;
-  int rv = 0;
   u32 node_id = 0;
   u32 app_data = 0;
   u8 trace_tsp = 0;
-  f64 timeout;
+  int ret;
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
@@ -185,7 +148,7 @@ api_trace_profile_add (vat_main_t * vam)
     }
 
 
-  M (TRACE_PROFILE_ADD, trace_profile_add);
+  M (TRACE_PROFILE_ADD, mp);
 
   mp->trace_type = trace_type;
   mp->trace_tsp = trace_tsp;
@@ -193,10 +156,9 @@ api_trace_profile_add (vat_main_t * vam)
   mp->app_data = htonl (app_data);
   mp->num_elts = num_elts;
 
-  S;
-  W;
-
-  return (rv);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 
@@ -204,26 +166,25 @@ api_trace_profile_add (vat_main_t * vam)
 static int
 api_trace_profile_del (vat_main_t * vam)
 {
-  trace_test_main_t *sm = &trace_test_main;
   vl_api_trace_profile_del_t *mp;
-  f64 timeout;
+  int ret;
 
-  M (TRACE_PROFILE_DEL, trace_profile_del);
-  S;
-  W;
-  return 0;
+  M (TRACE_PROFILE_DEL, mp);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 static int
 api_trace_profile_show_config (vat_main_t * vam)
 {
-  trace_test_main_t *sm = &trace_test_main;
   vl_api_trace_profile_show_config_t *mp;
-  f64 timeout;
-  M (TRACE_PROFILE_SHOW_CONFIG, trace_profile_show_config);
-  S;
-  W;
-  return 0;
+  int ret;
+
+  M (TRACE_PROFILE_SHOW_CONFIG, mp);
+  S (mp);
+  W (ret);
+  return ret;
 }
 
 /*
@@ -237,8 +198,8 @@ _(trace_profile_del, "[id <nn>]")                    \
 _(trace_profile_show_config, "[id <nn>]")
 
 
-void
-vat_api_hookup (vat_main_t * vam)
+static void
+ioam_trace_vat_api_hookup (vat_main_t * vam)
 {
   trace_test_main_t *sm = &trace_test_main;
   /* Hook up handlers for replies from the data plane plug-in */
@@ -276,7 +237,7 @@ vat_plugin_register (vat_main_t * vam)
   sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
   if (sm->msg_id_base != (u16) ~ 0)
-    vat_api_hookup (vam);
+    ioam_trace_vat_api_hookup (vam);
 
   vec_free (name);
 

@@ -12,11 +12,11 @@
 
 #include "vom/logger.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 log_t slog;
 
-log_t &VPP::logger()
+log_t &VOM::logger()
 {
     return slog;
 }

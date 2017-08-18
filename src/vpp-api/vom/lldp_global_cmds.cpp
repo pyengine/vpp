@@ -11,7 +11,7 @@
 
 #include "vom/lldp_global.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 lldp_global::config_cmd::config_cmd(HW::item<bool> &item,
                                     const std::string &system_name,

@@ -8,7 +8,7 @@
 
 #include "vom/sub_interface.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * Construct a new object matching the desried state

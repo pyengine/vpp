@@ -10,7 +10,7 @@
 
 #include "vom/interface.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /*
  * constants and enums

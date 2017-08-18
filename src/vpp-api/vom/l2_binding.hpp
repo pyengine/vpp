@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_L2_INTERFACE_H__
-#define __VPP_L2_INTERFACE_H__
+#ifndef __VOM_L2_INTERFACE_H__
+#define __VOM_L2_INTERFACE_H__
 
 #include <string>
 #include <map>
@@ -23,7 +23,7 @@
 #include "vom/vxlan_tunnel.hpp"
 #include "vom/inspect.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A base class for all object_base in the VPP object_base-Model.
@@ -200,14 +200,14 @@ namespace VPP
         static std::shared_ptr<l2_binding> find_or_add(const l2_binding &temp);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<const handle_t, l2_binding>;
+        friend class VOM::singular_db<const handle_t, l2_binding>;
 
         /**
          * Sweep/reap the object if still stale

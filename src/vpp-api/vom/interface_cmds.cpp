@@ -18,7 +18,7 @@ DEFINE_VAPI_MSG_IDS_INTERFACE_API_JSON;
 DEFINE_VAPI_MSG_IDS_AF_PACKET_API_JSON;
 DEFINE_VAPI_MSG_IDS_TAP_API_JSON;
 
-using namespace VPP;
+using namespace VOM;
 
 interface::loopback_create_cmd::loopback_create_cmd(HW::item<handle_t> &item,
                                                     const std::string &name):

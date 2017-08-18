@@ -6,15 +6,15 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_OBJECT_H__
-#define __VPP_OBJECT_H__
+#ifndef __VOM_OBJECT_H__
+#define __VOM_OBJECT_H__
 
 #include <string>
 #include <memory>
 
 #include "vom/types.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A base class for all object_base in the VPP object_base-Model.

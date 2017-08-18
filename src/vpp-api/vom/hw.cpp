@@ -13,7 +13,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 HW::cmd_q::cmd_q():
     m_enabled(true),
@@ -234,10 +234,10 @@ rc_t HW::write()
 
 bool HW::poll()
 {
-    std::shared_ptr<VPP::cmd> poll(new Poll(m_poll_state));
+    std::shared_ptr<VOM::cmd> poll(new Poll(m_poll_state));
 
-    VPP::HW::enqueue(poll);
-    VPP::HW::write();
+    VOM::HW::enqueue(poll);
+    VOM::HW::write();
 
     return (m_poll_state);
 }

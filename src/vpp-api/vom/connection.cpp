@@ -8,7 +8,7 @@
 
 #include "vom/connection.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 connection::connection():
     m_app_name("vpp-OM")

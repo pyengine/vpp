@@ -10,7 +10,7 @@
 
 #include "vom/l2_binding.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 l2_binding::bind_cmd::bind_cmd(HW::item<bool> &item,
                                const handle_t &itf,

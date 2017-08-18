@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_LLDP_GLOBAL_H__
-#define __VPP_LLDP_GLOBAL_H__
+#ifndef __VOM_LLDP_GLOBAL_H__
+#define __VOM_LLDP_GLOBAL_H__
 
 #include <string>
 #include <map>
@@ -26,7 +26,7 @@
 
 #include <vapi/lldp.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of LLDP global configuration
@@ -153,14 +153,14 @@ namespace VPP
         static std::shared_ptr<lldp_global> find_or_add(const lldp_global &temp);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<interface::key_type, lldp_global>;
+        friend class VOM::singular_db<interface::key_type, lldp_global>;
 
         /**
          * Sweep/reap the object if still stale

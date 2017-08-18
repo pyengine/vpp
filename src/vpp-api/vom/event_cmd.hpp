@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_EVENT_CMD_H__
-#define __VPP_EVENT_CMD_H__
+#ifndef __VOM_EVENT_CMD_H__
+#define __VOM_EVENT_CMD_H__
 
 #include <queue>
 #include <mutex>
@@ -16,7 +16,7 @@
 
 #include <vapi/vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * An Event command base class.

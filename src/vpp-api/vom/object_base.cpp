@@ -8,7 +8,7 @@
 
 #include "vom/object_base.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 object_ref::object_ref(std::shared_ptr<object_base> obj):
     m_obj(obj),
@@ -41,7 +41,7 @@ bool object_ref::stale() const
     return (m_state == OBJECT_STATE_STALE);
 }
 
-std::ostream& VPP::operator<<(std::ostream &os, const object_base& o)
+std::ostream& VOM::operator<<(std::ostream &os, const object_base& o)
 {
     os << o.to_string();
 

@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_L2_ACL_RULE_H__
-#define __VPP_L2_ACL_RULE_H__
+#ifndef __VOM_L2_ACL_RULE_H__
+#define __VOM_L2_ACL_RULE_H__
 
 #include <stdint.h>
 
@@ -16,7 +16,7 @@
 
 #include <vapi/acl.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {

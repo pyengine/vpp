@@ -12,7 +12,7 @@
 #include "vom/arp_proxy_config.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all LLDP configs
@@ -117,7 +117,7 @@ void arp_proxy_config::event_handler::show(std::ostream &os)
     m_db.dump(os);
 }
 
-std::ostream& VPP::operator<<(std::ostream &os, const arp_proxy_config::key_t &key)
+std::ostream& VOM::operator<<(std::ostream &os, const arp_proxy_config::key_t &key)
 {
     os << "["
        << key.first

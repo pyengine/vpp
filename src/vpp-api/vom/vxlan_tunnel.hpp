@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_VXLAN_TUNNEL_H__
-#define __VPP_VXLAN_TUNNEL_H__
+#ifndef __VOM_VXLAN_TUNNEL_H__
+#define __VOM_VXLAN_TUNNEL_H__
 
 #include "vom/object_base.hpp"
 #include "vom/om.hpp"
@@ -21,7 +21,7 @@
 
 #include <vapi/vxlan.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of a VXLAN Tunnel in VPP
@@ -194,7 +194,7 @@ namespace VPP
         /**
          * A cmd class that Dumps all the Vpp interfaces
          */
-        class dump_cmd: public VPP::dump_cmd<vapi::Vxlan_tunnel_dump>
+        class dump_cmd: public VOM::dump_cmd<vapi::Vxlan_tunnel_dump>
         {
         public:
             /**
@@ -272,12 +272,12 @@ namespace VPP
         /*
          * It's the VPPHW class that updates the objects in HW
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<endpoint_t, vxlan_tunnel>;
+        friend class VOM::singular_db<endpoint_t, vxlan_tunnel>;
 
         /**
          * Sweep/reap the object if still stale

@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_DHCP_INTERFACE_H__
-#define __VPP_DHCP_INTERFACE_H__
+#ifndef __VOM_DHCP_INTERFACE_H__
+#define __VOM_DHCP_INTERFACE_H__
 
 #include <string>
 #include <map>
@@ -26,7 +26,7 @@
 
 #include <vapi/dhcp.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of DHCP client configuration on an interface
@@ -279,14 +279,14 @@ namespace VPP
         static std::shared_ptr<dhcp_config> find_or_add(const dhcp_config &temp);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<interface::key_type, dhcp_config>;
+        friend class VOM::singular_db<interface::key_type, dhcp_config>;
 
         /**
          * Sweep/reap the object if still stale

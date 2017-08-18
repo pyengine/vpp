@@ -8,7 +8,7 @@
 
 #include "vom/acl_binding.hpp"
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {

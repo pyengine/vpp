@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ACL_LIST_H__
-#define __VPP_ACL_LIST_H__
+#ifndef __VOM_ACL_LIST_H__
+#define __VOM_ACL_LIST_H__
 
 #include <set>
 #include <string>
@@ -25,7 +25,7 @@
 
 #include <vapi/acl.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {
@@ -290,7 +290,7 @@ namespace VPP
             /**
              * A cmd class that Dumps all the ACLs
              */
-            class dump_cmd: public VPP::dump_cmd<DUMP>
+            class dump_cmd: public VOM::dump_cmd<DUMP>
             {
             public:
                 /**
@@ -426,14 +426,14 @@ namespace VPP
             }
 
             /*
-             * It's the VPP::OM class that updates call update
+             * It's the VOM::OM class that updates call update
              */
-            friend class VPP::OM;
+            friend class VOM::OM;
 
             /**
-             * It's the VPP::singular_db class that calls replay()
+             * It's the VOM::singular_db class that calls replay()
              */
-            friend class VPP::singular_db<key_t, list>;
+            friend class VOM::singular_db<key_t, list>;
 
             /**
              * Sweep/reap the object if still stale

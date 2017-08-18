@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_OM_H__
-#define __VPP_OM_H__
+#ifndef __VOM_OM_H__
+#define __VOM_OM_H__
 
 #include <cassert>
 #include <queue>
@@ -18,7 +18,7 @@
 #include "vom/client_db.hpp"
 #include "vom/hw.hpp"
 
-namespace VPP {    
+namespace VOM {    
     /**
      * The interface to writing objects into VPP OM.
      */
@@ -60,7 +60,7 @@ namespace VPP {
             rc_t rc = rc_t::OK;
 
             HW::disable();
-            rc = VPP::OM::write(key, obj);
+            rc = VOM::OM::write(key, obj);
             HW::enable();
 
             return (rc);

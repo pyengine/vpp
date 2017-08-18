@@ -9,15 +9,15 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_CONNECTION_H__
-#define __VPP_CONNECTION_H__
+#ifndef __VOM_CONNECTION_H__
+#define __VOM_CONNECTION_H__
 
 #include <string>
 #include <mutex>
 
 #include <vapi/vapi.hpp>
 
-namespace VPP {
+namespace VOM {
     /**
      * A representation of the connection to VPP
      */

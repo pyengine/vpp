@@ -15,7 +15,7 @@
 
 DEFINE_VAPI_MSG_IDS_L2_API_JSON;
 
-using namespace VPP;
+using namespace VOM;
 
 bridge_domain::create_cmd::create_cmd(HW::item<uint32_t> &item):
     rpc_cmd(item)

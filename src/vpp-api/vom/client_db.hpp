@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_KEY_DB_H__
-#define __VPP_KEY_DB_H__
+#ifndef __VOM_KEY_DB_H__
+#define __VOM_KEY_DB_H__
 
 #include <map>
 #include <set>
@@ -15,7 +15,7 @@
 
 #include "vom/object_base.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A convenitent typedef for set of objects owned.

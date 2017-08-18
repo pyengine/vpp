@@ -15,7 +15,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 tap_interface::event_handler tap_interface::m_evh;
 
@@ -116,7 +116,7 @@ void tap_interface::event_handler::handle_populate(const client_db::key_t &key)
          * but disable the HW Command q whilst we do, so that no
          * commands are sent to VPP
          */
-        VPP::OM::commit(key, itf);
+        VOM::OM::commit(key, itf);
     }
 }
 

@@ -12,7 +12,7 @@
 
 #include "vom/types.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 rc_t::rc_t(int v, const std::string s):
     enum_base<rc_t>(v, s)
@@ -81,7 +81,7 @@ uint32_t handle_t::value() const
     return (m_value);
 }
 
-std::ostream & VPP::operator<<(std::ostream &os, const handle_t &h)
+std::ostream & VOM::operator<<(std::ostream &os, const handle_t &h)
 {
     os << h.value();
 
@@ -134,7 +134,7 @@ bool mac_address_t::operator==(const mac_address_t &mac) const
     return (bytes == mac.bytes);
 }
 
-std::ostream &VPP::operator<<(std::ostream &os, const mac_address_t &mac)
+std::ostream &VOM::operator<<(std::ostream &os, const mac_address_t &mac)
 {
     os << mac.to_string();
 
@@ -200,7 +200,7 @@ bool l2_address_t::operator!=(const l2_address_t &l2) const
     return (bytes != l2.bytes);
 }
 
-std::ostream &VPP::operator<<(std::ostream &os, const l2_address_t &l2)
+std::ostream &VOM::operator<<(std::ostream &os, const l2_address_t &l2)
 {
     os << l2.to_string();
 

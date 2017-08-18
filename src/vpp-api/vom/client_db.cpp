@@ -8,7 +8,7 @@
 
 #include "vom/client_db.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 object_ref_list& client_db::find(const client_db::key_t &k)
 {

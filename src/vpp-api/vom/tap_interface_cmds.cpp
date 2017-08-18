@@ -15,7 +15,7 @@
 
 #include <vapi/tap.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 tap_interface::create_cmd::create_cmd(HW::item<handle_t> &item,
                                        const std::string &name,

@@ -12,7 +12,7 @@
 
 #include "vom/route.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * The all Zeros prefix
@@ -100,7 +100,7 @@ std::string route::prefix_t::to_string() const
     return (s.str());
 }
 
-boost::asio::ip::address VPP::from_bytes(uint8_t is_ip6, uint8_t *bytes)
+boost::asio::ip::address VOM::from_bytes(uint8_t is_ip6, uint8_t *bytes)
 {
     boost::asio::ip::address addr;
 
@@ -130,7 +130,7 @@ route::prefix_t::prefix_t(uint8_t is_ip6,
 {
 }
 
-void VPP::to_bytes(const boost::asio::ip::address &addr,
+void VOM::to_bytes(const boost::asio::ip::address &addr,
                    uint8_t *is_ip6,
                    uint8_t *array)
 {
@@ -155,7 +155,7 @@ void route::prefix_t::to_vpp(uint8_t *is_ip6,
     to_bytes(m_addr, is_ip6, addr);
 }
 
-std::ostream & VPP::operator<<(std::ostream &os,
+std::ostream & VOM::operator<<(std::ostream &os,
                                const route::prefix_t &pfx)
 {
     os << pfx.to_string();
@@ -163,7 +163,7 @@ std::ostream & VPP::operator<<(std::ostream &os,
     return (os);
 }
 
-boost::asio::ip::address_v4  VPP::operator|(
+boost::asio::ip::address_v4  VOM::operator|(
     const boost::asio::ip::address_v4 &addr1,
     const boost::asio::ip::address_v4 &addr2)
 {
@@ -173,7 +173,7 @@ boost::asio::ip::address_v4  VPP::operator|(
     return (addr);
 }
 
-boost::asio::ip::address_v4 VPP::operator&(
+boost::asio::ip::address_v4 VOM::operator&(
     const boost::asio::ip::address_v4 &addr1,
     const boost::asio::ip::address_v4 &addr2)
 {
@@ -183,7 +183,7 @@ boost::asio::ip::address_v4 VPP::operator&(
     return (addr);
 }
 
-boost::asio::ip::address_v4 VPP::operator~(
+boost::asio::ip::address_v4 VOM::operator~(
     const boost::asio::ip::address_v4 &addr1)
 {
     uint32_t a;

@@ -6,13 +6,13 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_INST_DB_H__
-#define __VPP_INST_DB_H__
+#ifndef __VOM_INST_DB_H__
+#define __VOM_INST_DB_H__
 
 #include <memory>
 #include <ostream>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A Database to store the unique 'singular' instances of a single object type.

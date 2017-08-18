@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_L3_BINDING_H__
-#define __VPP_L3_BINDING_H__
+#ifndef __VOM_L3_BINDING_H__
+#define __VOM_L3_BINDING_H__
 
 #include <string>
 #include <map>
@@ -25,7 +25,7 @@
 
 #include <vapi/ip.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of L3 configuration on an interface
@@ -243,12 +243,12 @@ namespace VPP
         /*
          * It's the VPPHW class that updates the objects in HW
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-           e* It's the VPP::singular_db class that calls replay()
+           e* It's the VOM::singular_db class that calls replay()
         */
-        friend class VPP::singular_db<key_type_t, l3_binding>;
+        friend class VOM::singular_db<key_type_t, l3_binding>;
 
         /**
          * Sweep/reap the object if still stale

@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ROUTE_DOMAIN_H__
-#define __VPP_ROUTE_DOMAIN_H__
+#ifndef __VOM_ROUTE_DOMAIN_H__
+#define __VOM_ROUTE_DOMAIN_H__
 
 #include <string>
 #include <stdint.h>
@@ -17,7 +17,7 @@
 #include "vom/singular_db.hpp"
 #include "vom/route.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A base class for all object_base in the VPP object_base-Model.
@@ -83,12 +83,12 @@ namespace VPP
         /*
          * It's the VPPHW class that updates the objects in HW
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<route::table_id_t, route_domain>;
+        friend class VOM::singular_db<route::table_id_t, route_domain>;
 
         /**
          * Sweep/reap the object if still stale

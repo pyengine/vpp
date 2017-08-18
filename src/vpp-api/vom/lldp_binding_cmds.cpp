@@ -13,7 +13,7 @@
 
 DEFINE_VAPI_MSG_IDS_LLDP_API_JSON;
 
-using namespace VPP;
+using namespace VOM;
 
 lldp_binding::bind_cmd::bind_cmd(HW::item<bool> &item,
                                 const handle_t &itf,

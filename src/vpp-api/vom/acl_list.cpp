@@ -9,7 +9,7 @@
 #include "vom/acl_list.hpp"
 #include "vom/logger.hpp"
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {
@@ -53,7 +53,7 @@ namespace VPP
                  * but disable the HW Command q whilst we do, so that no
                  * commands are sent to VPP
                  */
-                VPP::OM::commit(key, acl);
+                VOM::OM::commit(key, acl);
             }
         }
 

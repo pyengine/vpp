@@ -11,7 +11,7 @@
 
 #include "vom/arp_proxy_binding.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 arp_proxy_binding::bind_cmd::bind_cmd(HW::item<bool> &item,
                                   const handle_t &itf):

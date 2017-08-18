@@ -15,7 +15,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 sub_interface::create_cmd::create_cmd(HW::item<handle_t> &item,
                                       const std::string &name,

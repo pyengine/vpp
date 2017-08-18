@@ -12,7 +12,7 @@
 #include "vom/lldp_binding.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all LLDP configs

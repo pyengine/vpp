@@ -14,7 +14,7 @@
 
 DEFINE_VAPI_MSG_IDS_VXLAN_API_JSON;
 
-using namespace VPP;
+using namespace VOM;
 
 vxlan_tunnel::create_cmd::create_cmd(HW::item<handle_t> &item,
                                      const std::string &name,

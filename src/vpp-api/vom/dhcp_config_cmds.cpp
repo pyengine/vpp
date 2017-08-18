@@ -13,7 +13,7 @@
 
 DEFINE_VAPI_MSG_IDS_DHCP_API_JSON;
 
-using namespace VPP;
+using namespace VOM;
 
 dhcp_config::bind_cmd::bind_cmd(HW::item<bool> &item,
                                 const handle_t &itf,

@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_BRIDGE_DOMAIN_H__
-#define __VPP_BRIDGE_DOMAIN_H__
+#ifndef __VOM_BRIDGE_DOMAIN_H__
+#define __VOM_BRIDGE_DOMAIN_H__
 
 #include <string>
 #include <stdint.h>
@@ -23,7 +23,7 @@
 
 #include <vapi/l2.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A base class for all object_base in the VPP object_base-Model.
@@ -129,7 +129,7 @@ namespace VPP
         /**
          * A cmd class that Dumps all the IPv4 L3 configs
          */
-        class dump_cmd: public VPP::dump_cmd<vapi::Bridge_domain_dump>
+        class dump_cmd: public VOM::dump_cmd<vapi::Bridge_domain_dump>
         {
         public:
             /**
@@ -205,14 +205,14 @@ namespace VPP
         static std::shared_ptr<bridge_domain> find_or_add(const bridge_domain &temp);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<uint32_t, bridge_domain>;
+        friend class VOM::singular_db<uint32_t, bridge_domain>;
 
         /**
          * Sweep/reap the object if still stale

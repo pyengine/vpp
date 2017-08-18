@@ -15,7 +15,7 @@
 #include "vom/cmd.hpp"
 #include "vom/logger.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of al the interfaces, key on the name
@@ -126,7 +126,7 @@ void bridge_domain::event_handler::handle_populate(const client_db::key_t &key)
          * but disable the HW Command q whilst we do, so that no
          * commands are sent to VPP
          */
-        VPP::OM::commit(key, bd);
+        VOM::OM::commit(key, bd);
 
         /**
          * For each interface in the BD construct an l2_binding

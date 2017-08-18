@@ -14,7 +14,7 @@
 #include "vom/cmd.hpp"
 #include "vom/logger.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 const std::string VXLAN_TUNNEL_NAME = "vxlan-tunnel-itf";
 
@@ -72,7 +72,7 @@ std::string vxlan_tunnel::endpoint_t::to_string() const
     return (s.str());
 }
 
-std::ostream & VPP::operator<<(std::ostream &os, const vxlan_tunnel::endpoint_t &ep)
+std::ostream & VOM::operator<<(std::ostream &os, const vxlan_tunnel::endpoint_t &ep)
 {
     os << ep.to_string();
 

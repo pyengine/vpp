@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_INTERFACE_H__
-#define __VPP_INTERFACE_H__
+#ifndef __VOM_INTERFACE_H__
+#define __VOM_INTERFACE_H__
 
 #include <string>
 #include <stdint.h>
@@ -30,7 +30,7 @@
 #include <vapi/af_packet.api.vapi.hpp>
 #include <vapi/tap.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of an interface in VPP
@@ -648,7 +648,7 @@ namespace VPP
         /**
          * A cmd class that Dumps all the Vpp interfaces
          */
-        class dump_cmd: public VPP::dump_cmd<vapi::Sw_interface_dump>
+        class dump_cmd: public VOM::dump_cmd<vapi::Sw_interface_dump>
         {
         public:
             /**
@@ -793,14 +793,14 @@ namespace VPP
         void update(const interface &obj);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<const std::string, interface>;
+        friend class VOM::singular_db<const std::string, interface>;
 
         /**
          * The interfaces name

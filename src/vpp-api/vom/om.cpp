@@ -10,7 +10,7 @@
 
 #include "vom/om.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 client_db *OM::m_db;
 
@@ -30,7 +30,7 @@ void OM::mark(const client_db::key_t &key)
      * Find if the object already stored on behalf of this key.
      * and mark them stale
      */
-    VPP::object_ref_list& objs = m_db->find(key);
+    VOM::object_ref_list& objs = m_db->find(key);
 
     auto mark_obj = [](const object_ref &oref)
         {

@@ -15,7 +15,7 @@
 #include "vom/inspect.hpp"
 #include "vom/logger.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 std::unique_ptr<std::map<std::string, inspect::command_handler*>> inspect::m_cmd_handlers;
 

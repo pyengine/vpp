@@ -6,13 +6,13 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_CONTROL_INTERFACE_H__
-#define __VPP_CONTROL_INTERFACE_H__
+#ifndef __VOM_CONTROL_INTERFACE_H__
+#define __VOM_CONTROL_INTERFACE_H__
 
 #include "vom/interface.hpp"
 #include "vom/route.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A tap-interface. e.g. a tap interface
@@ -84,7 +84,7 @@ namespace VPP
         /**
          * A cmd class that Dumps all the Vpp Interfaces
          */
-        class dump_cmd: public VPP::dump_cmd<vapi::Sw_interface_tap_dump>
+        class dump_cmd: public VOM::dump_cmd<vapi::Sw_interface_tap_dump>
         {
         public:
             /**
@@ -177,9 +177,9 @@ namespace VPP
         virtual std::queue<cmd*> & mk_delete_cmd(std::queue<cmd*> &cmds);
 
         /*
-         * It's the VPP::OM class that call singular()
+         * It's the VOM::OM class that call singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
     };
 
 }

@@ -12,7 +12,7 @@
 #include "vom/dhcp_config.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all DHCP configs

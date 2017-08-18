@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ACL_BINDING_H__
-#define __VPP_ACL_BINDING_H__
+#ifndef __VOM_ACL_BINDING_H__
+#define __VOM_ACL_BINDING_H__
 
 #include <ostream>
 #include <string>
@@ -23,7 +23,7 @@
 #include "vom/acl_list.hpp"
 #include "vom/inspect.hpp"
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {
@@ -240,7 +240,7 @@ namespace VPP
             /**
              * A cmd class that Dumps all the ACLs
              */
-            class dump_cmd: public VPP::dump_cmd<DUMP>
+            class dump_cmd: public VOM::dump_cmd<DUMP>
             {
             public:
                 /**
@@ -344,14 +344,14 @@ namespace VPP
             }
 
             /*
-             * It's the VPP::OM class that calls singular()
+             * It's the VOM::OM class that calls singular()
              */
-            friend class VPP::OM;
+            friend class VOM::OM;
 
             /**
-             * It's the VPP::singular_db class that calls replay()
+             * It's the VOM::singular_db class that calls replay()
              */
-            friend class VPP::singular_db<key_t, binding>;
+            friend class VOM::singular_db<key_t, binding>;
 
             /**
              * Sweep/reap the object if still stale

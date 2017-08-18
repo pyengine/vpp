@@ -12,7 +12,7 @@
 #include "vom/l2_binding.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all the L2 Configs

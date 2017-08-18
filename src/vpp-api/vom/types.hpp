@@ -28,7 +28,7 @@
     } while (VAPI_OK != _rv);                   \
 }
 
-namespace VPP
+namespace VOM
 {
     /**
      * There needs to be a strict order in which object types are read from VPP

@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_CMD_H__
-#define __VPP_CMD_H__
+#ifndef __VOM_CMD_H__
+#define __VOM_CMD_H__
 
 #include <stdint.h>
 #include <string>
@@ -19,10 +19,10 @@
 
 #include <vapi/vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
-     * Forward declaration of the VPP::connection class
+     * Forward declaration of the VOM::connection class
      */
     class connection;
 

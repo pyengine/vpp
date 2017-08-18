@@ -13,7 +13,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 arp_proxy_config::config_cmd::config_cmd(HW::item<bool> &item,
                                          const boost::asio::ip::address_v4 &low,

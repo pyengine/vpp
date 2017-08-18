@@ -6,15 +6,15 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_INSPECT_H__
-#define __VPP_INSPECT_H__
+#ifndef __VOM_INSPECT_H__
+#define __VOM_INSPECT_H__
 
 #include <map>
 #include <deque>
 #include <string>
 #include <ostream>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A means to inspect the state VPP has built, in total, and per-client

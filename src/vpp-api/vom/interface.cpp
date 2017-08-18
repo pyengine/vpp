@@ -15,7 +15,7 @@
 #include "vom/l3_binding.hpp"
 #include "vom/logger.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all the interfaces, key on the name
@@ -340,7 +340,7 @@ void interface::event_handler::handle_populate(const client_db::key_t &key)
              * but disable the HW Command q whilst we do, so that no
              * commands are sent to VPP
              */
-            VPP::OM::commit(key, *itf);
+            VOM::OM::commit(key, *itf);
 
             /**
              * Get the address configured on the interface

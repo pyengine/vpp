@@ -6,13 +6,13 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ROUTE_H__
-#define __VPP_ROUTE_H__
+#ifndef __VOM_ROUTE_H__
+#define __VOM_ROUTE_H__
 
 #include <boost/asio/ip/address.hpp>
 
 
-namespace VPP
+namespace VOM
 {
     /**
      * Types belonging to Routing

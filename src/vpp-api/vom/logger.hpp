@@ -9,8 +9,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_LOGGER_H__
-#define __VPP_LOGGER_H__
+#ifndef __VOM_LOGGER_H__
+#define __VOM_LOGGER_H__
 
 #include <boost/log/sources/logger.hpp>
 #include <boost/log/sources/severity_logger.hpp>
@@ -18,7 +18,7 @@
 
 using levels = boost::log::trivial::severity_level;
 
-namespace VPP
+namespace VOM
 {
     /**
      * We use the boost logging library.

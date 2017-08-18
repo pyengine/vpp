@@ -6,12 +6,12 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ENUM_H__
-#define __VPP_ENUM_H__
+#ifndef __VOM_ENUM_H__
+#define __VOM_ENUM_H__
 
 #include <string>
 
-namespace VPP
+namespace VOM
 {
     /**
      * Atemplate base class for all enum types.

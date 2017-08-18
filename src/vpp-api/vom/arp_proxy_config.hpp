@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ARP_PROXY_CONFIG_H__
-#define __VPP_ARP_PROXY_CONFIG_H__
+#ifndef __VOM_ARP_PROXY_CONFIG_H__
+#define __VOM_ARP_PROXY_CONFIG_H__
 
 #include <string>
 #include <map>
@@ -24,7 +24,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of LLDP client configuration on an interface
@@ -186,14 +186,14 @@ namespace VPP
         static std::shared_ptr<arp_proxy_config> find_or_add(const arp_proxy_config &temp);
 
         /*
-         * It's the VPP::OM class that calls singular()
+         * It's the VOM::OM class that calls singular()
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-         * It's the VPP::singular_db class that calls replay()
+         * It's the VOM::singular_db class that calls replay()
          */
-        friend class VPP::singular_db<arp_proxy_config::key_t, arp_proxy_config>;
+        friend class VOM::singular_db<arp_proxy_config::key_t, arp_proxy_config>;
 
         /**
          * Sweep/reap the object if still stale

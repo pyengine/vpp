@@ -10,7 +10,7 @@
 
 #include "vom/acl_l2_rule.hpp"
 
-using namespace VPP::ACL;
+using namespace VOM::ACL;
 
 l2_rule::l2_rule(uint32_t priority,
                const action_t &action,

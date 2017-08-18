@@ -6,12 +6,12 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_SUB_INTERFACE_H__
-#define __VPP_SUB_INTERFACE_H__
+#ifndef __VOM_SUB_INTERFACE_H__
+#define __VOM_SUB_INTERFACE_H__
 
 #include "vom/interface.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A Sub-interface. e.g. a VLAN sub-interface on an Ethernet interface

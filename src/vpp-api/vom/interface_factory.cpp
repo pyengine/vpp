@@ -13,7 +13,7 @@
 #include "vom/tap_interface.hpp"
 #include "vom/sub_interface.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 std::unique_ptr<interface>
 interface::new_interface(const vapi_payload_sw_interface_details &vd)

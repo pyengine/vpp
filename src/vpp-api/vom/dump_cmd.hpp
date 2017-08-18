@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_DUMP_CMD_H__
-#define __VPP_DUMP_CMD_H__
+#ifndef __VOM_DUMP_CMD_H__
+#define __VOM_DUMP_CMD_H__
 
 #include <future>
 
@@ -16,7 +16,7 @@
 
 #include <vapi/vapi.hpp>
 
-namespace VPP
+namespace VOM
 {
     /**
      * A function type def for calculating a message's size

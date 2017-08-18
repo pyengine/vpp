@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_IP_UNNUMBERED_H__
-#define __VPP_IP_UNNUMBERED_H__
+#ifndef __VOM_IP_UNNUMBERED_H__
+#define __VOM_IP_UNNUMBERED_H__
 
 #include <string>
 
@@ -19,7 +19,7 @@
 #include "vom/interface.hpp"
 #include "vom/inspect.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A representation of IP unnumbered configuration on an interface
@@ -196,12 +196,12 @@ namespace VPP
         /*
          * It's the VPPHW class that updates the objects in HW
          */
-        friend class VPP::OM;
+        friend class VOM::OM;
 
         /**
-           e* It's the VPP::singular_db class that calls replay()
+           e* It's the VOM::singular_db class that calls replay()
         */
-        friend class VPP::singular_db<key_t, ip_unnumbered>;
+        friend class VOM::singular_db<key_t, ip_unnumbered>;
 
         /**
          * Sweep/reap the object if still stale

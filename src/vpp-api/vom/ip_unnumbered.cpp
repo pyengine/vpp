@@ -12,7 +12,7 @@
 #include "vom/ip_unnumbered.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of all LLDP configs

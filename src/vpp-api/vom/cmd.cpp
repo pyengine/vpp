@@ -8,12 +8,12 @@
 
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * Free ostream function to print a command
  */
-std::ostream & VPP::operator<<(std::ostream &os, const cmd &cmd)
+std::ostream & VOM::operator<<(std::ostream &os, const cmd &cmd)
 {
     os << cmd.to_string();
 

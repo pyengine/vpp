@@ -12,7 +12,7 @@
 #include "vom/route_domain.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 /**
  * A DB of al the interfaces, key on the name

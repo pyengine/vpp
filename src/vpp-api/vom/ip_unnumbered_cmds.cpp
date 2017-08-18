@@ -13,7 +13,7 @@
 
 #include <vapi/vpe.api.vapi.hpp>
 
-using namespace VPP;
+using namespace VOM;
 
 ip_unnumbered::config_cmd::config_cmd(HW::item<bool> &item,
                                       const handle_t &itf,

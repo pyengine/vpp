@@ -6,15 +6,15 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_RPC_CMD_H__
-#define __VPP_RPC_CMD_H__
+#ifndef __VOM_RPC_CMD_H__
+#define __VOM_RPC_CMD_H__
 
 #include <future>
 
 #include "vom/cmd.hpp"
 #include "vom/logger.hpp"
 
-namespace VPP
+namespace VOM
 {
     /**
      * A base class for all RPC commands to VPP.

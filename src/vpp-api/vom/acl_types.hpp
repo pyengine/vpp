@@ -9,12 +9,12 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_ACL_TYPES_H__
-#define __VPP_ACL_TYPES_H__
+#ifndef __VOM_ACL_TYPES_H__
+#define __VOM_ACL_TYPES_H__
 
 #include "vom/types.hpp"
 
-namespace VPP
+namespace VOM
 {
     namespace ACL
     {

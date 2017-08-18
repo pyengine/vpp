@@ -6,8 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VPP_HW_H__
-#define __VPP_HW_H__
+#ifndef __VOM_HW_H__
+#define __VOM_HW_H__
 
 #include <deque>
 #include <map>
@@ -22,7 +22,7 @@
 #include "vom/rpc_cmd.hpp"
 #include "vom/connection.hpp"
 
-namespace VPP
+namespace VOM
 {
     class HW
     {

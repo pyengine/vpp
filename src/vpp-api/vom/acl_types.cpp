@@ -11,7 +11,7 @@
 
 #include "vom/acl_types.hpp"
 
-using namespace VPP::ACL;
+using namespace VOM::ACL;
 
 const action_t action_t::PERMIT(1, "permit");
 const action_t action_t::DENY(0, "deny");

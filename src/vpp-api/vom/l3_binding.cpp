@@ -12,7 +12,7 @@
 #include "vom/l3_binding.hpp"
 #include "vom/cmd.hpp"
 
-using namespace VPP;
+using namespace VOM;
 
 singular_db<l3_binding::key_type_t, l3_binding> l3_binding::m_db;
 
@@ -105,7 +105,7 @@ void l3_binding::dump(std::ostream &os)
     m_db.dump(os);
 }
 
-std::ostream& VPP::operator<<(std::ostream &os, const l3_binding::key_type_t &key)
+std::ostream& VOM::operator<<(std::ostream &os, const l3_binding::key_type_t &key)
 {
     os << "["
        << key.first

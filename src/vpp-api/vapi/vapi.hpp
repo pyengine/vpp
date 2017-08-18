@@ -274,6 +274,7 @@ public:
                 (static_cast<u8 *> (shm_data) + vapi_get_context_offset (id)));
             const auto x = requests.front ();
             matching_req = x;
+            if (!x) return (rv);
             if (context == x->context)
               {
                 std::tie (rv, break_dispatch) =

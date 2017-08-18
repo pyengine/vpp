@@ -10,18 +10,14 @@
 #define __VPP_INSPECT_H__
 
 #include <map>
-#include <vector>
+#include <deque>
 #include <string>
-#include <sstream>
-#include <uv.h>
+#include <ostream>
 
 namespace VPP
 {
     /**
      * A means to inspect the state VPP has built, in total, and per-client
-     * To use do:
-     *   socat - UNIX-CONNECT:/path/to/sock/in/opflex.conf
-     * and follow the instructions
      */
     class inspect
     {
@@ -29,12 +25,21 @@ namespace VPP
         /**
          * Constructor
          */
-        inspect(const std::string &sockname);
+        inspect() = default;
 
         /**
          * Destructor to tidyup socket resources
          */
-        ~inspect();
+        ~inspect() = default;
+
+        /**
+         * handle input from the requester
+         *
+         * @param input command
+         * @param output output
+         */
+        void handle_input(const std::string &input,
+                          std::ostream &output);
 
         /**
          * inspect command handler Handler
@@ -58,78 +63,6 @@ namespace VPP
                                      const std::string &help,
                                      command_handler *ch);
     private:
-        /**
-         * Call operator for running in the thread
-         */
-        static void run(void* ctx);
-
-        /**
-         * A write request
-         */
-        struct write_req_t
-        {
-            write_req_t(std::ostringstream &output);
-            ~write_req_t();
-
-            uv_write_t req;
-            uv_buf_t buf;
-        };
-
-        /**
-         * Write a ostream to the client
-         */
-        static void do_write(uv_stream_t *client, std::ostringstream &output);
-
-        /**
-         * Called on creation of a new connection
-         */
-        static void on_connection(uv_stream_t* server,
-                                  int status);
-
-        /**
-         * Call when data is written
-         */
-        static void on_write(uv_write_t *req, int status);
-
-        /**
-         * Called when data is read
-         */
-        static void on_read(uv_stream_t *client,
-                            ssize_t nread,
-                            const uv_buf_t *buf);
-
-        /**
-         * Called to allocate buffer space for data to be read
-         */
-        static void on_alloc_buffer(uv_handle_t *handle,
-                                    size_t size,
-                                    uv_buf_t *buf);
-
-        /**
-         * Called to cleanup the thread and socket during destruction
-         */
-        static void on_cleanup(uv_async_t* handle);
-
-        /**
-         * Async handle so we can wakeup the loop
-         */
-        uv_async_t m_async;
-
-        /**
-         * The libuv loop
-         */
-        uv_loop_t m_server_loop;
-
-        /**
-         * The libuv thread context in which we run the loop
-         */
-        uv_thread_t m_server_thread;
-
-        /**
-         * The inspect unix domain socket name, from the config file
-         */
-        std::string m_sock_name;
-
         /**
          * command handler list
          */

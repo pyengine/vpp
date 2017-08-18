@@ -109,13 +109,13 @@ bool tap_interface::dump_cmd::operator==(const dump_cmd& other) const
 
 rc_t tap_interface::dump_cmd::issue(connection &con)
 {
-    msg_t req(con.ctx(), std::ref(*this));
+    m_dump.reset(new msg_t(con.ctx(), std::ref(*this)));
 
-    VAPI_CALL(req.execute());
+    VAPI_CALL(m_dump->execute());
 
     wait();
 
-    return rc_t::OK;
+    return rc_t::INPROGRESS;
 }
 
 std::string tap_interface::dump_cmd::to_string() const

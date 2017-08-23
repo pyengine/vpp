@@ -15,7 +15,7 @@ AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
 AM_LIBTOOLFLAGS = --quiet
 
-AM_CXXFLAGS = -Wall -std=gnu++11 -I${top_srcdir} -I${top_builddir} -I$(top_srcdir)/vpp-api/ -I${libdir}/../include -DBOOST_LOG_DYN_LINK
+AM_CXXFLAGS = -Wall -std=gnu++11 -I${top_srcdir} -I${top_builddir}/vpp-api/vapi/ -I$(top_srcdir)/vpp-api/ -I${libdir}/../include -DBOOST_LOG_DYN_LINK
 AM_LDFLAGS = -DBOOST_LOG_DYN_LINK -shared -avoid-version -no-undefined
 
 bin_PROGRAMS =

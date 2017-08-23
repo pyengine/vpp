@@ -199,8 +199,8 @@ namespace VOM
         friend class VOM::OM;
 
         /**
-           e* It's the VOM::singular_db class that calls replay()
-        */
+         * It's the VOM::singular_db class that calls replay()
+         */
         friend class VOM::singular_db<key_t, ip_unnumbered>;
 
         /**

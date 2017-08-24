@@ -59,6 +59,48 @@ namespace VOM
 
         template <> void l3_list::event_handler::handle_populate(const client_db::key_t &key)
         {
+            /* hack to get this function instantiated */
+            m_evh.order();
+
+            /*
+             * dump VPP Bridge domains
+             */
+            std::shared_ptr<l3_list::dump_cmd> cmd(new l3_list::dump_cmd());
+
+            HW::enqueue(cmd);
+            HW::write();
+
+            for (auto &record : *cmd)
+            {
+                auto &payload = record.get_payload();
+
+                const handle_t hdl(payload.acl_index);
+                l3_list acl(hdl, std::string(reinterpret_cast<const char*>(payload.tag)));
+
+                for (unsigned int ii = 0; ii < payload.count; ii++)
+                {
+                    const route::prefix_t src(payload.r[ii].is_ipv6,
+                                              payload.r[ii].src_ip_addr,
+                                              payload.r[ii].src_ip_prefix_len);
+                    const route::prefix_t dst(payload.r[ii].is_ipv6,
+                                              payload.r[ii].dst_ip_addr,
+                                              payload.r[ii].dst_ip_prefix_len);
+                    l3_rule rule(ii,
+                                action_t::from_int(payload.r[ii].is_permit),
+                                src,
+                                dst);
+
+                    acl.insert(rule);
+                }
+                BOOST_LOG_SEV(logger(), levels::debug) << "dump: " << acl.to_string();
+
+                /*
+                 * Write each of the discovered ACLs into the OM,
+                 * but disable the HW Command q whilst we do, so that no
+                 * commands are sent to VPP
+                 */
+                VOM::OM::commit(key, acl);
+            }
         }
     };
 };

@@ -41,6 +41,35 @@ namespace VOM
 
         template <> void l3_binding::event_handler::handle_populate(const client_db::key_t &key)
         {
+            std::shared_ptr<l3_binding::dump_cmd> cmd(new l3_binding::dump_cmd());
+
+            HW::enqueue(cmd);
+            HW::write();
+
+            for (auto &record : *cmd)
+            {
+                auto &payload = record.get_payload();
+
+                std::shared_ptr<interface> itf = interface::find(payload.sw_if_index);
+                uint8_t n_input = payload.n_input;
+
+                for (int ii = 0; ii < payload.count; ii++)
+                {
+                    std::shared_ptr<l3_list> acl = l3_list::find(payload.acls[ii]);
+
+                    if (n_input)
+                    {
+                        l3_binding binding(direction_t::INPUT, *itf, *acl);
+                        n_input--;
+                        OM::commit(key, binding);
+                    }
+                    else
+                    {
+                        l3_binding binding(direction_t::OUTPUT, *itf, *acl);
+                        OM::commit(key, binding);
+                    }
+                }
+            }
         }
     };
 

@@ -19,7 +19,14 @@ l3_rule::l3_rule(uint32_t priority,
     m_priority(priority),
     m_action(action),
     m_src(src),
-    m_dst(dst)
+    m_dst(dst),
+    proto(0),
+    srcport_or_icmptype_first(0),
+    srcport_or_icmptype_last(0),
+    dstport_or_icmpcode_first(0),
+    dstport_or_icmpcode_last(0),
+    tcp_flags_mask(0),
+    tcp_flags_value(0)
 {
 }
 
@@ -41,13 +48,12 @@ void l3_rule::to_vpp(vapi_type_acl_rule &rule) const
     rule.dstport_or_icmpcode_last  = dstport_or_icmpcode_last;
 
     rule.tcp_flags_mask  = tcp_flags_mask;
-    rule.tcp_flags_value = tcp_flags_value;;
+    rule.tcp_flags_value = tcp_flags_value;
 }
 
 bool l3_rule::operator==(const l3_rule &rule) const
 {
-    return ((m_priority == rule.m_priority) &&
-            (m_action == rule.m_action) &&
+    return ((m_action == rule.m_action) &&
             (m_src == rule.m_src) &&
             (m_dst == rule.m_dst));
 }

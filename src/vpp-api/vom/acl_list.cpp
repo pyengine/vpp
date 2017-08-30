@@ -35,14 +35,14 @@ namespace VOM
 
                 for (unsigned int ii = 0; ii < payload.count; ii++)
                 {
-                    const route::prefix_t pfx(payload.r[0].is_ipv6,
-                                              payload.r[0].src_ip_addr,
-                                              payload.r[0].src_ip_prefix_len);
+                    const route::prefix_t pfx(payload.r[ii].is_ipv6,
+                                              payload.r[ii].src_ip_addr,
+                                              payload.r[ii].src_ip_prefix_len);
                     l2_rule rule(ii,
-                                action_t::from_int(payload.r[0].is_permit),
+                                action_t::from_int(payload.r[ii].is_permit),
                                 pfx,
-                                {payload.r[0].src_mac},
-                                {payload.r[0].src_mac_mask});
+                                {payload.r[ii].src_mac},
+                                {payload.r[ii].src_mac_mask});
 
                     acl.insert(rule);
                 }

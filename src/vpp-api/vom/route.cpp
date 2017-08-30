@@ -18,6 +18,7 @@ using namespace VOM;
  * The all Zeros prefix
  */
 const route::prefix_t route::prefix_t::ZERO("0.0.0.0", 0);
+const route::prefix_t route::prefix_t::ZEROv6("::",0);
 
 route::prefix_t::prefix_t(const boost::asio::ip::address &addr,
                           uint8_t len):

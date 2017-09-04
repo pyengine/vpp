@@ -37,6 +37,8 @@ libvom_la_LIBADD = 					\
 	-lm -lrt
 
 libvom_la_SOURCES = 			\
+	ra_config.cpp			\
+	interface_ip6_nd_cmds.cpp	\
 	acl_binding_cmds.cpp		\
 	acl_binding.cpp			\
 	acl_l2_rule.cpp			\
@@ -87,6 +89,8 @@ libvom_la_SOURCES = 			\
 vomincludedir = $(includedir)/vom
 
 vominclude_HEADERS =			\
+	ra_config.hpp			\
+	interface_ip6_nd.hpp		\
 	acl_binding.hpp			\
 	acl_l2_rule.hpp			\
 	acl_l3_rule.hpp			\

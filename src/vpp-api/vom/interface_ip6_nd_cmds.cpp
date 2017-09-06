@@ -46,4 +46,37 @@ namespace VOM
 
         return rc_t::OK;
     }
+
+    template<> rc_t ip6nd_ra_prefix::config_cmd::issue(connection &con)
+    {
+        msg_t req(con.ctx(), std::ref(*this));
+
+        auto &payload = req.get_request().get_payload();
+        payload.sw_if_index = m_itf.value();
+        m_cls.to_vpp(payload);
+        payload.is_no = 0;
+
+        VAPI_CALL(req.execute());
+
+        m_hw_item.set(wait());
+
+        return rc_t::OK;
+    }
+
+    template<> rc_t ip6nd_ra_prefix::unconfig_cmd::issue(connection &con)
+    {
+        msg_t req(con.ctx(), std::ref(*this));
+
+        auto &payload = req.get_request().get_payload();
+        payload.sw_if_index = m_itf.value();
+        m_cls.to_vpp(payload);
+        payload.is_no = 1;
+
+        VAPI_CALL(req.execute());
+
+        wait();
+        m_hw_item.set(rc_t::NOOP);
+
+        return rc_t::OK;
+    }
 }

@@ -23,6 +23,7 @@
 #include "vom/sub_interface.hpp"
 #include "vom/inspect.hpp"
 #include "vom/ra_config.hpp"
+#include "vom/ra_prefix.hpp"
 
 #include <vapi/ip.api.vapi.hpp>
 
@@ -378,6 +379,11 @@ namespace VOM
      * Typedef the ip6nd_ra_config
      */
     typedef interface_ip6_nd<ra_config, vapi::Sw_interface_ip6nd_ra_config> ip6nd_ra_config;
+
+    /**
+     * Typedef the ip6nd_ra_prefix
+     */
+    typedef interface_ip6_nd<ra_prefix, vapi::Sw_interface_ip6nd_ra_prefix> ip6nd_ra_prefix;
 
     /**
      * Definition of the static singular_db for ACL Lists

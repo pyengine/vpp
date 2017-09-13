@@ -32,7 +32,7 @@ l3_rule::l3_rule(uint32_t priority,
 
 bool l3_rule::operator<(const l3_rule &other) const
 {
-    return (m_priority < other.m_priority);
+    return (other.m_priority < m_priority);
 }
 
 void l3_rule::to_vpp(vapi_type_acl_rule &rule) const

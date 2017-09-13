@@ -27,7 +27,7 @@ l2_rule::l2_rule(uint32_t priority,
 
 bool l2_rule::operator<(const l2_rule &other) const
 {
-    return (m_priority < other.m_priority);
+    return (other.m_priority < m_priority);
 }
 
 void l2_rule::to_vpp(vapi_type_macip_acl_rule &rule) const

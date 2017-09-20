@@ -14,7 +14,7 @@
 #include "vom/hw.hpp"
 #include "vom/rpc_cmd.hpp"
 #include "vom/singular_db.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 #include "vom/route_domain.hpp"
 #include "vom/interface.hpp"
 #include "vom/inspect.hpp"

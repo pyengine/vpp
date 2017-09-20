@@ -10,7 +10,7 @@
 #include <iostream>
 
 #include "vom/interface.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 #include "vom/cmd.hpp"
 #include "vom/l3_binding.hpp"
 #include "vom/logger.hpp"

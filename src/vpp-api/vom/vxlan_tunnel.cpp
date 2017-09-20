@@ -10,7 +10,7 @@
 #include <iostream>
 
 #include "vom/vxlan_tunnel.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 #include "vom/cmd.hpp"
 #include "vom/logger.hpp"
 

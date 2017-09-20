@@ -12,7 +12,7 @@
 #include <string>
 #include <stdint.h>
 
-#include "route.hpp"
+#include "vom/prefix.hpp"
 
 #include <vapi/ip.api.vapi.hpp>
 

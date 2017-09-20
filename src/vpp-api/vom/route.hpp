@@ -9,8 +9,11 @@
 #ifndef __VOM_ROUTE_H__
 #define __VOM_ROUTE_H__
 
-#include <boost/asio/ip/address.hpp>
+#include "vom/prefix.hpp"
+#include "vom/route_domain.hpp"
+#include "vom/interface.hpp"
 
+#include <vapi/ip.api.vapi.hpp>
 
 namespace VOM
 {
@@ -20,151 +23,151 @@ namespace VOM
     namespace route
     {
         /**
-         * type def the table-id
+         * A path for IP or MPLS routes
          */
-        typedef uint32_t table_id_t;
-
-        /**
-         * The table-id for the default table
-         */
-        const static table_id_t DEFAULT_TABLE = 0;
-
-        /**
-         * A prefix defintion. Address + length
-         */
-        class prefix_t
+        class path
         {
         public:
             /**
-             * Default Constructor - creates ::/0
+             * Special path types
              */
-            prefix_t();
-            /**
-             * Constructor with address and length
-             */
-            prefix_t(const boost::asio::ip::address &addr,
-                     uint8_t len);
-            /**
-             * Constructor with string and length
-             */
-            prefix_t(const std::string &s,
-                     uint8_t len);
-            /**
-             * Copy Constructor
-             */
-            prefix_t(const prefix_t&);
-            /**
-             * Constructor with VPP API prefix representation
-             */
-            prefix_t(uint8_t is_ip6, uint8_t *addr, uint8_t len);
-            /**
-             * Destructor
-             */
-            ~prefix_t();
+            class special_t: public enum_base<special_t>
+            {
+            public:
+                /**
+                 * A standard path type. this includes path types
+                 * that use the next-hop and interface
+                 */
+                const static special_t STANDARD;
+
+                /**
+                 * A local/for-us/recieve
+                 */
+                const static special_t LOCAL;
+
+                /**
+                 * drop path
+                 */
+                const static special_t DROP;
+
+                /**
+                 * a path will return ICMP unreachables
+                 */
+                const static special_t UNREACH;
+
+                /**
+                 * a path will return ICMP prohibit
+                 */
+                const static special_t PROHIBIT;
+
+            private:
+                /**
+                 * Private constructor taking the value and the string name
+                 */
+                special_t(int v, const std::string &s);
+            };
 
             /**
-             * Get the address
+             * constructor for special paths
              */
-            const boost::asio::ip::address &address() const;
+            path(special_t special);
 
             /**
-             * Get the network mask width
+             * Constructor for standard non-recursive paths
              */
-            uint8_t mask_width() const;
+            path(const boost::asio::ip::address &nh,
+                 std::shared_ptr<interface> interface,
+                 uint8_t weight = 1,
+                 uint8_t preference = 0);
 
             /**
-             * Assignement
+             * Constructor for standard recursive paths
              */
-            prefix_t &operator=(const prefix_t&);
+            path(const boost::asio::ip::address &nh,
+                 std::shared_ptr<route_domain> rd,
+                 uint8_t weight = 1,
+                 uint8_t preference = 0);
 
             /**
-             * Less than operator
+             * Convert the path into the VPP API representation
              */
-            bool operator<(const prefix_t &o) const;
+            void to_vpp(vapi_type_fib_path &path) const;
+        private:
+            /**
+             * The special path tpye
+             */
+            special_t m_type;
 
             /**
-             * equals operator
+             * The next-hop
              */
-            bool operator==(const prefix_t &o) const;
+            boost::asio::ip::address m_nh;
 
             /**
-             * not equal opartor
+             * For recursive routes, this is the table in which the
+             * the next-hop exists.
              */
-            bool operator!=(const prefix_t &o) const;
+            std::shared_ptr<route_domain> m_rd;
 
             /**
-             * convert to string format for debug purposes
+             * The next-hop interface [if present].
              */
-            std::string to_string() const;
+            std::shared_ptr<interface> m_interface;
 
             /**
-             * The all Zeros prefix
+             * UCMP weight
              */
-            const static prefix_t ZERO;
+            uint8_t m_weight;
 
             /**
-             * The all Zeros v6 prefix
+             * Path preference
              */
-            const static prefix_t ZEROv6;
+            uint8_t m_preference;
+        };
+
+        /**
+         * A IP route
+         */
+        class ip_route
+        {
+            /**
+             * Construct a route in the default table
+             */
+            ip_route(const prefix_t &prefix);
 
             /**
-             * Convert the prefix into VPP API parameters
+             * Construct a route in the given route domain
              */
-            void to_vpp(uint8_t *is_ip6, uint8_t *addr, uint8_t *len) const;
+            ip_route(const prefix_t &prefix,
+                     std::shared_ptr<route_domain> rd);
 
             /**
-             * Return a address representation of the mask, e.g. 255.255.0.0
+             * Add a path.
              */
-            boost::asio::ip::address_v4 mask() const;
+            void add(const path &path);
 
             /**
-             * get the lowest address in the prefix
+             * remove a path.
              */
-            boost::asio::ip::address_v4 low() const;
-
-            /**
-             * Get the highest address in the prefix
-             */
-            boost::asio::ip::address_v4 high() const;
+            void remove(const path &path);
 
         private:
             /**
-             * The address
+             * The route domain the route is in.
              */
-            boost::asio::ip::address m_addr;
+            std::shared_ptr<route_domain> m_rd;
 
             /**
-             * The prefix length
+             * The prefix to match
              */
-            uint8_t m_len;
+            prefix_t m_prefix;
+
+            /**
+             * The set of paths
+             */
+            std::set<path> m_paths;
         };
     };
-
-    boost::asio::ip::address_v4 operator|(
-        const boost::asio::ip::address_v4 &addr1,
-        const boost::asio::ip::address_v4 &addr2);
-
-    boost::asio::ip::address_v4 operator&(
-        const boost::asio::ip::address_v4 &addr1,
-        const boost::asio::ip::address_v4 &addr2);
-
-    boost::asio::ip::address_v4 operator~(
-        const boost::asio::ip::address_v4 &addr1);
-
-    /**
-     * Ostream printer for prefix_t
-     */
-    std::ostream & operator<<(std::ostream &os, const route::prefix_t &pfx);
-
-    /**
-     * Convert a boost address into a VPP bytes string
-     */
-    void to_bytes(const boost::asio::ip::address &addr, uint8_t *is_ip6, uint8_t *array);
-
-    /**
-     * Convert a VPP byte stinrg into a boost addresss
-     */
-    boost::asio::ip::address from_bytes(uint8_t is_ip6, uint8_t *array);
 };
 
 #endif

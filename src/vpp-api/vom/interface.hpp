@@ -19,7 +19,7 @@
 #include "vom/event_cmd.hpp"
 #include "vom/singular_db.hpp"
 #include "vom/enum_base.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 #include "vom/route_domain.hpp"
 #include "vom/dump_cmd.hpp"
 #include "vom/inspect.hpp"

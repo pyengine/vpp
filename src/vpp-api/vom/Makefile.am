@@ -77,6 +77,7 @@ libvom_la_SOURCES = 			\
 	logger.cpp			\
 	object_base.cpp			\
 	om.cpp				\
+	prefix.cpp			\
 	route.cpp			\
 	route_domain.cpp		\
 	sub_interface_cmds.cpp		\
@@ -120,6 +121,7 @@ vominclude_HEADERS =			\
 	object_base.hpp			\
 	om.hpp				\
 	route.hpp			\
+	prefix.hpp			\
 	route_domain.hpp		\
 	rpc_cmd.hpp			\
 	singular_db.hpp			\

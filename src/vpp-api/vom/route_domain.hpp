@@ -15,7 +15,7 @@
 #include "vom/object_base.hpp"
 #include "vom/om.hpp"
 #include "vom/singular_db.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 
 namespace VOM
 {

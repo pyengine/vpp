@@ -10,7 +10,7 @@
 #define __VOM_CONTROL_INTERFACE_H__
 
 #include "vom/interface.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 
 namespace VOM
 {

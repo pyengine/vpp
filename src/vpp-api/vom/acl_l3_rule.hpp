@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #include "vom/acl_types.hpp"
-#include "vom/route.hpp"
+#include "vom/prefix.hpp"
 
 #include <vapi/acl.api.vapi.hpp>
 

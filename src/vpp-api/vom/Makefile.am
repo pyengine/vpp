@@ -37,6 +37,8 @@ libvom_la_LIBADD = 					\
 	-lm -lrt
 
 libvom_la_SOURCES = 			\
+	interface_span_cmds.cpp		\
+	interface_span.cpp		\
 	ra_prefix.cpp			\
 	ra_config.cpp			\
 	interface_ip6_nd_cmds.cpp	\
@@ -91,6 +93,7 @@ libvom_la_SOURCES = 			\
 vomincludedir = $(includedir)/vom
 
 vominclude_HEADERS =			\
+	interface_span.hpp		\
 	ra_prefix.hpp			\
 	ra_config.hpp			\
 	interface_ip6_nd.hpp		\

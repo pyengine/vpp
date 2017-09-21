@@ -22,12 +22,17 @@ singular_db<route::table_id_t, route_domain> route_domain::m_db;
 /**
  * Construct a new object matching the desried state
  */
-route_domain::route_domain(route::table_id_t id):
+route_domain::route_domain(l3_proto_t proto,
+                           route::table_id_t id):
+    m_hw(false),
+    m_proto(proto),
     m_table_id(id)
 {
 }
 
 route_domain::route_domain(const route_domain& o):
+    m_hw(o.m_hw),
+    m_proto(o.m_proto),
     m_table_id(o.m_table_id)
 {
 }
@@ -39,14 +44,24 @@ route::table_id_t route_domain::table_id() const
 
 void route_domain::sweep()
 {
+    if (m_hw)
+    {
+        HW::enqueue(new delete_cmd(m_hw, m_proto, m_table_id));
+    }
 }
 
 void route_domain::replay()
 {
+    if (m_hw)
+    {
+        HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+    }
 }
 
 route_domain::~route_domain()
 {
+    sweep();
+
     // not in the DB anymore.
     m_db.release(m_table_id, this);
 }
@@ -64,8 +79,12 @@ std::string route_domain::to_string() const
 void route_domain::update(const route_domain &desired)
 {
     /*
-     * No HW configuration associated with a route Domain
+     * create the table if it is not yet created
      */
+    if (rc_t::OK != m_hw.rc())
+    {
+        HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+    }
 }
 
 std::shared_ptr<route_domain> route_domain::find_or_add(const route_domain &temp)

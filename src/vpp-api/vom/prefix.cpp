@@ -14,6 +14,26 @@
 
 using namespace VOM;
 
+const l3_proto_t l3_proto_t::IPV4(0, "ipv4");
+const l3_proto_t l3_proto_t::IPV6(0, "ipv6");
+const l3_proto_t l3_proto_t::MPLS(0, "mpls");
+
+l3_proto_t::l3_proto_t(int v,
+                       const std::string &s):
+    enum_base<l3_proto_t>(v, s)
+{
+}
+
+bool l3_proto_t::is_ipv6()
+{
+    return (*this == IPV6);
+}
+
+bool l3_proto_t::is_ipv4()
+{
+    return (*this == IPV4);
+}
+
 /**
  * The all Zeros prefix
  */
@@ -154,6 +174,20 @@ void route::prefix_t::to_vpp(uint8_t *is_ip6,
 {
     *len = m_len;
     to_bytes(m_addr, is_ip6, addr);
+}
+
+l3_proto_t route::prefix_t::l3_proto() const
+{
+    if (m_addr.is_v6())
+    {
+        return (l3_proto_t::IPV4);
+    }
+    else
+    {
+        return (l3_proto_t::IPV6);
+    }
+
+    return (l3_proto_t::IPV4);
 }
 
 std::ostream & VOM::operator<<(std::ostream &os,

@@ -55,26 +55,12 @@ namespace VOM
         /**
          * Print each of the object in the DB into the stream provided
          */
-        void dump(const key_t & key, std::ostream &os)
-        {
-            object_ref_list& orlist = find(key);
-
-            for (auto entry : orlist)
-            {
-                os << "  " << entry.obj()->to_string() << std::endl;
-            }
-        }
+        void dump(const key_t & key, std::ostream &os);
 
         /**
          * Print each KEY
          */
-        void dump(std::ostream &os)
-        {
-            for (auto entry : m_objs)
-            {
-                os << "  key:[" << entry.first << "]" << std::endl;
-            }
-        }
+        void dump(std::ostream &os);
 
     private:
         /**

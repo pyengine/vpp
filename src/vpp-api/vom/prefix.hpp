@@ -11,12 +11,29 @@
 
 #include <boost/asio/ip/address.hpp>
 
+#include "vom/enum_base.hpp"
 
 namespace VOM
 {
     /**
      * Types belonging to Routing
      */
+    class l3_proto_t: public enum_base<l3_proto_t>
+    {
+    public:
+        const static l3_proto_t IPV4;
+        const static l3_proto_t IPV6;
+        const static l3_proto_t MPLS;
+
+        bool is_ipv4();
+        bool is_ipv6();
+    private:
+        /**
+         * Private constructor taking the value and the string name
+         */
+        l3_proto_t(int v, const std::string &s);
+    };
+
     namespace route
     {
         /**
@@ -126,6 +143,11 @@ namespace VOM
              * Get the highest address in the prefix
              */
             boost::asio::ip::address_v4 high() const;
+
+            /**
+             * Get the L3 protocol
+             */
+            l3_proto_t l3_proto() const;
 
         private:
             /**

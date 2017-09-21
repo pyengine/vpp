@@ -8,21 +8,21 @@
 
 #include "vom/route.hpp"
 
-using namespace VOM;
+using namespace VOM::route;
 
-const route::path::special_t route::path::special_t::STANDARD(0, "standard");
-const route::path::special_t route::path::special_t::LOCAL(0, "local");
-const route::path::special_t route::path::special_t::DROP(0, "standard");
-const route::path::special_t route::path::special_t::UNREACH(0, "unreachable");
-const route::path::special_t route::path::special_t::PROHIBIT(0, "prohibit");
+const path::special_t path::special_t::STANDARD(0, "standard");
+const path::special_t path::special_t::LOCAL(0, "local");
+const path::special_t path::special_t::DROP(0, "standard");
+const path::special_t path::special_t::UNREACH(0, "unreachable");
+const path::special_t path::special_t::PROHIBIT(0, "prohibit");
 
-route::path::special_t::special_t(int v,
-                                  const std::string &s):
-    enum_base<route::path::special_t>(v, s)
+path::special_t::special_t(int v,
+                           const std::string &s):
+    enum_base<path::special_t>(v, s)
 {
 }
 
-route::path::path(special_t special):
+path::path(special_t special):
     m_type(special),
     m_nh(),
     m_rd(nullptr),
@@ -32,7 +32,7 @@ route::path::path(special_t special):
 {
 }
 
-route::path::path(const boost::asio::ip::address &nh,
+path::path(const boost::asio::ip::address &nh,
                   std::shared_ptr<interface> interface,
                   uint8_t weight,
                   uint8_t preference):
@@ -45,7 +45,7 @@ route::path::path(const boost::asio::ip::address &nh,
 {
 }
 
-route::path::path(const boost::asio::ip::address &nh,
+path::path(const boost::asio::ip::address &nh,
                   std::shared_ptr<route_domain> rd,
                   uint8_t weight,
                   uint8_t preference):
@@ -58,7 +58,17 @@ route::path::path(const boost::asio::ip::address &nh,
 {
 }
 
-void route::path::to_vpp(vapi_type_fib_path &path) const
+bool path::operator<(const path &p) const
+{
+    if (m_type < p.m_type) return true;
+    if (m_rd->table_id() < p.m_rd->table_id()) return true;
+    if (m_nh < p.m_nh) return true;
+    if (m_interface->handle() < p.m_interface->handle()) return true;
+
+    return (false);
+}
+
+void path::to_vpp(vapi_type_fib_path &path) const
 {
     if (special_t::STANDARD == m_type)
     {
@@ -66,7 +76,7 @@ void route::path::to_vpp(vapi_type_fib_path &path) const
 
         if (m_rd)
         {
-            // FIXME
+            // FIXME - VPP needs next-hop table in prog API
         }
         if (m_interface)
         {
@@ -89,4 +99,110 @@ void route::path::to_vpp(vapi_type_fib_path &path) const
     {
         path.is_local = 1;
     }
+}
+
+ip_route::ip_route(const prefix_t &prefix):
+    m_hw(false),
+    m_prefix(prefix),
+    m_rd(nullptr)
+{
+    /*
+     * the route goes in the default table
+     */
+    route_domain rd(prefix.l3_proto(),
+                    DEFAULT_TABLE);
+
+    m_rd = rd.singular();
+}
+
+ip_route::ip_route(const ip_route &r):
+    m_hw(r.m_hw),
+    m_prefix(r.m_prefix),
+    m_rd(r.m_rd)
+{
+}
+
+ip_route::ip_route(const prefix_t &prefix,
+                   std::shared_ptr<route_domain> rd):
+    m_hw(false),
+    m_prefix(prefix),
+    m_rd(rd)
+{
+}
+
+void ip_route::add(const path &path)
+{
+    m_paths.insert(path);
+}
+
+void ip_route::remove(const path &path)
+{
+    m_paths.erase(path);
+}
+
+void ip_route::sweep()
+{
+    if (m_hw)
+    {
+        //   HW::enqueue(new delete_cmd(m_hw, m_proto, m_table_id));
+    }
+}
+
+void ip_route::replay()
+{
+    if (m_hw)
+    {
+        //  HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+    }
+}
+std::string ip_route::to_string() const
+{
+    std::ostringstream s;
+    s << "route:["
+      << m_rd->to_string()
+      << ", "
+      << m_prefix.to_string()
+      << "]";
+
+    return (s.str());
+}
+
+void ip_route::update(const ip_route &r)
+{
+    /*
+     * create the table if it is not yet created
+     */
+    if (rc_t::OK != m_hw.rc())
+    {
+        // HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+    }
+}
+
+std::shared_ptr<ip_route> ip_route::find_or_add(const ip_route &temp)
+{
+    return (m_db.find_or_add(std::make_pair(temp.m_rd->table_id(),
+                                            temp.m_prefix),
+                             temp));
+}
+
+std::shared_ptr<ip_route> ip_route::singular() const
+{
+    return find_or_add(*this);
+}
+
+void ip_route::dump(std::ostream &os)
+{
+    m_db.dump(os);
+}
+
+std::ostream& VOM::route::operator<<(std::ostream &os,
+                                     const ip_route::key_t &key)
+{
+    os << "["
+       << key.first
+       << ", "
+       << key.second.to_string()
+       << "]";
+
+    return (os);
 }

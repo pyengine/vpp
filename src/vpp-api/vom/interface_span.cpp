@@ -17,7 +17,7 @@ using namespace VOM;
 /**
  * A DB of all interface_span config
  */
-singular_db<interface_span::key_t, interface_span> interface_span::m_db;
+singular_db<interface_span::key_type_t, interface_span> interface_span::m_db;
 
 interface_span::event_handler interface_span::m_evh;
 
@@ -26,7 +26,8 @@ interface_span::interface_span(const interface &itf_from,
                                interface_span::state_t state):
     m_itf_from(itf_from.singular()),
     m_itf_to(itf_to.singular()),
-    m_state(state)
+    m_state(state),
+    m_config(true)
 {
 }
 
@@ -43,7 +44,7 @@ interface_span::~interface_span()
     sweep();
 
     // not in the DB anymore.
-    m_db.release(m_itf_from->key(), this);
+    m_db.release(make_pair(m_itf_from->key(), m_itf_to->key()), this);
 }
 
 void interface_span::sweep()
@@ -52,6 +53,7 @@ void interface_span::sweep()
     {
         HW::enqueue(new unconfig_cmd(m_config, m_itf_from->handle(), m_itf_to->handle()));
     }
+    HW::write();
 }
 
 void interface_span::dump(std::ostream &os)
@@ -88,9 +90,20 @@ void interface_span::update(const interface_span &desired)
     }
 }
 
+std::ostream& VOM::operator<<(std::ostream &os, const interface_span::key_type_t &key)
+{
+    os << "["
+       << key.first
+       << ", "
+       << key.second
+       << "]";
+
+    return (os);
+}
+
 std::shared_ptr<interface_span> interface_span::find_or_add(const interface_span &temp)
 {
-    return (m_db.find_or_add(temp.m_itf_from->key(), temp));
+    return (m_db.find_or_add(make_pair(temp.m_itf_from->key(), temp.m_itf_to->key()), temp));
 }
 
 std::shared_ptr<interface_span> interface_span::singular() const

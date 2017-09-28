@@ -62,7 +62,7 @@ std::string ra_prefix::to_string() const
 {
     std::ostringstream s;
 
-    s << "ra-config:["
+    s << "ra-pfx-config:["
       << " pfx:" << m_pfx.to_string()
       << " use-default:" << m_use_default
       << " no-advertise:" << m_no_advertise

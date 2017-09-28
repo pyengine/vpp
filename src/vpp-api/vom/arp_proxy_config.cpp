@@ -24,13 +24,15 @@ arp_proxy_config::event_handler arp_proxy_config::m_evh;
 arp_proxy_config::arp_proxy_config(const boost::asio::ip::address_v4 &low,
                                    const boost::asio::ip::address_v4 &high):
     m_low(low),
-    m_high(high)
+    m_high(high),
+    m_config(true)
 {
 }
 
 arp_proxy_config::arp_proxy_config(const arp_proxy_config& o):
     m_low(o.m_low),
-    m_high(o.m_high)
+    m_high(o.m_high),
+    m_config(o.m_config)
 {
 }
 
@@ -48,6 +50,7 @@ void arp_proxy_config::sweep()
     {
         HW::enqueue(new unconfig_cmd(m_config, m_low, m_high));
     }
+    HW::write();
 }
 
 void arp_proxy_config::dump(std::ostream &os)

@@ -49,6 +49,7 @@ void ip_unnumbered::sweep()
     {
         HW::enqueue(new unconfig_cmd(m_config, m_itf->handle(), m_l3_itf->handle()));
     }
+    HW::write();
 }
 
 void ip_unnumbered::dump(std::ostream &os)

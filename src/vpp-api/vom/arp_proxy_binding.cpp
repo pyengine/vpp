@@ -25,14 +25,14 @@ arp_proxy_binding::arp_proxy_binding(const interface &itf,
                                      const arp_proxy_config &proxy_cfg):
     m_itf(itf.singular()),
     m_arp_proxy_cfg(proxy_cfg.singular()),
-    m_binding(false)
+    m_binding(true)
 {
 }
 
 arp_proxy_binding::arp_proxy_binding(const arp_proxy_binding& o):
     m_itf(o.m_itf),
     m_arp_proxy_cfg(o.m_arp_proxy_cfg),
-    m_binding(false)
+    m_binding(o.m_binding)
 {
 }
 

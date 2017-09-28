@@ -48,7 +48,7 @@ rc_t arp_proxy_config::config_cmd::issue(connection &con)
 
     m_hw_item.set(wait());
 
-    return rc_t::OK;
+    return (rc_t::OK);
 }
 
 std::string arp_proxy_config::config_cmd::to_string() const
@@ -92,9 +92,10 @@ rc_t arp_proxy_config::unconfig_cmd::issue(connection &con)
 
     VAPI_CALL(req.execute());
 
-    m_hw_item.set(wait());
+    wait();
+    m_hw_item.set(rc_t::NOOP);
 
-    return rc_t::OK;
+    return (rc_t::OK);
 }
 
 std::string arp_proxy_config::unconfig_cmd::to_string() const

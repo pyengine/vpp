@@ -115,7 +115,7 @@ namespace VOM
             /**
              * The prefix to bind
              */
-            const route::prefix_t m_pfx;
+            const route::prefix_t &m_pfx;
         };
 
         /**
@@ -149,12 +149,12 @@ namespace VOM
             /**
              * Reference to the interface to unbind fomr
              */
-            const handle_t m_itf;
+            const handle_t &m_itf;
 
             /**
              * The prefix to unbind
              */
-            const route::prefix_t m_pfx;
+            const route::prefix_t &m_pfx;
         };
 
         /**
@@ -191,7 +191,7 @@ namespace VOM
             /**
              * The interface to get the addresses for
              */
-            const handle_t m_itf;
+            const handle_t &m_itf;
         };
 
     private:
@@ -270,7 +270,7 @@ namespace VOM
         /**
          * The prefix for this L3 configuration
          */
-        route::prefix_t m_pfx;
+        const route::prefix_t &m_pfx;
 
         /**
          * HW configuration for the binding. The bool representing the

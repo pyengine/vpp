@@ -41,9 +41,10 @@ namespace VOM
         /**
          * Construct a new object matching the desried state
          */
-        interface_ip6_nd(const interface &itf, const class_t &cls):
+        interface_ip6_nd(const interface &itf, const class_t cls):
             m_itf(itf.singular()),
-            m_cls(cls)
+            m_cls(cls),
+            m_config(true)
         {
         }
 
@@ -52,7 +53,8 @@ namespace VOM
          */
         interface_ip6_nd(const interface_ip6_nd& o):
             m_itf(o.m_itf),
-            m_cls(o.m_cls)
+            m_cls(o.m_cls),
+            m_config(o.m_config)
         {
         }
 

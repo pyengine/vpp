@@ -99,6 +99,11 @@ namespace VOM
              */
             bool operator<(const path &p) const;
 
+            /**
+             * convert to string format for debug purposes
+             */
+            std::string to_string() const;
+
         private:
             /**
              * The special path tpye

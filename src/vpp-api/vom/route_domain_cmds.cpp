@@ -40,7 +40,7 @@ rc_t route_domain::create_cmd::issue(connection &con)
 
     m_hw_item.set(wait());
 
-    return rc_t::OK;
+    return (rc_t::OK);
 }
 
 std::string route_domain::create_cmd::to_string() const
@@ -81,7 +81,7 @@ rc_t route_domain::delete_cmd::issue(connection &con)
     wait();
     m_hw_item.set(rc_t::NOOP);
 
-    return rc_t::OK;
+    return (rc_t::OK);
 }
 
 std::string route_domain::delete_cmd::to_string() const

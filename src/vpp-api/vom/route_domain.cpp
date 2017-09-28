@@ -24,7 +24,7 @@ singular_db<route::table_id_t, route_domain> route_domain::m_db;
  */
 route_domain::route_domain(l3_proto_t proto,
                            route::table_id_t id):
-    m_hw(false),
+    m_hw(true),
     m_proto(proto),
     m_table_id(id)
 {
@@ -48,6 +48,7 @@ void route_domain::sweep()
     {
         HW::enqueue(new delete_cmd(m_hw, m_proto, m_table_id));
     }
+    HW::write();
 }
 
 void route_domain::replay()
@@ -70,7 +71,8 @@ std::string route_domain::to_string() const
 {
     std::ostringstream s;
     s << "route-domain:["
-      << m_table_id
+      << "table-id:" << m_table_id
+      << " proto:" << m_proto.to_string()
       << "]";
 
     return (s.str());

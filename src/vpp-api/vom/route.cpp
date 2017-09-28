@@ -7,8 +7,11 @@
  */
 
 #include "vom/route.hpp"
+#include "vom/singular_db.hpp"
 
 using namespace VOM::route;
+
+VOM::singular_db<ip_route::key_t, ip_route> ip_route::m_db;
 
 const path::special_t path::special_t::STANDARD(0, "standard");
 const path::special_t path::special_t::LOCAL(0, "local");
@@ -99,6 +102,22 @@ void path::to_vpp(vapi_type_fib_path &path) const
     {
         path.is_local = 1;
     }
+}
+
+std::string path::to_string() const
+{
+    std::ostringstream s;
+
+    s << "path:["
+      << "type:" << m_type.to_string()
+      << "neighbour:" << m_nh.to_string()
+      << "route_domain:" << m_rd->to_string()
+      << "interface:" << m_interface->to_string()
+      << "weight:" << m_weight
+      << "preference:" << m_preference
+      << "]";
+
+    return (s.str());
 }
 
 ip_route::ip_route(const prefix_t &prefix):
@@ -203,6 +222,20 @@ std::ostream& VOM::route::operator<<(std::ostream &os,
        << ", "
        << key.second.to_string()
        << "]";
+
+    return (os);
+}
+
+std::ostream& VOM::route::operator<<(std::ostream &os,
+                                  const path_list_t &key)
+{
+    os << "[";
+    for (auto k : key)
+    {
+        os << k.to_string()
+           << " ";
+    }
+    os << "]";
 
     return (os);
 }

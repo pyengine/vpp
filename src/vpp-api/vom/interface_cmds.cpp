@@ -279,7 +279,7 @@ rc_t interface::set_table_cmd::issue(connection &con)
 std::string interface::set_table_cmd::to_string() const
 {
     std::ostringstream s;
-    s << "itf-state-change: " << m_hw_item.to_string()
+    s << "itf-set-table: " << m_hw_item.to_string()
       << " hdl:" << m_hdl.to_string();
     return (s.str());
 }

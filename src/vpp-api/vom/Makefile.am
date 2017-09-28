@@ -135,4 +135,29 @@ vominclude_HEADERS =			\
 	types.hpp			\
 	vxlan_tunnel.hpp
 
+TESTS = vom_test
+noinst_PROGRAMS = $(TESTS)
+
+vom_test_CFLAGS =
+
+vom_test_CXXFLAGS =			\
+        $(AM_CXXFLAGS)			\
+        -DBOOST_TEST_DYN_LINK
+
+vom_test_SOURCES =			\
+	test/VppOM_test.cpp
+
+vom_test_DEPENDENCIES =			\
+	libvom.la
+
+vom_test_LDADD	=			\
+	-lboost_unit_test_framework	\
+        -lpthread			\
+	-lboost_system			\
+        -lboost_thread			\
+        -lboost_log			\
+	-lm -lrt			\
+        $(top_builddir)/vpp-api/vapi/libvapiclient.la   \
+	libvom.la
+
 # vi:syntax=automake

@@ -567,6 +567,42 @@ namespace VOM
         };
 
         /**
+         * A command class that binds an interface to an L3 table
+         */
+        class set_mac_cmd: public rpc_cmd<HW::item<mac_address_t>,
+                                          rc_t,
+                                          vapi::Sw_interface_set_mac_address>
+        {
+        public:
+            /**
+             * Constructor taking the HW::item to update
+             * and the handle of the interface
+             */
+            set_mac_cmd(HW::item<route::mac_address_t> &item,
+                        const HW::item<handle_t> &h);
+
+            /**
+             * Issue the command to VPP/HW
+             */
+            rc_t issue(connection &con);
+
+            /**
+             * convert to string format for debug purposes
+             */
+            std::string to_string() const;
+
+            /**
+             * Comparison operator - only used for UT
+             */
+            bool operator==(const set_table_cmd&i) const;
+        private:
+            /**
+             * the handle of the interface to update
+             */
+            const HW::item<handle_t> &m_hdl;
+        };
+
+        /**
          * Forward declaration of the Evnet command
          */
         class events_cmd;

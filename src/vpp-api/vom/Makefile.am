@@ -136,7 +136,7 @@ vominclude_HEADERS =			\
 	vxlan_tunnel.hpp
 
 TESTS = vom_test
-noinst_PROGRAMS = $(TESTS)
+bin_PROGRAMS += $(TESTS)
 
 vom_test_CFLAGS =
 

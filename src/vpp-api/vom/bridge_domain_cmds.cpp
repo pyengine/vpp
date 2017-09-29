@@ -38,7 +38,7 @@ rc_t bridge_domain::create_cmd::issue(connection &con)
     payload.forward = 1;
     payload.learn = 1;
     payload.arp_term= 1;
-    payload.mac_age = 1;
+    payload.mac_age = 0;
     payload.is_add = 1;
 
     VAPI_CALL(req.execute());

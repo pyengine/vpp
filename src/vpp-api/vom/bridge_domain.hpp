@@ -33,6 +33,11 @@ namespace VOM
     {
     public:
         /**
+         * The value of the defaultbridge domain
+         */
+        const static uint32_t DEFAULT_TABLE = 0;
+
+        /**
          * Construct a new object matching the desried state
          */
         bridge_domain(uint32_t id);

@@ -149,6 +149,14 @@ ip_route::ip_route(const prefix_t &prefix,
 {
 }
 
+ip_route::~ip_route()
+{
+    sweep();
+
+    // not in the DB anymore.
+    m_db.release(std::make_pair(m_rd->table_id(), m_prefix), this);
+}
+
 void ip_route::add(const path &path)
 {
     m_paths.insert(path);

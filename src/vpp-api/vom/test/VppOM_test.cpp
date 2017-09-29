@@ -20,6 +20,7 @@
 #include "vom/l2_binding.hpp"
 #include "vom/l3_binding.hpp"
 #include "vom/bridge_domain.hpp"
+#include "vom/bridge_domain_entry.hpp"
 #include "vom/prefix.hpp"
 #include "vom/route.hpp"
 #include "vom/route_domain.hpp"
@@ -166,6 +167,14 @@ public:
                     else if (typeid(*f_exp) == typeid(bridge_domain::delete_cmd))
                     {
                         rc = handle_derived<bridge_domain::delete_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(bridge_domain_entry::create_cmd))
+                    {
+                        rc = handle_derived<bridge_domain_entry::create_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(bridge_domain_entry::delete_cmd))
+                    {
+                        rc = handle_derived<bridge_domain_entry::delete_cmd>(f_exp, f_act);
                     }
                     else if (typeid(*f_exp) == typeid(l2_binding::bind_cmd))
                     {
@@ -655,6 +664,13 @@ BOOST_AUTO_TEST_CASE(test_bridge) {
     ADD_EXPECT(l2_binding::bind_cmd(hw_l2_bind, hw_ifh2.data(), hw_bd.data(), false));
     TRY_CHECK_RC(OM::write(dante, *l2itf2));
 
+    // Add some sttic entries to the bridge-domain
+    HW::item<bool> hw_be1(true, rc_t::OK);
+    mac_address_t mac1({0,1,2,3,4,5});
+    bridge_domain_entry *be1 = new bridge_domain_entry(bd1, mac1, itf2);
+    ADD_EXPECT(bridge_domain_entry::create_cmd(hw_be1, mac1, bd1.id(), hw_ifh2.data()));
+    TRY_CHECK_RC(OM::write(dante, *be1));
+
     // flush Franz's state
     delete l2itf;
     HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN,
@@ -667,10 +683,12 @@ BOOST_AUTO_TEST_CASE(test_bridge) {
     // flush Dante's state - the order the interface and BD are deleted
     // is an uncontrollable artifact of the C++ object destruction.
     delete l2itf2;
+    delete be1;
     STRICT_ORDER_OFF();
     ADD_EXPECT(l2_binding::unbind_cmd(hw_l2_bind, hw_ifh2.data(), hw_bd.data(), false));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh2));
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
+    ADD_EXPECT(bridge_domain_entry::delete_cmd(hw_be1, mac1, bd1.id()));
     ADD_EXPECT(bridge_domain::delete_cmd(hw_bd));
     TRY_CHECK(OM::remove(dante));
 }

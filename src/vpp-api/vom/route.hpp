@@ -176,6 +176,11 @@ namespace VOM
                      std::shared_ptr<route_domain> rd);
 
             /**
+             * Destructor
+             */
+            ~ip_route();
+
+            /**
              * Return the matching 'singular instance'
              */
             std::shared_ptr<ip_route> singular() const;

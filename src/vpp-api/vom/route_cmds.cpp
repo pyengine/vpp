@@ -93,7 +93,7 @@ rc_t ip_route::delete_cmd::issue(connection &con)
 std::string ip_route::delete_cmd::to_string() const
 {
     std::ostringstream s;
-    s << "ip-table-delete: " << m_hw_item.to_string()
+    s << "ip-route-delete: " << m_hw_item.to_string()
       << " id:" << m_id
       << " prefix:" << m_prefix.to_string();
 

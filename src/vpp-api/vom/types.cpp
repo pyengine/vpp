@@ -110,6 +110,20 @@ void mac_address_t::to_bytes(uint8_t *array, uint8_t len) const
     }
 }
 
+uint64_t mac_address_t::to_u64() const
+{
+    uint64_t b, mac6 = 0;
+
+    for (int i = 0; i < 6; i++)
+    {
+        b = bytes[i];
+        b = b << (i*8);
+        mac6 |= b;
+    }
+
+    return (mac6);
+}
+
 std::string mac_address_t::to_string() const
 {
     std::ostringstream s;
@@ -132,6 +146,10 @@ std::string mac_address_t::to_string() const
 bool mac_address_t::operator==(const mac_address_t &mac) const
 {
     return (bytes == mac.bytes);
+}
+bool mac_address_t::operator<(const mac_address_t &m) const
+{
+    return (bytes < m.bytes);
 }
 
 std::ostream &VOM::operator<<(std::ostream &os, const mac_address_t &mac)

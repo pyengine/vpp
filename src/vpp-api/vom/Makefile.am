@@ -55,6 +55,8 @@ libvom_la_SOURCES = 			\
 	arp_proxy_config.cpp		\
 	bridge_domain_cmds.cpp		\
 	bridge_domain.cpp		\
+	bridge_domain_entry_cmds.cpp	\
+	bridge_domain_entry.cpp		\
 	client_db.cpp			\
 	cmd.cpp				\
 	connection.cpp			\

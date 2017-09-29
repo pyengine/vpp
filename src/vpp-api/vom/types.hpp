@@ -205,9 +205,19 @@ namespace VOM
         bool operator==(const mac_address_t &m) const;
 
         /**
+         * less than operator
+         */
+        bool operator<(const mac_address_t &m) const;
+
+        /**
          * String conversion
          */
         std::string to_string() const;
+
+        /**
+         * U64 conversion
+         */
+        uint64_t to_u64() const;
 
         /**
          * Underlying bytes array

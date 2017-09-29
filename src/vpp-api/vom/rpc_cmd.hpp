@@ -42,7 +42,8 @@ namespace VOM
          */
         rpc_cmd(HWITEM &item):
             cmd(),
-            m_hw_item(item)
+            m_hw_item(item),
+            m_promise()
         {
         }
 

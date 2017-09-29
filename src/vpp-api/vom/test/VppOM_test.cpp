@@ -555,19 +555,19 @@ BOOST_AUTO_TEST_CASE(test_bvi) {
      */
 
 
-    route_domain rd(l3_proto_t::IPV4, 1);
+    route_domain *rd = new route_domain(l3_proto_t::IPV4, 1);
     HW::item<bool> hw_rd_create(true, rc_t::OK);
     HW::item<bool> hw_rd_delete(false, rc_t::OK);
     HW::item<route::table_id_t> hw_rd_bind(1, rc_t::OK);
     HW::item<route::table_id_t> hw_rd_unbind(route::DEFAULT_TABLE, rc_t::OK);
     ADD_EXPECT(route_domain::create_cmd(hw_rd_create, l3_proto_t::IPV4, 1));
-    TRY_CHECK_RC(OM::write(graham, rd));
+    TRY_CHECK_RC(OM::write(graham, *rd));
 
     const std::string bvi2_name = "bvi2";
-    interface itf2(bvi2_name,
-                   interface::type_t::BVI,
-                   interface::admin_state_t::UP,
-                   rd);
+    interface *itf2 = new interface(bvi2_name,
+                                    interface::type_t::BVI,
+                                    interface::admin_state_t::UP,
+                                    *rd);
     HW::item<handle_t> hw_ifh2(5, rc_t::OK);
 
     ADD_EXPECT(interface::loopback_create_cmd(hw_ifh2, bvi2_name));
@@ -575,13 +575,15 @@ BOOST_AUTO_TEST_CASE(test_bvi) {
     ADD_EXPECT(interface::state_change_cmd(hw_as_up, hw_ifh2));
     ADD_EXPECT(interface::set_table_cmd(hw_rd_bind, hw_ifh2));
 
-    TRY_CHECK_RC(OM::write(graham, itf2));
+    TRY_CHECK_RC(OM::write(graham, *itf2));
 
-    l3 = new l3_binding(itf2, pfx_10);
+    l3 = new l3_binding(*itf2, pfx_10);
     ADD_EXPECT(l3_binding::bind_cmd(hw_l3_bind, hw_ifh2.data(), pfx_10));
     TRY_CHECK_RC(OM::write(graham, *l3));
 
     delete l3;
+    delete rd;
+    delete itf2;
 
     ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_unbind, hw_ifh2.data(), pfx_10));
     ADD_EXPECT(interface::set_table_cmd(hw_rd_unbind, hw_ifh2));

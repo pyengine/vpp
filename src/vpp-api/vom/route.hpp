@@ -146,7 +146,7 @@ namespace VOM
          * ostream output for iterator
          */
         std::ostream & operator<<(std::ostream &os,
-                                  const path_list_t &key);
+                                  const path_list_t &path_list);
 
         /**
          * A IP route

@@ -227,7 +227,7 @@ std::ostream& VOM::route::operator<<(std::ostream &os,
 }
 
 std::ostream& VOM::route::operator<<(std::ostream &os,
-                                  const path_list_t &key)
+                                     const path_list_t &key)
 {
     os << "[";
     for (auto k : key)

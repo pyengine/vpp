@@ -351,8 +351,8 @@ namespace VOM
          */
         template <typename MSG>
         class delete_cmd: public rpc_cmd<HW::item<handle_t>,
-                                       HW::item<handle_t>,
-                                       MSG>
+                                         HW::item<handle_t>,
+                                         MSG>
         {
         public:
             delete_cmd(HW::item<handle_t> &item,

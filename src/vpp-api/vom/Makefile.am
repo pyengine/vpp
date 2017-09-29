@@ -109,6 +109,7 @@ vominclude_HEADERS =			\
 	arp_proxy_binding.hpp		\
 	arp_proxy_config.hpp		\
 	bridge_domain.hpp		\
+	bridge_domain_entry.hpp		\
 	client_db.hpp			\
 	cmd.hpp				\
 	connection.hpp			\
@@ -127,8 +128,8 @@ vominclude_HEADERS =			\
 	logger.hpp			\
 	object_base.hpp			\
 	om.hpp				\
-	route.hpp			\
 	prefix.hpp			\
+	route.hpp			\
 	route_domain.hpp		\
 	rpc_cmd.hpp			\
 	singular_db.hpp			\

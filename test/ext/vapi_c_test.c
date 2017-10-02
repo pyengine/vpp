@@ -26,17 +26,29 @@
 #include <vapi/vpe.api.vapi.h>
 #include <vapi/interface.api.vapi.h>
 #include <vapi/l2.api.vapi.h>
+#include <vapi/stats.api.vapi.h>
 #include <fake.api.vapi.h>
 
 DEFINE_VAPI_MSG_IDS_VPE_API_JSON;
 DEFINE_VAPI_MSG_IDS_INTERFACE_API_JSON;
 DEFINE_VAPI_MSG_IDS_L2_API_JSON;
+DEFINE_VAPI_MSG_IDS_STATS_API_JSON;
 DEFINE_VAPI_MSG_IDS_FAKE_API_JSON;
 
 static char *app_name = NULL;
 static char *api_prefix = NULL;
 static const int max_outstanding_requests = 64;
 static const int response_queue_size = 32;
+
+/* centos has ancient check so we hack our way around here
+ * to make it work somehow */
+#ifndef ck_assert_ptr_eq
+#define ck_assert_ptr_eq(X,Y) ck_assert_int_eq((long)X, (long)Y)
+#endif
+
+#ifndef ck_assert_ptr_ne
+#define ck_assert_ptr_ne(X,Y) ck_assert_int_ne((long)X, (long)Y)
+#endif
 
 START_TEST (test_invalid_values)
 {
@@ -569,7 +581,7 @@ sw_interface_dump_cb (struct vapi_ctx_s *ctx, void *callback_ctx,
     }
   else
     {
-      ck_assert (reply);
+      ck_assert (NULL != reply);
       printf ("Interface dump entry: [%u]: %s\n", reply->sw_if_index,
 	      reply->interface_name);
       size_t i = 0;
@@ -848,8 +860,10 @@ START_TEST (test_loopbacks_2)
 END_TEST;
 
 vapi_error_e
-stats_cb (vapi_ctx_t ctx, void *callback_ctx, vapi_error_e rv,
-	  bool is_last, vapi_payload_want_stats_reply * payload)
+interface_simple_stats_cb (vapi_ctx_t ctx, void *callback_ctx,
+			   vapi_error_e rv, bool is_last,
+			   vapi_payload_want_interface_simple_stats_reply *
+			   payload)
 {
   return VAPI_OK;
 }
@@ -868,11 +882,13 @@ simple_counters_cb (vapi_ctx_t ctx, void *callback_ctx,
 START_TEST (test_stats_1)
 {
   printf ("--- Receive stats using generic blocking API ---\n");
-  vapi_msg_want_stats *ws = vapi_alloc_want_stats (ctx);
+  vapi_msg_want_interface_simple_stats *ws =
+    vapi_alloc_want_interface_simple_stats (ctx);
   ws->payload.enable_disable = 1;
   ws->payload.pid = getpid ();
   vapi_error_e rv;
-  rv = vapi_want_stats (ctx, ws, stats_cb, NULL);
+  rv = vapi_want_interface_simple_stats (ctx, ws, interface_simple_stats_cb,
+					 NULL);
   ck_assert_int_eq (VAPI_OK, rv);
   int called = 0;
   vapi_set_event_cb (ctx, vapi_msg_id_vnet_interface_simple_counters,
@@ -887,11 +903,13 @@ END_TEST;
 START_TEST (test_stats_2)
 {
   printf ("--- Receive stats using stat-specific blocking API ---\n");
-  vapi_msg_want_stats *ws = vapi_alloc_want_stats (ctx);
+  vapi_msg_want_interface_simple_stats *ws =
+    vapi_alloc_want_interface_simple_stats (ctx);
   ws->payload.enable_disable = 1;
   ws->payload.pid = getpid ();
   vapi_error_e rv;
-  rv = vapi_want_stats (ctx, ws, stats_cb, NULL);
+  rv = vapi_want_interface_simple_stats (ctx, ws, interface_simple_stats_cb,
+					 NULL);
   ck_assert_int_eq (VAPI_OK, rv);
   int called = 0;
   vapi_set_vapi_msg_vnet_interface_simple_counters_event_cb (ctx,
@@ -956,6 +974,13 @@ combined_counters_cb (struct vapi_ctx_s *ctx, void *callback_ctx,
   ++*called;
   printf ("combined counters: first_sw_if_index=%u\n",
 	  payload->first_sw_if_index);
+  return VAPI_OK;
+}
+
+vapi_error_e
+stats_cb (vapi_ctx_t ctx, void *callback_ctx, vapi_error_e rv,
+	  bool is_last, vapi_payload_want_stats_reply * payload)
+{
   return VAPI_OK;
 }
 

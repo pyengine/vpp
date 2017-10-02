@@ -140,6 +140,10 @@ public:
                     {
                         rc = handle_derived<interface::set_table_cmd>(f_exp, f_act);
                     }
+                    else if (typeid(*f_exp) == typeid(interface::set_mac_cmd))
+                    {
+                        rc = handle_derived<interface::set_mac_cmd>(f_exp, f_act);
+                    }
                     else if (typeid(*f_exp) == typeid(interface::set_tag))
                     {
                         rc = handle_derived<interface::set_tag>(f_exp, f_act);
@@ -552,6 +556,30 @@ BOOST_AUTO_TEST_CASE(test_bvi) {
     HW::item<bool> hw_l3_unbind(false, rc_t::OK);
     ADD_EXPECT(l3_binding::bind_cmd(hw_l3_bind, hw_ifh.data(), pfx_10));
     TRY_CHECK_RC(OM::write(ernest, *l3));
+
+    // change the MAC address on the BVI
+    interface itf_new_mac(bvi_name,
+                          interface::type_t::BVI,
+                          interface::admin_state_t::UP);
+    l2_address_t l2_addr({0,1,2,3,4,5});
+    HW::item<l2_address_t> hw_mac(l2_addr, rc_t::OK);
+    itf_new_mac.set(l2_addr);
+    ADD_EXPECT(interface::set_mac_cmd(hw_mac, hw_ifh));
+    TRY_CHECK_RC(OM::write(ernest, itf_new_mac));
+
+    // create/write the interface to the OM again but with an unset MAC
+    // this should not generate a MAC address update
+    TRY_CHECK_RC(OM::write(ernest, itf));
+
+    // change the MAC address on the BVI - again
+    interface itf_new_mac2(bvi_name,
+                           interface::type_t::BVI,
+                           interface::admin_state_t::UP);
+    l2_address_t l2_addr2({0,1,2,3,4,6});
+    HW::item<l2_address_t> hw_mac2(l2_addr2, rc_t::OK);
+    itf_new_mac2.set(l2_addr2);
+    ADD_EXPECT(interface::set_mac_cmd(hw_mac2, hw_ifh));
+    TRY_CHECK_RC(OM::write(ernest, itf_new_mac2));
 
     delete l3;
     ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_unbind, hw_ifh.data(), pfx_10));

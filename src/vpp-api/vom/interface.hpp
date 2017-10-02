@@ -202,6 +202,11 @@ namespace VOM
         const l2_address_t & l2_address() const;
 
         /**
+         * Set the L2 Address
+         */
+        void set(const l2_address_t &addr);
+
+        /**
          * Set the operational state of the interface, as reported by VPP
          */
         void set(const oper_state_t &state);
@@ -569,7 +574,7 @@ namespace VOM
         /**
          * A command class that binds an interface to an L3 table
          */
-        class set_mac_cmd: public rpc_cmd<HW::item<mac_address_t>,
+        class set_mac_cmd: public rpc_cmd<HW::item<l2_address_t>,
                                           rc_t,
                                           vapi::Sw_interface_set_mac_address>
         {
@@ -578,7 +583,7 @@ namespace VOM
              * Constructor taking the HW::item to update
              * and the handle of the interface
              */
-            set_mac_cmd(HW::item<route::mac_address_t> &item,
+            set_mac_cmd(HW::item<l2_address_t> &item,
                         const HW::item<handle_t> &h);
 
             /**
@@ -594,7 +599,7 @@ namespace VOM
             /**
              * Comparison operator - only used for UT
              */
-            bool operator==(const set_table_cmd&i) const;
+            bool operator==(const set_mac_cmd&i) const;
         private:
             /**
              * the handle of the interface to update

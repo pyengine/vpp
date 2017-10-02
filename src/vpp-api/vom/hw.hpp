@@ -47,7 +47,7 @@ namespace VOM
              * Constructor
              */
             item():
-                item_rc(rc_t::NOOP)
+                item_rc(rc_t::UNSET)
              {
              }
 
@@ -135,14 +135,22 @@ namespace VOM
              */
             bool update(const item &desired)
             {
-                bool need_hw_update;
+                bool need_hw_update = false;
 
                 /*
-                 * A HW update is needed if the state is different
-                 * and/or the state is not yet in HW
+                 * if the deisred set is unset (i.e. defaulted, we've
+                 * no update to make
+                 */
+                if (rc_t::UNSET == desired.rc())
+                {
+                    return (false);
+                }
+                /*
+                 * A HW update is needed if thestate is different
+                 * or the state is not yet in HW
                  */
                 need_hw_update = (item_data != desired.data() ||
-                                  (rc_t::OK != rc()));
+                                  rc_t::OK != rc());
 
                 item_data = desired.data();
 

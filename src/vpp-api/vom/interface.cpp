@@ -263,6 +263,14 @@ void interface::update(const interface &desired)
     }
 
     /*
+     * change the interface state to that which is deisred
+     */
+    if (m_l2_address.update(desired.m_l2_address))
+    {
+        HW::enqueue(new set_mac_cmd(m_l2_address, m_hdl));
+    }
+
+    /*
      * If the interface is mapped into a route domain, set VPP's
      * table ID
      */
@@ -270,6 +278,13 @@ void interface::update(const interface &desired)
     {
         HW::enqueue(new set_table_cmd(m_table_id, m_hdl));
     }        
+}
+
+void interface::set(const l2_address_t &addr)
+{
+    assert(rc_t::UNSET == m_l2_address.rc());
+    m_l2_address.set(rc_t::NOOP);
+    m_l2_address.update(addr);
 }
 
 void interface::set(const oper_state_t &state)

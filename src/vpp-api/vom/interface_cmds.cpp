@@ -284,6 +284,42 @@ std::string interface::set_table_cmd::to_string() const
     return (s.str());
 }
 
+interface::set_mac_cmd::set_mac_cmd(HW::item<l2_address_t> &mac,
+                                    const HW::item<handle_t> &hdl):
+    rpc_cmd(mac),
+    m_hdl(hdl)
+{
+}
+
+bool interface::set_mac_cmd::operator==(const set_mac_cmd& other) const
+{
+    return ((m_hdl == other.m_hdl) &&
+            (m_hw_item == other.m_hw_item));
+}
+
+rc_t interface::set_mac_cmd::issue(connection &con)
+{
+    msg_t req(con.ctx(), std::ref(*this));
+
+    auto &payload = req.get_request().get_payload();
+    payload.sw_if_index = m_hdl.data().value();
+    m_hw_item.data().to_mac().to_bytes(payload.mac_address,
+                                       sizeof(payload.mac_address));
+
+    VAPI_CALL(req.execute());
+
+    m_hw_item.set(wait());
+
+    return (rc_t::OK);
+}
+
+std::string interface::set_mac_cmd::to_string() const
+{
+    std::ostringstream s;
+    s << "itf-set-mac: " << m_hw_item.to_string()
+      << " hdl:" << m_hdl.to_string();
+    return (s.str());
+}
 
 interface::events_cmd::events_cmd(event_listener &el):
     rpc_cmd(el.status()),

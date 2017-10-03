@@ -182,6 +182,7 @@ namespace VOM
      */
     struct mac_address_t
     {
+	mac_address_t(uint64_t address);
         mac_address_t(uint8_t bytes[6]);
         mac_address_t(std::initializer_list<uint8_t> bytes);
         /**

@@ -77,6 +77,36 @@ std::string bridge_domain::to_string() const
     return (s.str());
 }
 
+std::shared_ptr<bridge_domain> bridge_domain::find(uint32_t id)
+{
+    /*
+     * Loop throught the entire map looking for matching interface.
+     * not the most efficient algorithm, but it will do for now. The
+     * number of L3 configs is low and this is only called during bootup
+     */
+    std::shared_ptr<bridge_domain> l3s;
+
+    auto it = m_db.cbegin();
+
+    while (it != m_db.cend())
+    {
+        /*
+         * The key in the DB is a pair of the interface's name and prefix.
+         * If the keys match, save the L3-config
+         */
+        auto key = it->first;
+
+        if (id == key)
+        {
+            l3s = it->second.lock();
+        }
+
+        ++it;
+    }
+
+    return (l3s);
+}
+
 void bridge_domain::update(const bridge_domain &desired)
 {
     /*

@@ -111,6 +111,61 @@ void bridge_domain_entry::dump(std::ostream &os)
     m_db.dump(os);
 }
 
+bridge_domain_entry::event_handler::event_handler()
+{
+    OM::register_listener(this);
+    inspect::register_handler({"bd-entry"}, "bridge domain entry configurations", this);
+}
+
+void bridge_domain_entry::event_handler::handle_replay()
+{
+    m_db.replay();
+}
+
+void bridge_domain_entry::event_handler::handle_populate(const client_db::key_t &key)
+{
+
+    std::shared_ptr<bridge_domain_entry::dump_cmd> cmd(new bridge_domain_entry::dump_cmd());
+
+    HW::enqueue(cmd);
+    HW::write();
+
+    for (auto & record : *cmd)
+    {
+        auto &payload = record.get_payload();
+
+        std::shared_ptr<interface> itf = interface::find(payload.sw_if_index);
+	std::shared_ptr<bridge_domain> bd = bridge_domain::find(payload.bd_id);
+	mac_address_t mac(payload.mac);
+        bridge_domain_entry bd_entry(*bd,
+                                     mac,
+                                     *itf);
+
+         BOOST_LOG_SEV(logger(), levels::debug) << "bd-entry-dump: "
+                                                << bd->to_string()
+                                                << mac.to_string()
+                                                << itf->to_string();
+
+        /*
+         * Write each of the discovered interfaces into the OM,
+         * but disable the HW Command q whilst we do, so that no
+         * commands are sent to VPP
+         */
+        VOM::OM::commit(key, bd_entry);
+    }
+
+}
+
+dependency_t bridge_domain_entry::event_handler::order() const
+{
+    return (dependency_t::BINDING);
+}
+
+void bridge_domain_entry::event_handler::show(std::ostream &os)
+{
+    m_db.dump(os);
+}
+
 std::ostream& VOM::operator<<(std::ostream &os,
                               const bridge_domain_entry::key_t &key)
 {

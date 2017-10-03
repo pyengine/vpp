@@ -68,7 +68,7 @@ namespace VOM
         /**
          * Static function to find the bridge_domain in the model
          */
-        static std::shared_ptr<bridge_domain> find(const bridge_domain &temp);
+        static std::shared_ptr<bridge_domain> find(uint32_t id);
 
         /**
          * Dump all bridge-doamin into the stream provided

@@ -88,6 +88,11 @@ std::ostream & VOM::operator<<(std::ostream &os, const handle_t &h)
     return (os);
 }
 
+mac_address_t::mac_address_t(uint64_t address)
+{
+    std::memcpy(std::begin(bytes), &address, 6);
+}
+
 mac_address_t::mac_address_t(uint8_t b[6])
 {
     std::copy(b, b+6, std::begin(bytes));

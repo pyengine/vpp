@@ -100,3 +100,31 @@ std::string bridge_domain_entry::delete_cmd::to_string() const
 
     return (s.str());
 }
+
+bridge_domain_entry::dump_cmd::dump_cmd()
+{
+}
+
+bool bridge_domain_entry::dump_cmd::operator==(const dump_cmd& other) const
+{
+    return (true);
+}
+
+rc_t bridge_domain_entry::dump_cmd::issue(connection &con)
+{
+    m_dump.reset(new msg_t(con.ctx(), std::ref(*this)));
+
+    auto &payload = m_dump->get_request().get_payload();
+    payload.bd_id = ~0;
+
+    VAPI_CALL(m_dump->execute());
+
+    wait();
+
+    return rc_t::OK;
+}
+
+std::string bridge_domain_entry::dump_cmd::to_string() const
+{
+    return ("bridge-domain-entry-dump");
+}

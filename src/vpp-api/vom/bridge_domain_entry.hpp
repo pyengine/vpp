@@ -146,7 +146,74 @@ namespace VOM
             uint32_t m_bd;
         };
 
+        /**
+         * A cmd class that Dumps all the interface spans
+         */
+        class dump_cmd: public VOM::dump_cmd<vapi::L2_fib_table_dump>
+        {
+        public:
+            /**
+             * Constructor
+             */
+            dump_cmd();
+            dump_cmd(const dump_cmd &d);
+
+            /**
+             * Issue the command to VPP/HW
+             */
+            rc_t issue(connection &con);
+            /**
+             * convert to string format for debug purposes
+             */
+            std::string to_string() const;
+
+            /**
+             * Comparison operator - only used for UT
+             */
+            bool operator==(const dump_cmd&i) const;
+        private:
+            /**
+             * HW reutrn code
+             */
+            HW::item<bool> item;
+        };
+
     private:
+        /**
+         * Class definition for listeners to OM events
+         */
+        class event_handler: public OM::listener, public inspect::command_handler
+        {
+        public:
+            event_handler();
+            virtual ~event_handler() = default;
+
+            /**
+             * Handle a populate event
+             */
+            void handle_populate(const client_db::key_t & key);
+
+            /**
+             * Handle a replay event
+             */
+            void handle_replay();
+
+            /**
+             * Show the object in the Singular DB
+             */
+            void show(std::ostream &os);
+
+            /**
+             * Get the sortable Id of the listener
+             */
+            dependency_t order() const;
+        };
+
+        /**
+         * event_handler to register with OM
+         */
+        static event_handler m_evh;
+
         /**
          * Commit the acculmulated changes into VPP. i.e. to a 'HW" write.
          */

@@ -73,10 +73,7 @@ namespace VOM
      */
     struct rc_t: public enum_base<rc_t>
     {
-        /**
-         * Constructor
-         */
-        rc_t(int v, const std::string s);
+        rc_t(const rc_t &rc) = default;
 
         /**
          * Destructor
@@ -118,6 +115,11 @@ namespace VOM
          * Get the rc_t from the VPP API value
          */
         static const rc_t &from_vpp_retval(int32_t rv);
+    private:
+        /**
+         * Constructor
+         */
+        rc_t(int v, const std::string s);
     };
 
     /**

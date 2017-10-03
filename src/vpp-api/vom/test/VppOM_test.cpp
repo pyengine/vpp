@@ -188,6 +188,10 @@ public:
                     {
                         rc = handle_derived<l2_binding::unbind_cmd>(f_exp, f_act);
                     }
+                    else if (typeid(*f_exp) == typeid(l2_binding::set_vtr_op_cmd))
+                    {
+                        rc = handle_derived<l2_binding::set_vtr_op_cmd>(f_exp, f_act);
+                    }
                     else if (typeid(*f_exp) == typeid(vxlan_tunnel::create_cmd))
                     {
                         rc = handle_derived<vxlan_tunnel::create_cmd>(f_exp, f_act);
@@ -688,8 +692,11 @@ BOOST_AUTO_TEST_CASE(test_bridge) {
     TRY_CHECK_RC(OM::write(dante, bd1));
 
     l2_binding *l2itf2 = new l2_binding(itf2, bd1);
+    HW::item<l2_binding::l2_vtr_op_t> hw_set_vtr(l2_binding::l2_vtr_op_t::L2_VTR_POP_1, rc_t::OK);
+    l2itf2->set(l2_binding::l2_vtr_op_t::L2_VTR_POP_1, 68);
 
     ADD_EXPECT(l2_binding::bind_cmd(hw_l2_bind, hw_ifh2.data(), hw_bd.data(), false));
+    ADD_EXPECT(l2_binding::set_vtr_op_cmd(hw_set_vtr, hw_ifh2.data(), 68));
     TRY_CHECK_RC(OM::write(dante, *l2itf2));
 
     // Add some sttic entries to the bridge-domain

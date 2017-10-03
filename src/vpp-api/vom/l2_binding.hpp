@@ -32,6 +32,24 @@ namespace VOM
     class l2_binding: public object_base
     {
     public:
+        struct l2_vtr_op_t: public enum_base<l2_vtr_op_t>
+        {
+            l2_vtr_op_t(const l2_vtr_op_t &l) = default;
+            ~l2_vtr_op_t() = default;
+
+            const static l2_vtr_op_t L2_VTR_DISABLED;
+            const static l2_vtr_op_t L2_VTR_PUSH_1;
+            const static l2_vtr_op_t L2_VTR_PUSH_2;
+            const static l2_vtr_op_t L2_VTR_POP_1;
+            const static l2_vtr_op_t L2_VTR_POP_2;
+            const static l2_vtr_op_t L2_VTR_TRANSLATE_1_1;
+            const static l2_vtr_op_t L2_VTR_TRANSLATE_1_2;
+            const static l2_vtr_op_t L2_VTR_TRANSLATE_2_1;
+            const static l2_vtr_op_t L2_VTR_TRANSLATE_2_2;
+        private:
+            l2_vtr_op_t(int v, const std::string s);
+        };
+
         /**
          * Construct a new object matching the desried state
          */
@@ -62,6 +80,11 @@ namespace VOM
          * Dump all l2_bindings into the stream provided
          */
         static void dump(std::ostream &os);
+
+        /**
+         * Set the VTR operation on the binding/interface
+         */
+        void set(const l2_vtr_op_t &op, uint16_t tag);
 
         /**
          * A functor class that binds L2 configuration to an interface
@@ -153,6 +176,46 @@ namespace VOM
             bool m_is_bvi;
         };
 
+        /**
+         * A cmd class sets the VTR operation
+         */
+        class set_vtr_op_cmd: public rpc_cmd<HW::item<l2_vtr_op_t>, rc_t,
+                                             vapi::L2_interface_vlan_tag_rewrite>
+        {
+        public:
+            /**
+             * Constructor
+             */
+            set_vtr_op_cmd(HW::item<l2_vtr_op_t> &item,
+                           const handle_t &itf,
+                           uint16_t tag);
+
+            /**
+             * Issue the command to VPP/HW
+             */
+            rc_t issue(connection &con);
+
+            /**
+             * convert to string format for debug purposes
+             */
+            std::string to_string() const;
+
+            /**
+             * Comparison operator - only used for UT
+             */
+            bool operator==(const set_vtr_op_cmd&i) const;
+        private:
+            /**
+             * The interface to bind
+             */
+            const handle_t m_itf;
+
+            /**
+             * The tag for the operation
+             */
+            uint16_t m_tag;
+        };
+
     private:
         /**
          * Class definition for listeners to OM events
@@ -238,6 +301,16 @@ namespace VOM
          * do/don't bind.
          */
         HW::item<bool> m_binding;
+
+        /**
+         * HW configuration for the VTR option
+         */
+        HW::item<l2_vtr_op_t> m_vtr_op;
+
+        /**
+         * The Dot1q tag for the VTR operation
+         */
+        uint16_t m_vtr_op_tag;
 
         /**
          * A map of all L2 interfaces key against the interface's handle_t

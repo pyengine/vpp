@@ -21,6 +21,24 @@ singular_db<const handle_t, l2_binding> l2_binding::m_db;
 
 l2_binding::event_handler l2_binding::m_evh;
 
+/*
+ * Make sure these are in sync with the smae enum in VPP
+ */
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_DISABLED(0, "disabled");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_PUSH_1(1, "push-1");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_PUSH_2(2, "push-2");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_POP_1(3, "pop-1");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_POP_2(4, "pop-2");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_TRANSLATE_1_1(5, "translate-1-1");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_TRANSLATE_1_2(6, "translate-1-2");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_TRANSLATE_2_1(7, "translate-2-1");
+const l2_binding::l2_vtr_op_t l2_binding::l2_vtr_op_t::L2_VTR_TRANSLATE_2_2(5, "translate-2-2");
+
+l2_binding::l2_vtr_op_t::l2_vtr_op_t(int v, const std::string s):
+    enum_base<l2_binding::l2_vtr_op_t>(v, s)
+{
+}
+
 /**
  * Construct a new object matching the desried state
  */
@@ -28,14 +46,18 @@ l2_binding::l2_binding(const interface &itf,
                        const bridge_domain &bd):
     m_itf(itf.singular()),
     m_bd(bd.singular()),
-    m_binding(0)
+    m_binding(0),
+    m_vtr_op(l2_vtr_op_t::L2_VTR_DISABLED, rc_t::UNSET),
+    m_vtr_op_tag(0)
 {
 }
 
 l2_binding::l2_binding(const l2_binding& o):
     m_itf(o.m_itf),
     m_bd(o.m_bd),
-    m_binding(0)
+    m_binding(0),
+    m_vtr_op(o.m_vtr_op),
+    m_vtr_op_tag(o.m_vtr_op_tag)
 {
 }
 
@@ -48,6 +70,8 @@ void l2_binding::sweep()
                                    m_bd->id(),
                                    interface::type_t::BVI == m_itf->type()));
     }
+
+    // no need to undo the VTR operation.
     HW::write();
 }
 
@@ -59,6 +83,13 @@ void l2_binding::replay()
                                  m_itf->handle(),
                                  m_bd->id(),
                                  interface::type_t::BVI == m_itf->type()));
+    }
+
+    if (m_vtr_op && handle_t::INVALID != m_itf->handle())
+    {
+        HW::enqueue(new set_vtr_op_cmd(m_vtr_op,
+                                       m_itf->handle(),
+                                       m_vtr_op_tag));
     }
 }
 
@@ -81,6 +112,14 @@ std::string l2_binding::to_string() const
     return (s.str());
 }
 
+void l2_binding::set(const l2_vtr_op_t &op, uint16_t tag)
+{
+    assert(rc_t::UNSET == m_vtr_op.rc());
+    m_vtr_op.set(rc_t::NOOP);
+    m_vtr_op.update(op);
+    m_vtr_op_tag = tag;
+}
+
 void l2_binding::update(const l2_binding &desired)
 {
     /*
@@ -92,6 +131,16 @@ void l2_binding::update(const l2_binding &desired)
                                  m_itf->handle(),
                                  m_bd->id(),
                                  interface::type_t::BVI == m_itf->type()));
+    }
+
+    /*
+     * set the VTR operation is request
+     */
+    if (m_vtr_op.update(desired.m_vtr_op))
+    {
+        HW::enqueue(new set_vtr_op_cmd(m_vtr_op,
+                                       m_itf->handle(),
+                                       m_vtr_op_tag));
     }
 }
 

@@ -170,6 +170,12 @@ l2_address_t::l2_address_t(std::initializer_list<uint8_t> i):
 {
 }
 
+l2_address_t::l2_address_t(const mac_address_t &mac):
+    bytes(6)
+{
+    std::copy(begin(mac.bytes), std::end(mac.bytes), std::begin(bytes));
+}
+
 const l2_address_t l2_address_t::ONE({0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
 
 const l2_address_t l2_address_t::ZERO({ 0x0 });

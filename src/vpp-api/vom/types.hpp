@@ -232,6 +232,8 @@ namespace VOM
     {
         l2_address_t(const uint8_t bytes[8], uint8_t n_bytes);
         l2_address_t(std::initializer_list<uint8_t> bytes);
+        l2_address_t(const mac_address_t &mac);
+
         /**
          * Convert to byte array
          */

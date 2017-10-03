@@ -71,37 +71,51 @@ bool path::operator<(const path &p) const
     return (false);
 }
 
-void path::to_vpp(vapi_type_fib_path &path) const
+void path::to_vpp(vapi_payload_ip_add_del_route &payload) const
 {
+    payload.is_drop = 0;
+    payload.is_unreach = 0;
+    payload.is_prohibit = 0;
+    payload.is_ipv6 = 0;
+    payload.is_local = 0;
+    payload.is_classify = 0;
+    payload.is_multipath = 0;
+    payload.is_resolve_host = 0;
+    payload.is_resolve_attached = 0;
+
     if (special_t::STANDARD == m_type)
     {
-        to_bytes(m_nh, &path.afi, path.next_hop);
+        to_bytes(m_nh, &payload.is_ipv6, payload.next_hop_address);
 
         if (m_rd)
         {
-            // FIXME - VPP needs next-hop table in prog API
+            payload.next_hop_table_id = m_rd->table_id();
         }
         if (m_interface)
         {
-            path.sw_if_index = m_interface->handle().value();
+            payload.next_hop_sw_if_index = m_interface->handle().value();
         }
     }
     else if (special_t::DROP == m_type)
     {
-        path.is_drop = 1;
+        payload.is_drop = 1;
     }
     else if (special_t::UNREACH == m_type)
     {
-        path.is_unreach = 1;
+        payload.is_unreach = 1;
     }
     else if (special_t::PROHIBIT == m_type)
     {
-        path.is_prohibit = 1;
+        payload.is_prohibit = 1;
     }
     else if (special_t::LOCAL == m_type)
     {
-        path.is_local = 1;
+        payload.is_local = 1;
     }
+    payload.next_hop_weight = m_weight;
+    payload.next_hop_preference = m_preference;
+    payload.next_hop_via_label = 0;
+    payload.classify_table_index = 0;
 }
 
 std::string path::to_string() const

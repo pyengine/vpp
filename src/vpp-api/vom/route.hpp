@@ -93,6 +93,7 @@ namespace VOM
              * Convert the path into the VPP API representation
              */
             void to_vpp(vapi_type_fib_path &path) const;
+            void to_vpp(vapi_payload_ip_add_del_route &payload) const;
 
             /**
              * Less than operator for set insertion

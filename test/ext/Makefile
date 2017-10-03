@@ -1,6 +1,7 @@
 BINDIR = $(BR)/vapi_test/
 CBIN = $(addprefix $(BINDIR), vapi_c_test)
 CPPBIN = $(addprefix $(BINDIR), vapi_cpp_test)
+VOMBIN = A B
 
 ifeq ($(filter centos,$(OS_ID)),$(OS_ID))
 CPPBIN=
@@ -10,7 +11,7 @@ LIBS = -L$(VPP_TEST_BUILD_DIR)/vpp/.libs/ -L$(VPP_TEST_BUILD_DIR)/vpp/vpp-api/va
 CFLAGS = -std=gnu99 -g -Wall -pthread -I$(WS_ROOT)/src -I$(VPP_TEST_INSTALL_PATH)/vpp/include -I$(BINDIR)
 CPPFLAGS = -std=c++11 -g -Wall -pthread -I$(WS_ROOT)/src -I$(VPP_TEST_INSTALL_PATH)/vpp/include -I$(BINDIR)
 
-all: $(CBIN) $(CPPBIN)
+all: $(CBIN) $(CPPBIN) $(VOMBIN)
 
 $(BINDIR):
 	mkdir -p $(BINDIR)
@@ -30,6 +31,15 @@ CPPSRC = vapi_cpp_test.cpp
 
 $(CPPBIN): $(CPPSRC) $(VPP_TEST_BUILD_DIR)/vpp/vpp-api/vapi/.libs/libvapiclient.so $(VPP_TEST_BUILD_DIR)/vpp/.libs/libvppinfra.so $(VPP_TEST_BUILD_DIR)/vpp/.libs/libvlibmemoryclient.so $(VPP_TEST_BUILD_DIR)/vpp/.libs/libsvm.so $(BINDIR)/fake.api.vapi.hpp
 	$(CXX) -o $@ $(CPPFLAGS) $(CPPSRC) $(LIBS)
+
+A = $(VPP_TEST_BUILD_DIR)/vpp/vpp-api/vom
+B = $(BINDIR)
+
+$(VOMBIN):
+	@echo " COPYING " $A $B ;               \
+	cp --remove-destination $(A)/vom_test $(B)vom_test ;    \
+	rm -rf $(B).libs/* ;                                            \
+	cp --remove-destination $(A)/.libs/vom_test  $(B).libs/vom_test
 
 clean:
 	rm -rf $(BINDIR)

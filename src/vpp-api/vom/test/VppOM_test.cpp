@@ -1098,10 +1098,10 @@ BOOST_AUTO_TEST_CASE(test_interface_span) {
     delete itf_span;
     STRICT_ORDER_OFF();
     ADD_EXPECT(interface_span::unconfig_cmd(hw_is_uncfg, hw_ifh.data(), hw_ifh2.data()));
-    ADD_EXPECT(interface::state_change_cmd(hw_as_down2, hw_ifh2));
-    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh));
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh, itf1_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_down2, hw_ifh2));
+    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
 
     TRY_CHECK(OM::remove(elif));
 }

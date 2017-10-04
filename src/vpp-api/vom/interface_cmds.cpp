@@ -17,6 +17,7 @@ DEFINE_VAPI_MSG_IDS_VPE_API_JSON;
 DEFINE_VAPI_MSG_IDS_INTERFACE_API_JSON;
 DEFINE_VAPI_MSG_IDS_AF_PACKET_API_JSON;
 DEFINE_VAPI_MSG_IDS_TAP_API_JSON;
+DEFINE_VAPI_MSG_IDS_STATS_API_JSON;
 
 using namespace VOM;
 
@@ -369,6 +370,70 @@ void interface::events_cmd::notify()
 std::string interface::events_cmd::to_string() const
 {
     return ("itf-events");
+}
+
+/**
+ * Interface statistics
+ */
+interface::stats_cmd::stats_cmd(stat_listener &el, const std::vector<handle_t> &interfaces):
+    rpc_cmd(el.status()),
+    event_cmd(),
+    m_listener(el),
+    m_swifindex(interfaces)
+{
+}
+
+bool interface::stats_cmd::operator==(const stats_cmd& other) const
+{
+    return (true);
+}
+
+rc_t interface::stats_cmd::issue(connection &con)
+{
+    /*
+     * First set the clal back to handle the interface stats
+     */
+    m_reg.reset(new reg_t(con.ctx(), std::ref(*(static_cast<event_cmd*>(this)))));
+    // m_reg->execute();
+
+    /*
+     * then send the request to enable them
+     */
+    msg_t req(con.ctx(), m_swifindex.size(), std::ref(*(static_cast<rpc_cmd*>(this))));
+
+    auto &payload = req.get_request().get_payload();
+    payload.enable_disable = 1;
+    payload.pid = getpid();
+    payload.num = m_swifindex.size();
+
+    auto it = m_swifindex.cbegin();
+    uint32_t ii = 0;
+    while (it != m_swifindex.cend())
+        {
+            payload.sw_ifs[ii] = it->value();
+            ++it;
+            ++ii;
+        }
+
+    VAPI_CALL(req.execute());
+
+    wait();
+
+    return (rc_t::INPROGRESS);
+}
+
+void interface::stats_cmd::retire()
+{
+}
+
+void interface::stats_cmd::notify()
+{
+    m_listener.handle_interface_stat(this);
+}
+
+std::string interface::stats_cmd::to_string() const
+{
+    return ("itf-stats");
 }
 
 interface::dump_cmd::dump_cmd()

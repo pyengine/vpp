@@ -29,6 +29,7 @@
 #include <vapi/interface.api.vapi.hpp>
 #include <vapi/af_packet.api.vapi.hpp>
 #include <vapi/tap.api.vapi.hpp>
+#include <vapi/stats.api.vapi.hpp>
 
 namespace VOM
 {
@@ -684,6 +685,88 @@ namespace VOM
              * The listeners to notify when data/events arrive
              */
             event_listener & m_listener;
+        };
+
+        /**
+         * Forward declaration of the stat command
+         */
+        class stats_cmd;
+
+        /**
+         * A class that listens to interface Stats
+         */
+        class stat_listener
+        {
+        public:
+            /**
+             * Default Constructor
+             */
+            stat_listener();
+
+            /**
+             * Virtual function called on the listener when the command has data
+             * ready to process
+             */
+            virtual void handle_interface_stat(stats_cmd *cmd) = 0;
+
+            /**
+             * Return the HW::item representing the status
+             */
+            HW::item<bool> &status();
+
+        protected:
+            /**
+             * The status of the subscription
+             */
+            HW::item<bool> m_status;
+        };
+
+        /**
+         * A command class represents our desire to recieve interface stats
+         */
+        class stats_cmd: public rpc_cmd<HW::item<bool>,
+                                       rc_t,
+                                        vapi::Want_per_interface_combined_stats>,
+                         public event_cmd<vapi::Vnet_per_interface_combined_counters>
+        {
+        public:
+            /**
+             * Constructor taking the listner to notify
+             */
+            stats_cmd(stat_listener &el, const std::vector<handle_t> &interfaces);
+
+            /**
+             * Issue the command to VPP/HW
+             */
+            rc_t issue(connection &con);
+
+            /**
+             * Retires the command - unsubscribe from the stats.
+             */
+            void retire();
+
+            /**
+             * convert to string format for debug purposes
+             */
+            std::string to_string() const;
+
+            /**
+             * Comparison operator - only used for UT
+             */
+            bool operator==(const stats_cmd&i) const;
+
+            /**
+             * Called when it's time to poke the listeners
+             */
+            void notify();
+        private:
+            /**
+             * The listeners to notify when data/stats arrive
+             */
+            stat_listener & m_listener;
+
+            std::vector<handle_t> m_swifindex;
+
         };
 
         /**

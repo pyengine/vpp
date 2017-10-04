@@ -97,6 +97,16 @@ HW::item<bool> &interface::event_listener::status()
     return (m_status);
 }
 
+interface::stat_listener::stat_listener():
+    m_status(rc_t::NOOP)
+{
+}
+
+HW::item<bool> &interface::stat_listener::status()
+{
+    return (m_status);
+}
+
 /**
  * Return the interface type
  */

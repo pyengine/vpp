@@ -7,6 +7,7 @@
  */
 
 #include <sstream>
+#include <iostream>
 #include <iomanip>
 #include <algorithm>
 
@@ -117,13 +118,11 @@ void mac_address_t::to_bytes(uint8_t *array, uint8_t len) const
 
 uint64_t mac_address_t::to_u64() const
 {
-    uint64_t b, mac6 = 0;
+    uint64_t mac6 = 0ULL;
 
-    for (int i = 0; i < 6; i++)
+    for (int i = 0, j = 7; i < 6 && j > 1; i++, j--)
     {
-        b = bytes[i];
-        b = b << (i*8);
-        mac6 |= b;
+        mac6 |= uint64_t(bytes[i]) << (j*8);
     }
 
     return (mac6);

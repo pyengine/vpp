@@ -18,6 +18,11 @@ namespace VOM
     /**
      * Types belonging to Routing
      */
+
+    /**
+     * An L3 protocol can be used to construct a prefix that is used
+     * to match packets are part of a route.
+     */
     class l3_proto_t: public enum_base<l3_proto_t>
     {
     public:
@@ -27,11 +32,33 @@ namespace VOM
 
         bool is_ipv4();
         bool is_ipv6();
+
+        static const l3_proto_t &from_address(const boost::asio::ip::address &addr);
     private:
         /**
          * Private constructor taking the value and the string name
          */
         l3_proto_t(int v, const std::string &s);
+    };
+
+    /**
+     * A next-hop protocol describes the protocol of a peer to which packets
+     * are sent after matching a route.
+     */
+    class nh_proto_t: public enum_base<nh_proto_t>
+    {
+    public:
+        const static nh_proto_t IPV4;
+        const static nh_proto_t IPV6;
+        const static nh_proto_t MPLS;
+        const static nh_proto_t ETHERNET;
+
+        static const nh_proto_t &from_address(const boost::asio::ip::address &addr);
+    private:
+        /**
+         * Private constructor taking the value and the string name
+         */
+        nh_proto_t(int v, const std::string &s);
     };
 
     namespace route

@@ -15,12 +15,12 @@ using namespace VOM;
 using namespace VOM::route;
 
 ip_route::update_cmd::update_cmd(HW::item<bool> &item,
-                                 const prefix_t &prefix,
                                  table_id_t id,
+                                 const prefix_t &prefix,
                                  const path_list_t &paths):
     rpc_cmd(item),
-    m_prefix(prefix),
     m_id(id),
+    m_prefix(prefix),
     m_paths(paths)
 {
     // no multipath yet.
@@ -69,11 +69,11 @@ std::string ip_route::update_cmd::to_string() const
 }
 
 ip_route::delete_cmd::delete_cmd(HW::item<bool> &item,
-                                 const prefix_t &prefix,
-                                 table_id_t id):
+                                 table_id_t id,
+                                 const prefix_t &prefix):
     rpc_cmd(item),
-    m_prefix(prefix),
-    m_id(id)
+    m_id(id),
+    m_prefix(prefix)
 {
 }
 

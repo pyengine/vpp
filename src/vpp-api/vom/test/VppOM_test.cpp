@@ -157,6 +157,14 @@ public:
                     {
                         rc = handle_derived<route_domain::delete_cmd>(f_exp, f_act);
                     }
+                    else if (typeid(*f_exp) == typeid(route::ip_route::update_cmd))
+                    {
+			rc = handle_derived<route::ip_route::update_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(route::ip_route::delete_cmd))
+                    {
+                        rc = handle_derived<route::ip_route::delete_cmd>(f_exp, f_act);
+                    }
                     else if (typeid(*f_exp) == typeid(l3_binding::bind_cmd))
                     {
                         rc = handle_derived<l3_binding::bind_cmd>(f_exp, f_act);
@@ -1130,6 +1138,114 @@ BOOST_AUTO_TEST_CASE(test_interface_span) {
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
 
     TRY_CHECK(OM::remove(elif));
+}
+
+BOOST_AUTO_TEST_CASE(test_routing) {
+    VppInit vi;
+    const std::string ian = "IanFleming";
+    rc_t rc = rc_t::OK;
+
+    /*
+     * non-default route domain
+     */
+    route_domain rd4(l3_proto_t::IPV4, 1);
+    HW::item<bool> hw_rd4_create(true, rc_t::OK);
+    HW::item<bool> hw_rd4_delete(false, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd4_bind(1, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd4_unbind(route::DEFAULT_TABLE, rc_t::OK);
+    ADD_EXPECT(route_domain::create_cmd(hw_rd4_create, l3_proto_t::IPV4, 1));
+    TRY_CHECK_RC(OM::write(ian, rd4));
+
+    /*
+     * a couple of interfaces
+     */
+    std::string itf1_name = "af1";
+    interface itf1(itf1_name,
+                   interface::type_t::AFPACKET,
+                   interface::admin_state_t::UP);
+    HW::item<handle_t> hw_ifh(2, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_up(interface::admin_state_t::UP, rc_t::OK);
+    ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh, itf1_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_up, hw_ifh));
+    TRY_CHECK_RC(OM::write(ian, itf1));
+
+    std::string itf2_name = "af2";
+    interface *itf2 = new interface(itf2_name,
+                                    interface::type_t::AFPACKET,
+                                    interface::admin_state_t::UP,
+                                    rd4);
+
+    HW::item<handle_t> hw_ifh2(4, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_up2(interface::admin_state_t::UP, rc_t::OK);
+
+    ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh2, itf2_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_up2, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_bind, hw_ifh2));
+    TRY_CHECK_RC(OM::write(ian, *itf2));
+
+    /*
+     * prefix on each interface
+     */
+    route::prefix_t pfx_10("10.10.10.10", 24);
+    l3_binding *l3_10 = new l3_binding(itf1, pfx_10);
+    HW::item<bool> hw_l3_10_bind(true, rc_t::OK);
+    HW::item<bool> hw_l3_10_unbind(false, rc_t::OK);
+    ADD_EXPECT(l3_binding::bind_cmd(hw_l3_10_bind, hw_ifh.data(), pfx_10));
+    TRY_CHECK_RC(OM::write(ian, *l3_10));
+    route::prefix_t pfx_11("11.11.11.11", 24);
+    l3_binding *l3_11 = new l3_binding(*itf2, pfx_11);
+    HW::item<bool> hw_l3_11_bind(true, rc_t::OK);
+    HW::item<bool> hw_l3_11_unbind(false, rc_t::OK);
+    ADD_EXPECT(l3_binding::bind_cmd(hw_l3_11_bind, hw_ifh2.data(), pfx_11));
+    TRY_CHECK_RC(OM::write(ian, *l3_11));
+
+    /*
+     * A route via interface 1 in the default table
+     */
+    route::prefix_t pfx_5("5.5.5.5", 32);
+    boost::asio::ip::address nh_10 = boost::asio::ip::address::from_string("10.10.10.11");
+    route::path *path_10 = new route::path(nh_10, itf1);
+    route::ip_route *route_5 = new route::ip_route(pfx_5);
+    route_5->add(*path_10);
+    HW::item<bool> hw_route_5(true, rc_t::OK);
+    ADD_EXPECT(route::ip_route::update_cmd(hw_route_5, 0, pfx_5, {*path_10}));
+    TRY_CHECK_RC(OM::write(ian, *route_5));
+
+    /*
+     * A route via interface 2 in the non-default table
+     */
+    boost::asio::ip::address nh_11 = boost::asio::ip::address::from_string("11.11.11.10");
+    route::path *path_11 = new route::path(nh_11, *itf2);
+    route::ip_route *route_5_2 = new route::ip_route(rd4, pfx_5);
+    route_5_2->add(*path_11);
+    HW::item<bool> hw_route_5_2(true, rc_t::OK);
+    ADD_EXPECT(route::ip_route::update_cmd(hw_route_5_2, 1, pfx_5, {*path_11}));
+    TRY_CHECK_RC(OM::write(ian, *route_5_2));
+
+    HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_down2(interface::admin_state_t::DOWN, rc_t::OK);
+    STRICT_ORDER_OFF();
+    // delete the stack objects that hold references to others
+    // so the OM::remove is the call that removes the last reference
+    delete l3_11;
+    delete l3_10;
+    delete itf2;
+    delete route_5;
+    delete path_10;
+    delete route_5_2;
+    delete path_11;
+    ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5_2, 1, pfx_5));
+    ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5, 0, pfx_5));
+    ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_10_unbind, hw_ifh.data(), pfx_10));
+    ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_11_unbind, hw_ifh2.data(), pfx_11));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh));
+    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh, itf1_name));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_unbind, hw_ifh2));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_down2, hw_ifh2));
+    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
+    ADD_EXPECT(route_domain::delete_cmd(hw_rd4_delete, l3_proto_t::IPV4, 1));
+
+    TRY_CHECK(OM::remove(ian));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

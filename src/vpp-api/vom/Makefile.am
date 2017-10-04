@@ -55,6 +55,8 @@ libvom_la_SOURCES = 			\
 	arp_proxy_config.cpp		\
 	bridge_domain_cmds.cpp		\
 	bridge_domain.cpp		\
+	bridge_domain_arp_entry.cpp	\
+	bridge_domain_arp_entry_cmds.cpp \
 	bridge_domain_entry_cmds.cpp	\
 	bridge_domain_entry.cpp		\
 	client_db.cpp			\
@@ -109,6 +111,7 @@ vominclude_HEADERS =			\
 	arp_proxy_binding.hpp		\
 	arp_proxy_config.hpp		\
 	bridge_domain.hpp		\
+	bridge_domain_arp_entry.hpp	\
 	bridge_domain_entry.hpp		\
 	client_db.hpp			\
 	cmd.hpp				\

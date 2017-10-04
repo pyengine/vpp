@@ -21,6 +21,7 @@
 #include "vom/l3_binding.hpp"
 #include "vom/bridge_domain.hpp"
 #include "vom/bridge_domain_entry.hpp"
+#include "vom/bridge_domain_arp_entry.hpp"
 #include "vom/prefix.hpp"
 #include "vom/route.hpp"
 #include "vom/route_domain.hpp"
@@ -179,6 +180,14 @@ public:
                     else if (typeid(*f_exp) == typeid(bridge_domain_entry::delete_cmd))
                     {
                         rc = handle_derived<bridge_domain_entry::delete_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(bridge_domain_arp_entry::create_cmd))
+                    {
+                        rc = handle_derived<bridge_domain_arp_entry::create_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(bridge_domain_arp_entry::delete_cmd))
+                    {
+                        rc = handle_derived<bridge_domain_arp_entry::delete_cmd>(f_exp, f_act);
                     }
                     else if (typeid(*f_exp) == typeid(l2_binding::bind_cmd))
                     {
@@ -699,12 +708,20 @@ BOOST_AUTO_TEST_CASE(test_bridge) {
     ADD_EXPECT(l2_binding::set_vtr_op_cmd(hw_set_vtr, hw_ifh2.data(), 68));
     TRY_CHECK_RC(OM::write(dante, *l2itf2));
 
-    // Add some sttic entries to the bridge-domain
+    // Add some static entries to the bridge-domain
     HW::item<bool> hw_be1(true, rc_t::OK);
     mac_address_t mac1({0,1,2,3,4,5});
     bridge_domain_entry *be1 = new bridge_domain_entry(bd1, mac1, itf2);
     ADD_EXPECT(bridge_domain_entry::create_cmd(hw_be1, mac1, bd1.id(), hw_ifh2.data()));
     TRY_CHECK_RC(OM::write(dante, *be1));
+
+    // Add some entries to the bridge-domain ARP termination table
+    HW::item<bool> hw_bea1(true, rc_t::OK);
+    boost::asio::ip::address ip1 = boost::asio::ip::address::from_string("10.10.10.10");
+
+    bridge_domain_arp_entry *bea1 = new bridge_domain_arp_entry(bd1, mac1, ip1);
+    ADD_EXPECT(bridge_domain_arp_entry::create_cmd(hw_be1, bd1.id(), mac1, ip1));
+    TRY_CHECK_RC(OM::write(dante, *bea1));
 
     // flush Franz's state
     delete l2itf;
@@ -719,11 +736,13 @@ BOOST_AUTO_TEST_CASE(test_bridge) {
     // is an uncontrollable artifact of the C++ object destruction.
     delete l2itf2;
     delete be1;
+    delete bea1;
     STRICT_ORDER_OFF();
     ADD_EXPECT(l2_binding::unbind_cmd(hw_l2_bind, hw_ifh2.data(), hw_bd.data(), false));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh2));
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
     ADD_EXPECT(bridge_domain_entry::delete_cmd(hw_be1, mac1, bd1.id()));
+    ADD_EXPECT(bridge_domain_arp_entry::delete_cmd(hw_be1, bd1.id(), mac1, ip1));
     ADD_EXPECT(bridge_domain::delete_cmd(hw_bd));
     TRY_CHECK(OM::remove(dante));
 }

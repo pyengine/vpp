@@ -60,6 +60,7 @@ void bridge_domain_entry::sweep()
     {
         HW::enqueue(new delete_cmd(m_hw, m_mac, m_bd->id()));
     }
+    HW::write();
 }
 
 void bridge_domain_entry::replay()

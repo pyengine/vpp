@@ -867,6 +867,7 @@ static void vl_api_sw_interface_set_mac_address_t_handler
   u64 mac;
   clib_error_t *error;
   int rv = 0;
+  vnet_sw_interface_t *si;
 
   VALIDATE_SW_IF_INDEX (mp);
 
@@ -876,8 +877,9 @@ static void vl_api_sw_interface_set_mac_address_t_handler
 	 | (u64) mp->mac_address[3] << (8 * 3)
 	 | (u64) mp->mac_address[4] << (8 * 4)
 	 | (u64) mp->mac_address[5] << (8 * 5));
+  si = vnet_get_sw_interface (vnm, sw_if_index);
 
-  error = vnet_hw_interface_change_mac_address (vnm, sw_if_index, mac);
+  error = vnet_hw_interface_change_mac_address (vnm, si->hw_if_index, mac);
   if (error)
     {
       rv = VNET_API_ERROR_UNIMPLEMENTED;

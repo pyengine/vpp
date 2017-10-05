@@ -91,7 +91,13 @@ std::ostream & VOM::operator<<(std::ostream &os, const handle_t &h)
 
 mac_address_t::mac_address_t(uint64_t address)
 {
-    std::memcpy(std::begin(bytes), &address, 6);
+    uint8_t mac[6];
+
+    std::memcpy(mac, &address, 6);
+    for (int i = 0; i < 6; i++)
+    {
+        bytes[i] = mac[5-i];
+    }
 }
 
 mac_address_t::mac_address_t(uint8_t b[6])

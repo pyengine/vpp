@@ -37,11 +37,6 @@ libvom_la_LIBADD = 					\
 	-lm -lrt
 
 libvom_la_SOURCES = 			\
-	interface_span_cmds.cpp		\
-	interface_span.cpp		\
-	ra_prefix.cpp			\
-	ra_config.cpp			\
-	interface_ip6_nd_cmds.cpp	\
 	acl_binding_cmds.cpp		\
 	acl_binding.cpp			\
 	acl_l2_rule.cpp			\
@@ -69,6 +64,9 @@ libvom_la_SOURCES = 			\
 	interface_cmds.cpp		\
 	interface.cpp			\
 	interface_factory.cpp		\
+	interface_ip6_nd_cmds.cpp	\
+	interface_span_cmds.cpp		\
+	interface_span.cpp		\
 	interface_types.cpp		\
 	ip_unnumbered_cmds.cpp		\
 	ip_unnumbered.cpp		\
@@ -81,9 +79,13 @@ libvom_la_SOURCES = 			\
 	lldp_global_cmds.cpp		\
 	lldp_global.cpp			\
 	logger.cpp			\
+	neighbour.cpp			\
+	neighbour_cmds.cpp		\
 	object_base.cpp			\
 	om.cpp				\
 	prefix.cpp			\
+	ra_config.cpp			\
+	ra_prefix.cpp			\
 	route.cpp			\
 	route_cmds.cpp			\
 	route_domain.cpp		\
@@ -99,10 +101,6 @@ libvom_la_SOURCES = 			\
 vomincludedir = $(includedir)/vom
 
 vominclude_HEADERS =			\
-	interface_span.hpp		\
-	ra_prefix.hpp			\
-	ra_config.hpp			\
-	interface_ip6_nd.hpp		\
 	acl_binding.hpp			\
 	acl_l2_rule.hpp			\
 	acl_l3_rule.hpp			\
@@ -123,15 +121,20 @@ vominclude_HEADERS =			\
 	hw.hpp				\
 	inspect.hpp			\
 	interface.hpp			\
+	interface_ip6_nd.hpp		\
+	interface_span.hpp		\
 	ip_unnumbered.hpp		\
 	l2_binding.hpp			\
 	l3_binding.hpp			\
 	lldp_binding.hpp		\
 	lldp_global.hpp			\
 	logger.hpp			\
+	neighbour.hpp			\
 	object_base.hpp			\
 	om.hpp				\
 	prefix.hpp			\
+	ra_config.hpp			\
+	ra_prefix.hpp			\
 	route.hpp			\
 	route_domain.hpp		\
 	rpc_cmd.hpp			\

@@ -44,6 +44,11 @@ namespace VOM
         typedef std::string key_type;
 
         /**
+         * The iterator type
+         */
+        typedef singular_db<const std::string, interface>::const_iterator const_iterator_t;
+
+        /**
          * An interface type
          */
         struct type_t: enum_base<type_t>
@@ -165,6 +170,9 @@ namespace VOM
          * Copy Constructor
          */
         interface(const interface& o);
+
+        static const_iterator_t cbegin();
+        static const_iterator_t cend();
 
         /**
          * Return the matching'singular' of the interface

@@ -36,6 +36,7 @@
 #include "vom/ip_unnumbered.hpp"
 #include "vom/interface_ip6_nd.hpp"
 #include "vom/interface_span.hpp"
+#include "vom/neighbour.hpp"
 
 using namespace boost;
 using namespace VOM;
@@ -164,6 +165,14 @@ public:
                     else if (typeid(*f_exp) == typeid(route::ip_route::delete_cmd))
                     {
                         rc = handle_derived<route::ip_route::delete_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(neighbour::create_cmd))
+                    {
+			rc = handle_derived<neighbour::create_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(neighbour::delete_cmd))
+                    {
+                        rc = handle_derived<neighbour::delete_cmd>(f_exp, f_act);
                     }
                     else if (typeid(*f_exp) == typeid(l3_binding::bind_cmd))
                     {
@@ -1235,6 +1244,15 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     TRY_CHECK_RC(OM::write(ian, *route_5_2));
 
     /*
+     * An ARP entry for the neighbour on itf1
+     */
+    HW::item<bool> hw_neighbour(true, rc_t::OK);
+    mac_address_t mac_n({0,1,2,4,5,6});
+    neighbour *ne = new neighbour(itf1, mac_n, nh_10);
+    ADD_EXPECT(neighbour::create_cmd(hw_neighbour, hw_ifh.data(), mac_n, nh_10));
+    TRY_CHECK_RC(OM::write(ian, *ne));
+
+    /*
      * A DVR route
      */
     route::prefix_t pfx_6("6.6.6.6", 32);
@@ -1257,6 +1275,8 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     delete path_11;
     delete route_dvr;
     delete path_l2;
+    delete ne;
+    ADD_EXPECT(neighbour::delete_cmd(hw_neighbour, hw_ifh.data(), mac_n, nh_10));
     ADD_EXPECT(route::ip_route::delete_cmd(hw_route_dvr, 0, pfx_6));
     ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5_2, 1, pfx_5));
     ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5, 0, pfx_5));

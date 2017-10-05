@@ -115,6 +115,16 @@ const l2_address_t & interface::l2_address() const
     return (m_l2_address.data());
 }
 
+interface::const_iterator_t interface::cbegin()
+{
+    return m_db.cbegin();
+}
+
+interface::const_iterator_t interface::cend()
+{
+    return m_db.cend();
+}
+
 void interface::sweep()
 {
     if (m_table_id)
@@ -346,7 +356,7 @@ void interface::event_handler::handle_populate(const client_db::key_t &key)
     HW::enqueue(cmd);
     HW::write();
 
-    for (auto & itf_record : *cmd) //while (data = cmd->pop())
+    for (auto & itf_record : *cmd)
     {
         std::unique_ptr<interface> itf = interface::new_interface(itf_record.get_payload());
 

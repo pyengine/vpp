@@ -73,7 +73,7 @@ void bridge_domain_arp_entry::replay()
 std::string bridge_domain_arp_entry::to_string() const
 {
     std::ostringstream s;
-    s << "bridge-domain-entry:["
+    s << "bridge-domain-arp-entry:["
       << m_bd->to_string()
       << ", "
       << m_mac.to_string()

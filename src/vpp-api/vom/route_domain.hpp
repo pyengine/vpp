@@ -32,8 +32,7 @@ namespace VOM
         /**
          * Construct a new object matching the desried state
          */
-        route_domain(l3_proto_t proto,
-                     route::table_id_t id);
+        route_domain(route::table_id_t id);
 
         /**
          * Copy Constructor
@@ -182,14 +181,14 @@ namespace VOM
         void sweep(void);
 
         /**
-         * HW configuration for the result of creating the table
+         * HW configuration for the result of creating the v4 table
          */
-        HW::item<bool> m_hw;
+        HW::item<bool> m_hw_v4;
 
         /**
-         * L3 protocol
+         * HW configuration for the result of creating the v6 table
          */
-        l3_proto_t m_proto;
+        HW::item<bool> m_hw_v6;
 
         /**
          * VPP understands Table-IDs not table names.

@@ -249,15 +249,18 @@ std::string interface::state_change_cmd::to_string() const
 }
 
 interface::set_table_cmd::set_table_cmd(HW::item<route::table_id_t> &table,
+                                        const l3_proto_t &proto,
                                         const HW::item<handle_t> &hdl):
     rpc_cmd(table),
-    m_hdl(hdl)
+    m_hdl(hdl),
+    m_proto(proto)
 {
 }
 
 bool interface::set_table_cmd::operator==(const set_table_cmd& other) const
 {
     return ((m_hdl == other.m_hdl) &&
+            (m_proto == other.m_proto) &&
             (m_hw_item == other.m_hw_item));
 }
 
@@ -267,7 +270,7 @@ rc_t interface::set_table_cmd::issue(connection &con)
 
     auto &payload = req.get_request().get_payload();
     payload.sw_if_index = m_hdl.data().value();
-    payload.is_ipv6 = 0;
+    payload.is_ipv6 = m_proto.is_ipv6();
     payload.vrf_id = m_hw_item.data();
 
     VAPI_CALL(req.execute());
@@ -281,6 +284,7 @@ std::string interface::set_table_cmd::to_string() const
 {
     std::ostringstream s;
     s << "itf-set-table: " << m_hw_item.to_string()
+      << " proto:" << m_proto.to_string()
       << " hdl:" << m_hdl.to_string();
     return (s.str());
 }

@@ -77,17 +77,30 @@ namespace VOM
              * Constructor for standard non-recursive paths
              */
             path(const boost::asio::ip::address &nh,
-                 std::shared_ptr<interface> interface,
+                 const interface &interface,
                  uint8_t weight = 1,
                  uint8_t preference = 0);
 
             /**
              * Constructor for standard recursive paths
              */
-            path(const boost::asio::ip::address &nh,
-                 std::shared_ptr<route_domain> rd,
+            path(const route_domain &rd,
+                 const boost::asio::ip::address &nh,
                  uint8_t weight = 1,
                  uint8_t preference = 0);
+
+            /**
+             * Constructor for DVR paths or attached paths.
+             */
+            path(const interface &interface,
+                 const nh_proto_t &proto,
+                 uint8_t weight = 1,
+                 uint8_t preference = 0);
+
+            /**
+             * Coopy Constructor
+             */
+            path(const path &p);
 
             /**
              * Convert the path into the VPP API representation
@@ -110,6 +123,11 @@ namespace VOM
              * The special path tpye
              */
             special_t m_type;
+
+            /**
+             * The next-hop protocol
+             */
+            nh_proto_t m_nh_proto;
 
             /**
              * The next-hop
@@ -173,8 +191,8 @@ namespace VOM
             /**
              * Construct a route in the given route domain
              */
-            ip_route(const prefix_t &prefix,
-                     std::shared_ptr<route_domain> rd);
+            ip_route(const route_domain &rd,
+                     const prefix_t &prefix);
 
             /**
              * Destructor
@@ -227,8 +245,8 @@ namespace VOM
                  * Constructor
                  */
                 update_cmd(HW::item<bool> &item,
-                           const prefix_t &prefix,
                            table_id_t id,
+                           const prefix_t &prefix,
                            const path_list_t &paths);
 
                 /**
@@ -247,9 +265,9 @@ namespace VOM
                 bool operator==(const update_cmd&i) const;
 
             private:
-                prefix_t m_prefix;
                 route::table_id_t m_id;
-                const path_list_t &m_paths;
+                prefix_t m_prefix;
+                const path_list_t m_paths;
             };
 
             /**
@@ -263,8 +281,8 @@ namespace VOM
                  * Constructor
                  */
                 delete_cmd(HW::item<bool> &item,
-                           const prefix_t &prefix,
-                           table_id_t id);
+                           table_id_t id,
+                           const prefix_t &prefix);
 
                 /**
                  * Issue the command to VPP/HW
@@ -282,8 +300,8 @@ namespace VOM
                 bool operator==(const delete_cmd&i) const;
 
             private:
-                prefix_t m_prefix;
                 route::table_id_t m_id;
+                prefix_t m_prefix;
             };
 
         private:
@@ -318,14 +336,14 @@ namespace VOM
             HW::item<bool> m_hw;
 
             /**
-             * The prefix to match
-             */
-            prefix_t m_prefix;
-
-            /**
              * The route domain the route is in.
              */
             std::shared_ptr<route_domain> m_rd;
+
+            /**
+             * The prefix to match
+             */
+            prefix_t m_prefix;
 
             /**
              * The set of paths

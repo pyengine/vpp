@@ -22,17 +22,16 @@ singular_db<route::table_id_t, route_domain> route_domain::m_db;
 /**
  * Construct a new object matching the desried state
  */
-route_domain::route_domain(l3_proto_t proto,
-                           route::table_id_t id):
-    m_hw(true),
-    m_proto(proto),
+route_domain::route_domain(route::table_id_t id):
+    m_hw_v4(true),
+    m_hw_v6(true),
     m_table_id(id)
 {
 }
 
 route_domain::route_domain(const route_domain& o):
-    m_hw(o.m_hw),
-    m_proto(o.m_proto),
+    m_hw_v4(o.m_hw_v4),
+    m_hw_v6(o.m_hw_v6),
     m_table_id(o.m_table_id)
 {
 }
@@ -44,18 +43,26 @@ route::table_id_t route_domain::table_id() const
 
 void route_domain::sweep()
 {
-    if (m_hw)
+    if (m_hw_v4)
     {
-        HW::enqueue(new delete_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new delete_cmd(m_hw_v4, l3_proto_t::IPV4, m_table_id));
+    }
+    if (m_hw_v6)
+    {
+        HW::enqueue(new delete_cmd(m_hw_v6, l3_proto_t::IPV6, m_table_id));
     }
     HW::write();
 }
 
 void route_domain::replay()
 {
-    if (m_hw)
+    if (m_hw_v4)
     {
-        HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new create_cmd(m_hw_v4, l3_proto_t::IPV4, m_table_id));
+    }
+    if (m_hw_v6)
+    {
+        HW::enqueue(new create_cmd(m_hw_v6, l3_proto_t::IPV6, m_table_id));
     }
 }
 
@@ -72,7 +79,8 @@ std::string route_domain::to_string() const
     std::ostringstream s;
     s << "route-domain:["
       << "table-id:" << m_table_id
-      << " proto:" << m_proto.to_string()
+      << " v4:" << m_hw_v4
+      << " v6:" << m_hw_v6
       << "]";
 
     return (s.str());
@@ -83,9 +91,13 @@ void route_domain::update(const route_domain &desired)
     /*
      * create the table if it is not yet created
      */
-    if (rc_t::OK != m_hw.rc())
+    if (rc_t::OK != m_hw_v4.rc())
     {
-        HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new create_cmd(m_hw_v4, l3_proto_t::IPV4, m_table_id));
+    }
+    if (rc_t::OK != m_hw_v6.rc())
+    {
+        HW::enqueue(new create_cmd(m_hw_v6, l3_proto_t::IPV6, m_table_id));
     }
 }
 

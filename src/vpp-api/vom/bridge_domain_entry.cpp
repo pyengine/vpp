@@ -10,8 +10,9 @@
 
 using namespace VOM;
 
-VOM::singular_db<bridge_domain_entry::key_t, bridge_domain_entry> bridge_domain_entry::m_db;
+singular_db<bridge_domain_entry::key_t, bridge_domain_entry> bridge_domain_entry::m_db;
 
+bridge_domain_entry::event_handler bridge_domain_entry::m_evh;
 
 bridge_domain_entry::bridge_domain_entry(const bridge_domain &bd,
                                          const mac_address_t &mac,
@@ -138,7 +139,7 @@ void bridge_domain_entry::event_handler::handle_populate(const client_db::key_t 
         std::shared_ptr<interface> itf = interface::find(payload.sw_if_index);
 	std::shared_ptr<bridge_domain> bd = bridge_domain::find(payload.bd_id);
 	mac_address_t mac(payload.mac);
-        bridge_domain_entry bd_entry(*bd,
+        bridge_domain_entry bd_e(*bd,
                                      mac,
                                      *itf);
 
@@ -152,7 +153,7 @@ void bridge_domain_entry::event_handler::handle_populate(const client_db::key_t 
          * but disable the HW Command q whilst we do, so that no
          * commands are sent to VPP
          */
-        VOM::OM::commit(key, bd_entry);
+        OM::commit(key, bd_e);
     }
 
 }

@@ -14,9 +14,12 @@
 
 using namespace VOM;
 
+/*
+ * Keep this in sync with VPP's fib_protocol_t
+ */
 const l3_proto_t l3_proto_t::IPV4(0, "ipv4");
-const l3_proto_t l3_proto_t::IPV6(0, "ipv6");
-const l3_proto_t l3_proto_t::MPLS(0, "mpls");
+const l3_proto_t l3_proto_t::IPV6(1, "ipv6");
+const l3_proto_t l3_proto_t::MPLS(2, "mpls");
 
 l3_proto_t::l3_proto_t(int v,
                        const std::string &s):
@@ -34,6 +37,40 @@ bool l3_proto_t::is_ipv4()
     return (*this == IPV4);
 }
 
+const l3_proto_t &l3_proto_t::from_address(const boost::asio::ip::address &addr)
+{
+    if (addr.is_v6())
+    {
+        return IPV6;
+    }
+
+    return IPV4;
+}
+
+/*
+ * Keep this in sync with VPP's dpo_proto_t
+ */
+const nh_proto_t nh_proto_t::IPV4(0, "ipv4");
+const nh_proto_t nh_proto_t::IPV6(1, "ipv6");
+const nh_proto_t nh_proto_t::MPLS(2, "mpls");
+const nh_proto_t nh_proto_t::ETHERNET(3, "ethernet");
+
+nh_proto_t::nh_proto_t(int v,
+                       const std::string &s):
+    enum_base<nh_proto_t>(v, s)
+{
+}
+
+const nh_proto_t &nh_proto_t::from_address(const boost::asio::ip::address &addr)
+{
+    if (addr.is_v6())
+    {
+        return IPV6;
+    }
+
+    return IPV4;
+}
+
 /**
  * The all Zeros prefix
  */
@@ -44,6 +81,12 @@ route::prefix_t::prefix_t(const boost::asio::ip::address &addr,
                           uint8_t len):
     m_addr(addr),
     m_len(len)
+{
+}
+
+route::prefix_t::prefix_t(const boost::asio::ip::address &addr):
+    m_addr(addr),
+    m_len(VOM::mask_width(addr))
 {
 }
 
@@ -168,6 +211,15 @@ void VOM::to_bytes(const boost::asio::ip::address &addr,
     }
 }
 
+uint32_t VOM::mask_width(const boost::asio::ip::address &addr)
+{
+    if (addr.is_v6())
+    {
+        return 128;
+    }
+    return 32;
+}
+
 void route::prefix_t::to_vpp(uint8_t *is_ip6,
                              uint8_t *addr,
                              uint8_t *len) const
@@ -180,11 +232,11 @@ l3_proto_t route::prefix_t::l3_proto() const
 {
     if (m_addr.is_v6())
     {
-        return (l3_proto_t::IPV4);
+        return (l3_proto_t::IPV6);
     }
     else
     {
-        return (l3_proto_t::IPV6);
+        return (l3_proto_t::IPV4);
     }
 
     return (l3_proto_t::IPV4);

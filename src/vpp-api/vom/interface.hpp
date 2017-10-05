@@ -45,6 +45,11 @@ namespace VOM
         typedef std::string key_type;
 
         /**
+         * The iterator type
+         */
+        typedef singular_db<const std::string, interface>::const_iterator const_iterator_t;
+
+        /**
          * An interface type
          */
         struct type_t: enum_base<type_t>
@@ -166,6 +171,9 @@ namespace VOM
          * Copy Constructor
          */
         interface(const interface& o);
+
+        static const_iterator_t cbegin();
+        static const_iterator_t cend();
 
         /**
          * Return the matching'singular' of the interface
@@ -549,7 +557,8 @@ namespace VOM
              * and the name handle of the interface whose table is to change
              */
             set_table_cmd(HW::item<route::table_id_t> &item,
-                         const HW::item<handle_t> &h);
+                          const l3_proto_t &proto,
+                          const HW::item<handle_t> &h);
 
             /**
              * Issue the command to VPP/HW
@@ -570,6 +579,11 @@ namespace VOM
              * the handle of the interface to update
              */
             const HW::item<handle_t> &m_hdl;
+
+            /**
+             * The L3 protocol of the table
+             */
+            l3_proto_t m_proto;
         };
 
         /**

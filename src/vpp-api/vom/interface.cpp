@@ -125,12 +125,23 @@ const l2_address_t & interface::l2_address() const
     return (m_l2_address.data());
 }
 
+interface::const_iterator_t interface::cbegin()
+{
+    return m_db.cbegin();
+}
+
+interface::const_iterator_t interface::cend()
+{
+    return m_db.cend();
+}
+
 void interface::sweep()
 {
     if (m_table_id)
     {
         m_table_id.data() = route::DEFAULT_TABLE;
-        HW::enqueue(new set_table_cmd(m_table_id, m_hdl));
+        HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV4, m_hdl));
+        HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV6, m_hdl));
     }
 
     // If the interface is up, bring it down
@@ -164,7 +175,8 @@ void interface::replay()
 
    if (m_table_id)
    {
-       HW::enqueue(new set_table_cmd(m_table_id, m_hdl));
+       HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV4, m_hdl));
+       HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV6, m_hdl));
    }
 }
 
@@ -286,7 +298,8 @@ void interface::update(const interface &desired)
      */
     if (!m_table_id && m_rd)
     {
-        HW::enqueue(new set_table_cmd(m_table_id, m_hdl));
+        HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV4, m_hdl));
+        HW::enqueue(new set_table_cmd(m_table_id, l3_proto_t::IPV6, m_hdl));
     }        
 }
 
@@ -353,7 +366,7 @@ void interface::event_handler::handle_populate(const client_db::key_t &key)
     HW::enqueue(cmd);
     HW::write();
 
-    for (auto & itf_record : *cmd) //while (data = cmd->pop())
+    for (auto & itf_record : *cmd)
     {
         std::unique_ptr<interface> itf = interface::new_interface(itf_record.get_payload());
 

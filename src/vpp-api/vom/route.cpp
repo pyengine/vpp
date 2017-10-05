@@ -27,6 +27,7 @@ path::special_t::special_t(int v,
 
 path::path(special_t special):
     m_type(special),
+    m_nh_proto(nh_proto_t::IPV4),
     m_nh(),
     m_rd(nullptr),
     m_interface(nullptr),
@@ -36,30 +37,58 @@ path::path(special_t special):
 }
 
 path::path(const boost::asio::ip::address &nh,
-                  std::shared_ptr<interface> interface,
-                  uint8_t weight,
-                  uint8_t preference):
+           const interface &interface,
+           uint8_t weight,
+           uint8_t preference):
     m_type(special_t::STANDARD),
+    m_nh_proto(nh_proto_t::from_address(nh)),
     m_nh(nh),
     m_rd(nullptr),
-    m_interface(interface),
+    m_interface(interface.singular()),
     m_weight(weight),
     m_preference(preference)
 {
 }
 
-path::path(const boost::asio::ip::address &nh,
-                  std::shared_ptr<route_domain> rd,
-                  uint8_t weight,
-                  uint8_t preference):
+path::path(const route_domain &rd,
+           const boost::asio::ip::address &nh,
+           uint8_t weight,
+           uint8_t preference):
     m_type(special_t::STANDARD),
+    m_nh_proto(nh_proto_t::from_address(nh)),
     m_nh(nh),
-    m_rd(rd),
+    m_rd(rd.singular()),
     m_interface(nullptr),
     m_weight(weight),
     m_preference(preference)
 {
 }
+
+path::path(const interface &interface,
+           const nh_proto_t &proto,
+           uint8_t weight,
+           uint8_t preference):
+    m_type(special_t::STANDARD),
+    m_nh_proto(proto),
+    m_nh(),
+    m_rd(nullptr),
+    m_interface(interface.singular()),
+    m_weight(weight),
+    m_preference(preference)
+{
+}
+
+path::path(const path &p):
+    m_type(p.m_type),
+    m_nh_proto(p.m_nh_proto),
+    m_nh(p.m_nh),
+    m_rd(p.m_rd),
+    m_interface(p.m_interface),
+    m_weight(p.m_weight),
+    m_preference(p.m_preference)
+{
+}
+
 
 bool path::operator<(const path &p) const
 {
@@ -76,16 +105,21 @@ void path::to_vpp(vapi_payload_ip_add_del_route &payload) const
     payload.is_drop = 0;
     payload.is_unreach = 0;
     payload.is_prohibit = 0;
-    payload.is_ipv6 = 0;
     payload.is_local = 0;
     payload.is_classify = 0;
     payload.is_multipath = 0;
     payload.is_resolve_host = 0;
     payload.is_resolve_attached = 0;
 
+    if (nh_proto_t::ETHERNET == m_nh_proto)
+    {
+        payload.is_l2_bridged = 1;
+    }
+
     if (special_t::STANDARD == m_type)
     {
-        to_bytes(m_nh, &payload.is_ipv6, payload.next_hop_address);
+        uint8_t path_v6;
+        to_bytes(m_nh, &path_v6, payload.next_hop_address);
 
         if (m_rd)
         {
@@ -124,11 +158,18 @@ std::string path::to_string() const
 
     s << "path:["
       << "type:" << m_type.to_string()
-      << "neighbour:" << m_nh.to_string()
-      << "route_domain:" << m_rd->to_string()
-      << "interface:" << m_interface->to_string()
-      << "weight:" << m_weight
-      << "preference:" << m_preference
+      << " proto:" << m_nh_proto.to_string()
+      << " neighbour:" << m_nh.to_string();
+    if (m_rd)
+    {
+        s << " " << m_rd->to_string();
+    }
+    if (m_interface)
+    {
+        s << " " << m_interface->to_string();
+    }
+    s << " weight:" << static_cast<int>(m_weight)
+      << " preference:" << static_cast<int>(m_preference)
       << "]";
 
     return (s.str());
@@ -136,30 +177,32 @@ std::string path::to_string() const
 
 ip_route::ip_route(const prefix_t &prefix):
     m_hw(false),
+    m_rd(nullptr),
     m_prefix(prefix),
-    m_rd(nullptr)
+    m_paths()
 {
     /*
      * the route goes in the default table
      */
-    route_domain rd(prefix.l3_proto(),
-                    DEFAULT_TABLE);
+    route_domain rd(DEFAULT_TABLE);
 
     m_rd = rd.singular();
 }
 
 ip_route::ip_route(const ip_route &r):
     m_hw(r.m_hw),
+    m_rd(r.m_rd),
     m_prefix(r.m_prefix),
-    m_rd(r.m_rd)
+    m_paths(r.m_paths)
 {
 }
 
-ip_route::ip_route(const prefix_t &prefix,
-                   std::shared_ptr<route_domain> rd):
+ip_route::ip_route(const route_domain &rd,
+                   const prefix_t &prefix):
     m_hw(false),
+    m_rd(rd.singular()),
     m_prefix(prefix),
-    m_rd(rd)
+    m_paths()
 {
 }
 
@@ -185,15 +228,16 @@ void ip_route::sweep()
 {
     if (m_hw)
     {
-        //   HW::enqueue(new delete_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new delete_cmd(m_hw, m_rd->table_id(), m_prefix));
     }
+    HW::write();
 }
 
 void ip_route::replay()
 {
     if (m_hw)
     {
-        //  HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new update_cmd(m_hw, m_rd->table_id(), m_prefix, m_paths));
     }
 }
 std::string ip_route::to_string() const
@@ -215,7 +259,7 @@ void ip_route::update(const ip_route &r)
      */
     if (rc_t::OK != m_hw.rc())
     {
-        // HW::enqueue(new create_cmd(m_hw, m_proto, m_table_id));
+        HW::enqueue(new update_cmd(m_hw, m_rd->table_id(), m_prefix, m_paths));
     }
 }
 

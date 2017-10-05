@@ -84,6 +84,12 @@ route::prefix_t::prefix_t(const boost::asio::ip::address &addr,
 {
 }
 
+route::prefix_t::prefix_t(const boost::asio::ip::address &addr):
+    m_addr(addr),
+    m_len(VOM::mask_width(addr))
+{
+}
+
 route::prefix_t::prefix_t(const std::string &s,
                           uint8_t len):
     m_addr(boost::asio::ip::address::from_string(s)),
@@ -203,6 +209,15 @@ void VOM::to_bytes(const boost::asio::ip::address &addr,
         *is_ip6 = 0;
         memcpy(array, addr.to_v4().to_bytes().data(), 4);
     }
+}
+
+uint32_t VOM::mask_width(const boost::asio::ip::address &addr)
+{
+    if (addr.is_v6())
+    {
+        return 128;
+    }
+    return 32;
 }
 
 void route::prefix_t::to_vpp(uint8_t *is_ip6,

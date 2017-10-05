@@ -89,6 +89,12 @@ namespace VOM
             prefix_t(const boost::asio::ip::address &addr,
                      uint8_t len);
             /**
+             * Constructor with just the address, this creates a
+             * host prefix
+             */
+            prefix_t(const boost::asio::ip::address &addr);
+
+            /**
              * Constructor with string and length
              */
             prefix_t(const std::string &s,
@@ -209,6 +215,11 @@ namespace VOM
      * Convert a boost address into a VPP bytes string
      */
     void to_bytes(const boost::asio::ip::address &addr, uint8_t *is_ip6, uint8_t *array);
+
+    /**
+     * Get the prefix mask length of a host route from the boost address
+     */
+    uint32_t mask_width(const boost::asio::ip::address &addr);
 
     /**
      * Convert a VPP byte stinrg into a boost addresss

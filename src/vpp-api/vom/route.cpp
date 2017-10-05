@@ -105,16 +105,21 @@ void path::to_vpp(vapi_payload_ip_add_del_route &payload) const
     payload.is_drop = 0;
     payload.is_unreach = 0;
     payload.is_prohibit = 0;
-    payload.is_ipv6 = 0;
     payload.is_local = 0;
     payload.is_classify = 0;
     payload.is_multipath = 0;
     payload.is_resolve_host = 0;
     payload.is_resolve_attached = 0;
 
+    if (nh_proto_t::ETHERNET == m_nh_proto)
+    {
+        payload.is_l2_bridged = 1;
+    }
+
     if (special_t::STANDARD == m_type)
     {
-        to_bytes(m_nh, &payload.is_ipv6, payload.next_hop_address);
+        uint8_t path_v6;
+        to_bytes(m_nh, &path_v6, payload.next_hop_address);
 
         if (m_rd)
         {
@@ -153,6 +158,7 @@ std::string path::to_string() const
 
     s << "path:["
       << "type:" << m_type.to_string()
+      << " proto:" << m_nh_proto.to_string()
       << " neighbour:" << m_nh.to_string();
     if (m_rd)
     {
@@ -178,8 +184,7 @@ ip_route::ip_route(const prefix_t &prefix):
     /*
      * the route goes in the default table
      */
-    route_domain rd(prefix.l3_proto(),
-                    DEFAULT_TABLE);
+    route_domain rd(DEFAULT_TABLE);
 
     m_rd = rd.singular();
 }
@@ -225,6 +230,7 @@ void ip_route::sweep()
     {
         HW::enqueue(new delete_cmd(m_hw, m_rd->table_id(), m_prefix));
     }
+    HW::write();
 }
 
 void ip_route::replay()

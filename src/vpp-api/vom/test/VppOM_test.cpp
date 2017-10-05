@@ -611,27 +611,31 @@ BOOST_AUTO_TEST_CASE(test_bvi) {
     /*
      * Graham creates a BVI with address 10.10.10.10/24 in Routing Domain
      */
-
-
-    route_domain *rd = new route_domain(l3_proto_t::IPV4, 1);
-    HW::item<bool> hw_rd_create(true, rc_t::OK);
-    HW::item<bool> hw_rd_delete(false, rc_t::OK);
-    HW::item<route::table_id_t> hw_rd_bind(1, rc_t::OK);
-    HW::item<route::table_id_t> hw_rd_unbind(route::DEFAULT_TABLE, rc_t::OK);
-    ADD_EXPECT(route_domain::create_cmd(hw_rd_create, l3_proto_t::IPV4, 1));
-    TRY_CHECK_RC(OM::write(graham, *rd));
+    route_domain rd(1);
+    HW::item<bool> hw_rd4_create(true, rc_t::OK);
+    HW::item<bool> hw_rd4_delete(false, rc_t::OK);
+    HW::item<bool> hw_rd6_create(true, rc_t::OK);
+    HW::item<bool> hw_rd6_delete(false, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd4_bind(1, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd4_unbind(route::DEFAULT_TABLE, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd6_bind(1, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd6_unbind(route::DEFAULT_TABLE, rc_t::OK);
+    ADD_EXPECT(route_domain::create_cmd(hw_rd4_create, l3_proto_t::IPV4, 1));
+    ADD_EXPECT(route_domain::create_cmd(hw_rd6_create, l3_proto_t::IPV6, 1));
+    TRY_CHECK_RC(OM::write(graham, rd));
 
     const std::string bvi2_name = "bvi2";
     interface *itf2 = new interface(bvi2_name,
                                     interface::type_t::BVI,
                                     interface::admin_state_t::UP,
-                                    *rd);
+                                    rd);
     HW::item<handle_t> hw_ifh2(5, rc_t::OK);
 
     ADD_EXPECT(interface::loopback_create_cmd(hw_ifh2, bvi2_name));
     ADD_EXPECT(interface::set_tag(hw_ifh2, bvi2_name));
     ADD_EXPECT(interface::state_change_cmd(hw_as_up, hw_ifh2));
-    ADD_EXPECT(interface::set_table_cmd(hw_rd_bind, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_bind, l3_proto_t::IPV4, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd6_bind, l3_proto_t::IPV6, hw_ifh2));
 
     TRY_CHECK_RC(OM::write(graham, *itf2));
 
@@ -640,14 +644,15 @@ BOOST_AUTO_TEST_CASE(test_bvi) {
     TRY_CHECK_RC(OM::write(graham, *l3));
 
     delete l3;
-    delete rd;
     delete itf2;
 
     ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_unbind, hw_ifh2.data(), pfx_10));
-    ADD_EXPECT(interface::set_table_cmd(hw_rd_unbind, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_unbind, l3_proto_t::IPV4, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd6_unbind, l3_proto_t::IPV6, hw_ifh2));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh2));
     ADD_EXPECT(interface::loopback_delete_cmd(hw_ifh2));
-    ADD_EXPECT(route_domain::delete_cmd(hw_rd_delete, l3_proto_t::IPV4, 1));
+    ADD_EXPECT(route_domain::delete_cmd(hw_rd4_delete, l3_proto_t::IPV4, 1));
+    ADD_EXPECT(route_domain::delete_cmd(hw_rd6_delete, l3_proto_t::IPV6, 1));
     TRY_CHECK(OM::remove(graham));
 }
 
@@ -1148,12 +1153,17 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     /*
      * non-default route domain
      */
-    route_domain rd4(l3_proto_t::IPV4, 1);
+    route_domain rd4(1);
     HW::item<bool> hw_rd4_create(true, rc_t::OK);
     HW::item<bool> hw_rd4_delete(false, rc_t::OK);
+    HW::item<bool> hw_rd6_create(true, rc_t::OK);
+    HW::item<bool> hw_rd6_delete(false, rc_t::OK);
     HW::item<route::table_id_t> hw_rd4_bind(1, rc_t::OK);
     HW::item<route::table_id_t> hw_rd4_unbind(route::DEFAULT_TABLE, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd6_bind(1, rc_t::OK);
+    HW::item<route::table_id_t> hw_rd7_unbind(route::DEFAULT_TABLE, rc_t::OK);
     ADD_EXPECT(route_domain::create_cmd(hw_rd4_create, l3_proto_t::IPV4, 1));
+    ADD_EXPECT(route_domain::create_cmd(hw_rd6_create, l3_proto_t::IPV6, 1));
     TRY_CHECK_RC(OM::write(ian, rd4));
 
     /*
@@ -1165,6 +1175,7 @@ BOOST_AUTO_TEST_CASE(test_routing) {
                    interface::admin_state_t::UP);
     HW::item<handle_t> hw_ifh(2, rc_t::OK);
     HW::item<interface::admin_state_t> hw_as_up(interface::admin_state_t::UP, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN, rc_t::OK);
     ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh, itf1_name));
     ADD_EXPECT(interface::state_change_cmd(hw_as_up, hw_ifh));
     TRY_CHECK_RC(OM::write(ian, itf1));
@@ -1177,10 +1188,11 @@ BOOST_AUTO_TEST_CASE(test_routing) {
 
     HW::item<handle_t> hw_ifh2(4, rc_t::OK);
     HW::item<interface::admin_state_t> hw_as_up2(interface::admin_state_t::UP, rc_t::OK);
-
+    HW::item<interface::admin_state_t> hw_as_down2(interface::admin_state_t::DOWN, rc_t::OK);
     ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh2, itf2_name));
     ADD_EXPECT(interface::state_change_cmd(hw_as_up2, hw_ifh2));
-    ADD_EXPECT(interface::set_table_cmd(hw_rd4_bind, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_bind, l3_proto_t::IPV4, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd6_bind, l3_proto_t::IPV6, hw_ifh2));
     TRY_CHECK_RC(OM::write(ian, *itf2));
 
     /*
@@ -1222,8 +1234,17 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     ADD_EXPECT(route::ip_route::update_cmd(hw_route_5_2, 1, pfx_5, {*path_11}));
     TRY_CHECK_RC(OM::write(ian, *route_5_2));
 
-    HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN, rc_t::OK);
-    HW::item<interface::admin_state_t> hw_as_down2(interface::admin_state_t::DOWN, rc_t::OK);
+    /*
+     * A DVR route
+     */
+    route::prefix_t pfx_6("6.6.6.6", 32);
+    route::path *path_l2 = new route::path(*itf2, nh_proto_t::ETHERNET);
+    route::ip_route *route_dvr = new route::ip_route(pfx_6);
+    route_dvr->add(*path_l2);
+    HW::item<bool> hw_route_dvr(true, rc_t::OK);
+    ADD_EXPECT(route::ip_route::update_cmd(hw_route_dvr, 0, pfx_6, {*path_l2}));
+    TRY_CHECK_RC(OM::write(ian, *route_dvr));
+
     STRICT_ORDER_OFF();
     // delete the stack objects that hold references to others
     // so the OM::remove is the call that removes the last reference
@@ -1234,16 +1255,21 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     delete path_10;
     delete route_5_2;
     delete path_11;
+    delete route_dvr;
+    delete path_l2;
+    ADD_EXPECT(route::ip_route::delete_cmd(hw_route_dvr, 0, pfx_6));
     ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5_2, 1, pfx_5));
     ADD_EXPECT(route::ip_route::delete_cmd(hw_route_5, 0, pfx_5));
     ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_10_unbind, hw_ifh.data(), pfx_10));
     ADD_EXPECT(l3_binding::unbind_cmd(hw_l3_11_unbind, hw_ifh2.data(), pfx_11));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh));
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh, itf1_name));
-    ADD_EXPECT(interface::set_table_cmd(hw_rd4_unbind, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_unbind, l3_proto_t::IPV4, hw_ifh2));
+    ADD_EXPECT(interface::set_table_cmd(hw_rd4_unbind, l3_proto_t::IPV6, hw_ifh2));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down2, hw_ifh2));
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf2_name));
     ADD_EXPECT(route_domain::delete_cmd(hw_rd4_delete, l3_proto_t::IPV4, 1));
+    ADD_EXPECT(route_domain::delete_cmd(hw_rd6_delete, l3_proto_t::IPV6, 1));
 
     TRY_CHECK(OM::remove(ian));
 }

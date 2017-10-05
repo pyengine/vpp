@@ -548,7 +548,8 @@ namespace VOM
              * and the name handle of the interface whose table is to change
              */
             set_table_cmd(HW::item<route::table_id_t> &item,
-                         const HW::item<handle_t> &h);
+                          const l3_proto_t &proto,
+                          const HW::item<handle_t> &h);
 
             /**
              * Issue the command to VPP/HW
@@ -569,6 +570,11 @@ namespace VOM
              * the handle of the interface to update
              */
             const HW::item<handle_t> &m_hdl;
+
+            /**
+             * The L3 protocol of the table
+             */
+            l3_proto_t m_proto;
         };
 
         /**

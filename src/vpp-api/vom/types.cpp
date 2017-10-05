@@ -124,12 +124,16 @@ void mac_address_t::to_bytes(uint8_t *array, uint8_t len) const
 
 uint64_t mac_address_t::to_u64() const
 {
-    uint64_t mac6 = 0ULL;
+    uint64_t mac6 = 0;
+    uint8_t *b = reinterpret_cast<uint8_t*>(&mac6);
 
-    for (int i = 0, j = 7; i < 6 && j > 1; i++, j--)
-    {
-        mac6 |= uint64_t(bytes[i]) << (j*8);
-    }
+    // whack hack. the vapi will byte swap.
+    b[2] = bytes[5];
+    b[3] = bytes[4];
+    b[4] = bytes[3];
+    b[5] = bytes[2];
+    b[6] = bytes[1];
+    b[7] = bytes[0];
 
     return (mac6);
 }

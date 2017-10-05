@@ -61,7 +61,7 @@ std::string ip_route::update_cmd::to_string() const
 {
     std::ostringstream s;
     s << "ip-route-create: " << m_hw_item.to_string()
-      << " id:" << m_id
+      << " table-id:" << m_id
       << " prefix:" << m_prefix.to_string()
       << " paths:" << m_paths;
 

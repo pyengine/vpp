@@ -9,6 +9,9 @@
 #include "vom/route.hpp"
 #include "vom/singular_db.hpp"
 
+#include <vapi/ip.api.vapi.hpp>
+
+using namespace VOM;
 using namespace VOM::route;
 
 VOM::singular_db<ip_route::key_t, ip_route> ip_route::m_db;
@@ -276,6 +279,152 @@ std::shared_ptr<ip_route> ip_route::singular() const
 }
 
 void ip_route::dump(std::ostream &os)
+{
+    m_db.dump(os);
+}
+
+ip_route::event_handler::event_handler()
+{
+    OM::register_listener(this);
+    inspect::register_handler({"ip-route"}, "ip route configurations", this);
+}
+
+void ip_route::event_handler::handle_replay()
+{
+    m_db.replay();
+}
+
+void ip_route::event_handler::handle_populate(const client_db::key_t &key)
+{
+
+    std::shared_ptr<ip_route::dump_v4_cmd> cmd_v4(new ip_route::dump_v4_cmd());
+    std::shared_ptr<ip_route::dump_v6_cmd> cmd_v6(new ip_route::dump_v6_cmd());
+
+    HW::enqueue(cmd_v4);
+    HW::enqueue(cmd_v6);
+    HW::write();
+
+    for (auto & record : *cmd_v4)
+    {
+        auto &payload = record.get_payload();
+
+        prefix_t pfx(0, payload.address, payload.address_length);
+
+       /**
+        * populating the route domain here
+         */
+       route_domain rd_temp(payload.table_id);
+       std::shared_ptr<route_domain> rd = route_domain::find(rd_temp);
+       if (!rd)
+       {
+           OM::commit(key, rd_temp);
+       }
+       ip_route ip_r(rd_temp, pfx);
+
+        for (auto i = 0; i < payload.count; i++)
+        {
+            vapi_type_fib_path p =  payload.path[i];
+            if (p.is_local)
+            {
+                path path_v4(path::special_t::LOCAL);
+                ip_r.add(path_v4);
+            }
+            else if (p.is_drop)
+            {
+                path path_v4(path::special_t::DROP);
+                ip_r.add(path_v4);
+            }
+            else if (p.is_unreach)
+            {
+                path path_v4(path::special_t::UNREACH);
+                ip_r.add(path_v4);
+            }
+            else if (p.is_prohibit)
+            {
+                path path_v4(path::special_t::PROHIBIT);
+                ip_r.add(path_v4);
+            }
+            else
+            {
+                std::shared_ptr<interface> itf = interface::find(p.sw_if_index);
+                boost::asio::ip::address address = from_bytes(0, p.next_hop);
+                path path_v4(address, *itf, p.weight, p.preference);
+                ip_r.add(path_v4);
+            }
+        }
+        BOOST_LOG_SEV(logger(), levels::debug) << "ip-route-dump: "
+                                                << ip_r.to_string();
+
+        /*
+         * Write each of the discovered interfaces into the OM,
+         * but disable the HW Command q whilst we do, so that no
+         * commands are sent to VPP
+         */
+        OM::commit(key, ip_r);
+    }
+
+    for (auto & record : *cmd_v6)
+    {
+        auto &payload = record.get_payload();
+
+        prefix_t pfx(1, payload.address, payload.address_length);
+        route_domain rd_temp(payload.table_id);
+        std::shared_ptr<route_domain> rd = route_domain::find(rd_temp);
+        if (!rd)
+        {
+            OM::commit(key, rd_temp);
+        }
+        ip_route ip_r(rd_temp, pfx);
+
+        for (auto i = 0; i < payload.count; i++)
+        {
+            vapi_type_fib_path p =  payload.path[i];
+            if (p.is_local)
+            {
+                path path_v6(path::special_t::LOCAL);
+                ip_r.add(path_v6);
+            }
+            else if (p.is_drop)
+            {
+                path path_v6(path::special_t::DROP);
+                ip_r.add(path_v6);
+            }
+            else if (p.is_unreach)
+            {
+                path path_v6(path::special_t::UNREACH);
+                ip_r.add(path_v6);
+            }
+            else if (p.is_prohibit)
+            {
+                path path_v6(path::special_t::PROHIBIT);
+                ip_r.add(path_v6);
+            }
+            else
+            {
+                std::shared_ptr<interface> itf = interface::find(p.sw_if_index);
+                boost::asio::ip::address address = from_bytes(1, p.next_hop);
+                path path_v6(address, *itf, p.weight, p.preference);
+                ip_r.add(path_v6);
+            }
+        }
+        BOOST_LOG_SEV(logger(), levels::debug) << "ip-route-dump: "
+                                                << ip_r.to_string();
+
+        /*
+         * Write each of the discovered interfaces into the OM,
+         * but disable the HW Command q whilst we do, so that no
+         * commands are sent to VPP
+         */
+        OM::commit(key, ip_r);
+    }
+}
+
+dependency_t ip_route::event_handler::order() const
+{
+    return (dependency_t::BINDING);
+}
+
+void ip_route::event_handler::show(std::ostream &os)
 {
     m_db.dump(os);
 }

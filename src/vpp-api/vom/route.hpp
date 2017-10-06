@@ -304,7 +304,105 @@ namespace VOM
                 prefix_t m_prefix;
             };
 
+            /**
+             * A cmd class that Dumps ipv4 fib
+             */
+            class dump_v4_cmd: public VOM::dump_cmd<vapi::Ip_fib_dump>
+            {
+            public:
+                /**
+                 * Constructor
+                 */
+                dump_v4_cmd();
+                dump_v4_cmd(const dump_cmd &d);
+
+                /**
+                 * Issue the command to VPP/HW
+                 */
+                rc_t issue(connection &con);
+                /**
+                 * convert to string format for debug purposes
+                 */
+                std::string to_string() const;
+
+                /**
+                 * Comparison operator - only used for UT
+                 */
+                bool operator==(const dump_v4_cmd&i) const;
+            private:
+                /**
+                 * HW reutrn code
+                 */
+                HW::item<bool> item;
+            };
+
+            /**
+             * A cmd class that Dumps ipv6 fib
+             */
+            class dump_v6_cmd: public VOM::dump_cmd<vapi::Ip6_fib_dump>
+            {
+            public:
+                /**
+                 * Constructor
+                 */
+                dump_v6_cmd();
+                dump_v6_cmd(const dump_cmd &d);
+
+                /**
+                 * Issue the command to VPP/HW
+                 */
+                rc_t issue(connection &con);
+                /**
+                 * convert to string format for debug purposes
+                 */
+                std::string to_string() const;
+
+                /**
+                 * Comparison operator - only used for UT
+                 */
+                bool operator==(const dump_v6_cmd&i) const;
+            private:
+                /**
+                 * HW reutrn code
+                 */
+                HW::item<bool> item;
+            };
         private:
+             /**
+             * Class definition for listeners to OM events
+             */
+            class event_handler: public OM::listener, public inspect::command_handler
+            {
+            public:
+                event_handler();
+                virtual ~event_handler() = default;
+
+                /**
+                 * Handle a populate event
+                 */
+                void handle_populate(const client_db::key_t & key);
+
+                /**
+                 * Handle a replay event
+                 */
+                void handle_replay();
+
+                /**
+                 * Show the object in the Singular DB
+                 */
+                void show(std::ostream &os);
+
+                /**
+                 * Get the sortable Id of the listener
+                 */
+                dependency_t order() const;
+            };
+
+            /**
+             * event_handler to register with OM
+             */
+            static event_handler m_evh;
+
             /**
              * Commit the acculmulated changes into VPP. i.e. to a 'HW" write.
              */

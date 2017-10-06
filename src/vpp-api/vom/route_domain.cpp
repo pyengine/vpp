@@ -86,6 +86,33 @@ std::string route_domain::to_string() const
     return (s.str());
 }
 
+std::shared_ptr<route_domain> route_domain::find(const route_domain &temp)
+{
+
+    std::shared_ptr<route_domain> rd;
+
+    auto it = m_db.cbegin();
+
+    while (it != m_db.cend())
+    {
+        /*
+         * The key in the DB is a pair of the interface's name and prefix.
+         * If the keys match, save the L3-config
+         */
+        auto key = it->first;
+
+        if (temp.table_id() == key)
+        {
+            rd = it->second.lock();
+           break;
+        }
+
+        ++it;
+    }
+
+    return (rd);
+}
+
 void route_domain::update(const route_domain &desired)
 {
     /*

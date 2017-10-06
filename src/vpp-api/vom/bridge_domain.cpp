@@ -84,7 +84,7 @@ std::shared_ptr<bridge_domain> bridge_domain::find(uint32_t id)
      * not the most efficient algorithm, but it will do for now. The
      * number of L3 configs is low and this is only called during bootup
      */
-    std::shared_ptr<bridge_domain> l3s;
+    std::shared_ptr<bridge_domain> bd;
 
     auto it = m_db.cbegin();
 
@@ -98,13 +98,14 @@ std::shared_ptr<bridge_domain> bridge_domain::find(uint32_t id)
 
         if (id == key)
         {
-            l3s = it->second.lock();
+            bd = it->second.lock();
+	    break;
         }
 
         ++it;
     }
 
-    return (l3s);
+    return (bd);
 }
 
 void bridge_domain::update(const bridge_domain &desired)

@@ -215,6 +215,8 @@ namespace VOM
      * Convert a boost address into a VPP bytes string
      */
     void to_bytes(const boost::asio::ip::address &addr, uint8_t *is_ip6, uint8_t *array);
+    void to_bytes(const boost::asio::ip::address_v4 &addr, uint8_t *array);
+    void to_bytes(const boost::asio::ip::address_v6 &addr, uint8_t *array);
 
     /**
      * Get the prefix mask length of a host route from the boost address

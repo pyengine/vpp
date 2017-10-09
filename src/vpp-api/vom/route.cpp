@@ -180,16 +180,10 @@ std::string path::to_string() const
 
 ip_route::ip_route(const prefix_t &prefix):
     m_hw(false),
-    m_rd(nullptr),
+    m_rd(route_domain::get_default()),
     m_prefix(prefix),
     m_paths()
 {
-    /*
-     * the route goes in the default table
-     */
-    route_domain rd(DEFAULT_TABLE);
-
-    m_rd = rd.singular();
 }
 
 ip_route::ip_route(const ip_route &r):

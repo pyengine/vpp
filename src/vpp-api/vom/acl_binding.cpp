@@ -74,7 +74,7 @@ namespace VOM
     };
 
     std::ostream &operator<<(std::ostream &os,
-                             const std::pair<ACL::direction_t, interface::key_type> &key)
+                             const std::pair<direction_t, interface::key_type> &key)
     {
         os << "["
            << key.first.to_string()

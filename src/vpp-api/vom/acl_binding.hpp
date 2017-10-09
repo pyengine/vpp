@@ -440,7 +440,7 @@ namespace VOM
     };
 
     std::ostream &operator<<(std::ostream &os,
-                             const std::pair<ACL::direction_t,
+                             const std::pair<direction_t,
                                              interface::key_type> &key);
 };
 

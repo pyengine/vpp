@@ -37,6 +37,8 @@
 #include "vom/interface_ip6_nd.hpp"
 #include "vom/interface_span.hpp"
 #include "vom/neighbour.hpp"
+#include "vom/nat_static.hpp"
+#include "vom/nat_binding.hpp"
 
 using namespace boost;
 using namespace VOM;
@@ -313,6 +315,22 @@ public:
                     else if (typeid(*f_exp) == typeid(interface_span::unconfig_cmd))
                     {
                         rc = handle_derived<interface_span::unconfig_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(nat_static::create_44_cmd))
+                    {
+                        rc = handle_derived<nat_static::create_44_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(nat_static::delete_44_cmd))
+                    {
+                        rc = handle_derived<nat_static::delete_44_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(nat_binding::bind_44_input_cmd))
+                    {
+                        rc = handle_derived<nat_binding::bind_44_input_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(nat_binding::unbind_44_input_cmd))
+                    {
+                        rc = handle_derived<nat_binding::unbind_44_input_cmd>(f_exp, f_act);
                     }
                     else
                     {
@@ -889,9 +907,9 @@ BOOST_AUTO_TEST_CASE(test_acl) {
     ADD_EXPECT(ACL::l3_list::update_cmd(hw_acl, acl_name, rules));
     TRY_CHECK_RC(OM::write(fyodor, acl1));
 
-    ACL::l3_binding *l3b = new ACL::l3_binding(ACL::direction_t::INPUT, itf1, acl1);
+    ACL::l3_binding *l3b = new ACL::l3_binding(direction_t::INPUT, itf1, acl1);
     HW::item<bool> hw_binding(true, rc_t::OK);
-    ADD_EXPECT(ACL::l3_binding::bind_cmd(hw_binding, ACL::direction_t::INPUT,
+    ADD_EXPECT(ACL::l3_binding::bind_cmd(hw_binding, direction_t::INPUT,
                                        hw_ifh.data(), hw_acl.data()));
     TRY_CHECK_RC(OM::write(fyodor, *l3b));
 
@@ -916,14 +934,14 @@ BOOST_AUTO_TEST_CASE(test_acl) {
     ADD_EXPECT(ACL::l2_list::update_cmd(l2_hw_acl, l2_acl_name, l2_rules));
     TRY_CHECK_RC(OM::write(leo, l2_acl));
 
-    ACL::l2_binding *l2b = new ACL::l2_binding(ACL::direction_t::OUTPUT, itf1, l2_acl);
+    ACL::l2_binding *l2b = new ACL::l2_binding(direction_t::OUTPUT, itf1, l2_acl);
     HW::item<bool> l2_hw_binding(true, rc_t::OK);
-    ADD_EXPECT(ACL::l2_binding::bind_cmd(l2_hw_binding, ACL::direction_t::OUTPUT,
+    ADD_EXPECT(ACL::l2_binding::bind_cmd(l2_hw_binding, direction_t::OUTPUT,
                                        hw_ifh.data(), l2_hw_acl.data()));
     TRY_CHECK_RC(OM::write(leo, *l2b));
 
     delete l2b;
-    ADD_EXPECT(ACL::l2_binding::unbind_cmd(l2_hw_binding, ACL::direction_t::OUTPUT,
+    ADD_EXPECT(ACL::l2_binding::unbind_cmd(l2_hw_binding, direction_t::OUTPUT,
                                          hw_ifh.data(), l2_hw_acl.data()));
     ADD_EXPECT(ACL::l2_list::delete_cmd(l2_hw_acl));
     TRY_CHECK(OM::remove(leo));
@@ -932,7 +950,7 @@ BOOST_AUTO_TEST_CASE(test_acl) {
     HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN,
                                                   rc_t::OK);
     STRICT_ORDER_OFF();
-    ADD_EXPECT(ACL::l3_binding::unbind_cmd(hw_binding, ACL::direction_t::INPUT,
+    ADD_EXPECT(ACL::l3_binding::unbind_cmd(hw_binding, direction_t::INPUT,
                                          hw_ifh.data(), hw_acl.data()));
     ADD_EXPECT(ACL::l3_list::delete_cmd(hw_acl));
     ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh));
@@ -1292,6 +1310,93 @@ BOOST_AUTO_TEST_CASE(test_routing) {
     ADD_EXPECT(route_domain::delete_cmd(hw_rd6_delete, l3_proto_t::IPV6, 1));
 
     TRY_CHECK(OM::remove(ian));
+}
+
+BOOST_AUTO_TEST_CASE(test_nat) {
+    VppInit vi;
+    const std::string gs = "GeorgeSimenon";
+    rc_t rc = rc_t::OK;
+
+    /*
+     * Inside Interface
+     */
+    std::string itf_in_name = "inside";
+    interface itf_in(itf_in_name,
+                     interface::type_t::AFPACKET,
+                     interface::admin_state_t::UP);
+    HW::item<handle_t> hw_ifh(2, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_up(interface::admin_state_t::UP, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_down(interface::admin_state_t::DOWN, rc_t::OK);
+    ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh, itf_in_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_up, hw_ifh));
+    TRY_CHECK_RC(OM::write(gs, itf_in));
+
+    /*
+     * outside
+     */
+    std::string itf_out_name = "port-to";
+    interface itf_out(itf_out_name,
+                   interface::type_t::AFPACKET,
+                   interface::admin_state_t::UP);
+
+    HW::item<handle_t> hw_ifh2(4, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_up2(interface::admin_state_t::UP, rc_t::OK);
+    HW::item<interface::admin_state_t> hw_as_down2(interface::admin_state_t::DOWN, rc_t::OK);
+
+    ADD_EXPECT(interface::af_packet_create_cmd(hw_ifh2, itf_out_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_up2, hw_ifh2));
+    TRY_CHECK_RC(OM::write(gs, itf_out));
+
+    /*
+     * A NAT static mapping
+     */
+    boost::asio::ip::address in_addr = boost::asio::ip::address::from_string("10.0.0.1");
+    boost::asio::ip::address_v4 out_addr = boost::asio::ip::address_v4::from_string("1.1.1.1");
+
+    nat_static ns(in_addr, out_addr);
+    HW::item<bool> hw_ns(true, rc_t::OK);
+
+    ADD_EXPECT(nat_static::create_44_cmd(hw_ns, 0, in_addr.to_v4(), out_addr));
+    TRY_CHECK_RC(OM::write(gs, ns));
+
+    /*
+     * bind nat inside and out
+     */
+    nat_binding *nb_in = new nat_binding(itf_in,
+                                         direction_t::INPUT,
+                                         l3_proto_t::IPV4,
+                                         nat_binding::zone_t::INSIDE);
+    HW::item<bool> hw_nb_in(true, rc_t::OK);
+
+    ADD_EXPECT(nat_binding::bind_44_input_cmd(hw_nb_in, hw_ifh.data().value(),
+                                              nat_binding::zone_t::INSIDE));
+    TRY_CHECK_RC(OM::write(gs, *nb_in));
+
+    nat_binding *nb_out = new nat_binding(itf_out,
+                                          direction_t::INPUT,
+                                          l3_proto_t::IPV4,
+                                          nat_binding::zone_t::OUTSIDE);
+    HW::item<bool> hw_nb_out(true, rc_t::OK);
+
+    ADD_EXPECT(nat_binding::bind_44_input_cmd(hw_nb_out, hw_ifh2.data().value(),
+                                              nat_binding::zone_t::OUTSIDE));
+    TRY_CHECK_RC(OM::write(gs, *nb_out));
+
+
+    STRICT_ORDER_OFF();
+    delete nb_in;
+    delete nb_out;
+    ADD_EXPECT(nat_binding::unbind_44_input_cmd(hw_nb_in, hw_ifh.data().value(),
+                                                nat_binding::zone_t::INSIDE));
+    ADD_EXPECT(nat_binding::unbind_44_input_cmd(hw_nb_out, hw_ifh2.data().value(),
+                                                nat_binding::zone_t::OUTSIDE));
+    ADD_EXPECT(nat_static::delete_44_cmd(hw_ns, 0, in_addr.to_v4(), out_addr));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_down, hw_ifh));
+    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh, itf_in_name));
+    ADD_EXPECT(interface::state_change_cmd(hw_as_down2, hw_ifh2));
+    ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf_out_name));
+
+    TRY_CHECK(OM::remove(gs));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

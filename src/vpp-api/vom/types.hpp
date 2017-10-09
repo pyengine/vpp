@@ -53,9 +53,9 @@ namespace VOM
         TUNNEL,
 
         /**
-         * next bridge/route-domains in which interfaces can be placed.
+         * Tables in which entries are added, e.g bridge/route-domains
          */
-        FORWARDING_DOMAIN,
+        TABLE,
 
         /**
          * ACLs
@@ -66,6 +66,11 @@ namespace VOM
          * Then L2/objects that bind to interfaces, BD, ACLS, etc
          */
         BINDING,
+
+        /**
+         * Entries in Tables
+         */
+        ENTRY,
     };
 
     /**
@@ -120,6 +125,32 @@ namespace VOM
          * Constructor
          */
         rc_t(int v, const std::string s);
+    };
+
+    /**
+     * Feature Directions
+     */
+    struct direction_t: public enum_base<direction_t>
+    {
+        /**
+         * Constructor
+         */
+        direction_t(int v, const std::string s);
+
+        /**
+         * Destructor
+         */
+        ~direction_t() = default;
+
+        /**
+         * Permit Direction
+         */
+        const static direction_t INPUT;
+
+        /**
+         * Deny Direction
+         */
+        const static direction_t OUTPUT;
     };
 
     /**

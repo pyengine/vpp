@@ -185,7 +185,7 @@ void bridge_domain::event_handler::handle_replay()
 
 dependency_t bridge_domain::event_handler::order() const
 {
-    return (dependency_t::FORWARDING_DOMAIN);
+    return (dependency_t::TABLE);
 }
 
 void bridge_domain::event_handler::show(std::ostream &os)

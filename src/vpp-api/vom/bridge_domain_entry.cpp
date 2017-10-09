@@ -160,7 +160,7 @@ void bridge_domain_entry::event_handler::handle_populate(const client_db::key_t 
 
 dependency_t bridge_domain_entry::event_handler::order() const
 {
-    return (dependency_t::BINDING);
+    return (dependency_t::ENTRY);
 }
 
 void bridge_domain_entry::event_handler::show(std::ostream &os)

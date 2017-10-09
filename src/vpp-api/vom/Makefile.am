@@ -79,6 +79,10 @@ libvom_la_SOURCES = 			\
 	lldp_global_cmds.cpp		\
 	lldp_global.cpp			\
 	logger.cpp			\
+	nat_static.cpp			\
+	nat_static_cmds.cpp		\
+	nat_binding.cpp			\
+	nat_binding_cmds.cpp		\
 	neighbour.cpp			\
 	neighbour_cmds.cpp		\
 	object_base.cpp			\
@@ -129,6 +133,8 @@ vominclude_HEADERS =			\
 	lldp_binding.hpp		\
 	lldp_global.hpp			\
 	logger.hpp			\
+	nat_static.hpp			\
+	nat_binding.hpp			\
 	neighbour.hpp			\
 	object_base.hpp			\
 	om.hpp				\

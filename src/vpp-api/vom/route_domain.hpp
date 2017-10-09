@@ -30,6 +30,11 @@ namespace VOM
     {
     public:
         /**
+         * The Key for a route-domain
+         */
+        typedef route::table_id_t key_t;
+
+        /**
          * Construct a new object matching the desried state
          */
         route_domain(route::table_id_t id);
@@ -60,6 +65,11 @@ namespace VOM
         route::table_id_t table_id() const;
 
         /**
+         * Get the route-domain's key
+         */
+        key_t key() const;
+
+        /**
          * Find the instnace of the route domain in the OM
          */
         static std::shared_ptr<route_domain> find(const route_domain &temp);
@@ -68,6 +78,11 @@ namespace VOM
          * Dump all route-doamin into the stream provided
          */
         static void dump(std::ostream &os);
+
+        /**
+         * Return the sigular instance for the default table
+         */
+        static std::shared_ptr<route_domain> get_default();
 
         /**
          * replay the object to create it in hardware

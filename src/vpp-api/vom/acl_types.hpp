@@ -48,32 +48,6 @@ namespace VOM
              */
             static const action_t &from_int(uint8_t i);
         };
-
-        /**
-         * ACL Directions
-         */
-        struct direction_t: public enum_base<direction_t>
-        {
-            /**
-             * Constructor
-             */
-            direction_t(int v, const std::string s);
-
-            /**
-             * Destructor
-             */
-            ~direction_t() = default;
-
-            /**
-             * Permit Direction
-             */
-            const static direction_t INPUT;
-
-            /**
-             * Deny Direction
-             */
-            const static direction_t OUTPUT;
-        };
    };
 };
 

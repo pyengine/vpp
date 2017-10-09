@@ -6,12 +6,8 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-#ifndef __VOM_L2_BINDING_H__
-#define __VOM_L2_BINDING_H__
-
-#include <string>
-#include <map>
-#include <stdint.h>
+#ifndef __VOM_NAT_BINDING_H__
+#define __VOM_NAT_BINDING_H__
 
 #include "vom/object_base.hpp"
 #include "vom/om.hpp"
@@ -19,9 +15,8 @@
 #include "vom/rpc_cmd.hpp"
 #include "vom/singular_db.hpp"
 #include "vom/interface.hpp"
-#include "vom/bridge_domain.hpp"
-#include "vom/vxlan_tunnel.hpp"
-#include "vom/inspect.hpp"
+
+#include <vapi/nat.api.vapi.hpp>
 
 namespace VOM
 {
@@ -29,47 +24,69 @@ namespace VOM
      * A Clas representing the binding of an L2 interface to a bridge-domain
      * and the properties of that binding.
      */
-    class l2_binding: public object_base
+    class nat_binding: public object_base
     {
     public:
-        struct l2_vtr_op_t: public enum_base<l2_vtr_op_t>
+        /**
+         * NAT Zoness
+         */
+        struct zone_t: public enum_base<zone_t>
         {
-            l2_vtr_op_t(const l2_vtr_op_t &l) = default;
-            ~l2_vtr_op_t() = default;
+            /**
+             * Constructor
+             */
+            zone_t(int v, const std::string s);
 
-            const static l2_vtr_op_t L2_VTR_DISABLED;
-            const static l2_vtr_op_t L2_VTR_PUSH_1;
-            const static l2_vtr_op_t L2_VTR_PUSH_2;
-            const static l2_vtr_op_t L2_VTR_POP_1;
-            const static l2_vtr_op_t L2_VTR_POP_2;
-            const static l2_vtr_op_t L2_VTR_TRANSLATE_1_1;
-            const static l2_vtr_op_t L2_VTR_TRANSLATE_1_2;
-            const static l2_vtr_op_t L2_VTR_TRANSLATE_2_1;
-            const static l2_vtr_op_t L2_VTR_TRANSLATE_2_2;
-        private:
-            l2_vtr_op_t(int v, const std::string s);
+            /**
+             * Destructor
+             */
+            ~zone_t() = default;
+
+            /**
+             * Permit Zone
+             */
+            const static zone_t INSIDE;
+
+            /**
+             * Deny Zone
+             */
+            const static zone_t OUTSIDE;
         };
 
         /**
-         * Construct a new object matching the desried state
+         * The key for a NAT Binding.
+         *  The zoe is not included, since the same interface is never inside and outside.
          */
-        l2_binding(const interface &itf,
-                   const bridge_domain &bd);
+        typedef std::tuple<interface::key_type,
+                           direction_t,
+                           l3_proto_t> key_t;
+
+        /**
+         * Construct a new object matching the desried state
+         *  @param itf The interface onto which we bind/apply the feature
+         *  @param dir The direction (input/output)
+         *  @param proto The L3 proto used inside.
+         *  @param zone The NAT zone for the link
+         */
+        nat_binding(const interface &itf,
+                    const direction_t &dir,
+                    const l3_proto_t &proto,
+                    const zone_t &zone);
 
         /**
          * Copy Constructor
          */
-        l2_binding(const l2_binding& o);
+        nat_binding(const nat_binding& o);
 
         /**
          * Destructor
          */
-        ~l2_binding();
+        ~nat_binding();
 
         /**
          * Return the 'singular instance' of the L2 config that matches this object
          */
-        std::shared_ptr<l2_binding> singular() const;
+        std::shared_ptr<nat_binding> singular() const;
 
         /**
          * convert to string format for debug purposes
@@ -77,29 +94,23 @@ namespace VOM
         std::string to_string() const;
 
         /**
-         * Dump all l2_bindings into the stream provided
+         * Dump all nat_bindings into the stream provided
          */
         static void dump(std::ostream &os);
 
         /**
-         * Set the VTR operation on the binding/interface
-         */
-        void set(const l2_vtr_op_t &op, uint16_t tag);
-
-        /**
          * A functor class that binds L2 configuration to an interface
          */
-        class bind_cmd: public rpc_cmd<HW::item<bool>, rc_t,
-                                       vapi::Sw_interface_set_l2_bridge>
+        class bind_44_input_cmd: public rpc_cmd<HW::item<bool>, rc_t,
+                                                vapi::Nat44_interface_add_del_feature>
         {
         public:
             /**
              * Constructor
              */
-            bind_cmd(HW::item<bool> &item,
-                     const handle_t &itf,
-                     uint32_t bd,
-                     bool is_bvi);
+            bind_44_input_cmd(HW::item<bool> &item,
+                              const handle_t &itf,
+                              const zone_t &zone);
 
             /**
              * Issue the command to VPP/HW
@@ -113,7 +124,7 @@ namespace VOM
             /**
              * Comparison operator - only used for UT
              */
-            bool operator==(const bind_cmd&i) const;
+            bool operator==(const bind_44_input_cmd&i) const;
         private:
             /**
              * The interface to bind
@@ -121,30 +132,24 @@ namespace VOM
             const handle_t m_itf;
 
             /**
-             * The bridge-domain to bind to
+             * The zone the interface is in
              */
-            uint32_t m_bd;
-
-            /**
-             * Is it a BVI interface that is being bound
-             */
-            bool m_is_bvi;
+            const zone_t m_zone;
         };
 
         /**
          * A cmd class that Unbinds L2 configuration from an interface
          */
-        class unbind_cmd: public rpc_cmd<HW::item<bool>, rc_t,
-                                         vapi::Sw_interface_set_l2_bridge>
+        class unbind_44_input_cmd: public rpc_cmd<HW::item<bool>, rc_t,
+                                                  vapi::Nat44_interface_add_del_feature>
         {
         public:
             /**
              * Constructor
              */
-            unbind_cmd(HW::item<bool> &item,
-                       const handle_t &itf,
-                       uint32_t bd,
-                       bool is_bvi);
+            unbind_44_input_cmd(HW::item<bool> &item,
+                                const handle_t &itf,
+                                const zone_t &zone);
 
             /**
              * Issue the command to VPP/HW
@@ -158,7 +163,7 @@ namespace VOM
             /**
              * Comparison operator - only used for UT
              */
-            bool operator==(const unbind_cmd&i) const;
+            bool operator==(const unbind_44_input_cmd&i) const;
         private:
             /**
              * The interface to bind
@@ -166,35 +171,27 @@ namespace VOM
             const handle_t m_itf;
 
             /**
-             * The bridge-domain to bind to
+             * The zone the interface is in
              */
-            uint32_t m_bd;
-
-            /**
-             * Is it a BVI interface that is being bound
-             */
-            bool m_is_bvi;
+            const zone_t m_zone;
         };
 
         /**
-         * A cmd class sets the VTR operation
+         * A cmd class that Dumps all the nat_statics
          */
-        class set_vtr_op_cmd: public rpc_cmd<HW::item<l2_vtr_op_t>, rc_t,
-                                             vapi::L2_interface_vlan_tag_rewrite>
+        class dump_44_cmd: public dump_cmd<vapi::Nat44_interface_dump>
         {
         public:
             /**
              * Constructor
              */
-            set_vtr_op_cmd(HW::item<l2_vtr_op_t> &item,
-                           const handle_t &itf,
-                           uint16_t tag);
+            dump_44_cmd();
+            dump_44_cmd(const dump_44_cmd &d);
 
             /**
              * Issue the command to VPP/HW
              */
             rc_t issue(connection &con);
-
             /**
              * convert to string format for debug purposes
              */
@@ -203,17 +200,12 @@ namespace VOM
             /**
              * Comparison operator - only used for UT
              */
-            bool operator==(const set_vtr_op_cmd&i) const;
+            bool operator==(const dump_44_cmd&i) const;
         private:
             /**
-             * The interface to bind
+             * HW reutrn code
              */
-            const handle_t m_itf;
-
-            /**
-             * The tag for the operation
-             */
-            uint16_t m_tag;
+            HW::item<bool> item;
         };
 
     private:
@@ -255,22 +247,22 @@ namespace VOM
         /**
          * Enquue commonds to the VPP command Q for the update
          */
-        void update(const l2_binding &obj);
+        void update(const nat_binding &obj);
 
         /**
          * Find or Add the singular instance in the DB
          */
-        static std::shared_ptr<l2_binding> find_or_add(const l2_binding &temp);
+        static std::shared_ptr<nat_binding> find_or_add(const nat_binding &temp);
 
         /*
          * It's the VOM::OM class that calls singular()
          */
-        friend class VOM::OM;
+        friend class OM;
 
         /**
          * It's the VOM::singular_db class that calls replay()
          */
-        friend class VOM::singular_db<const handle_t, l2_binding>;
+        friend class singular_db<const key_t, nat_binding>;
 
         /**
          * Sweep/reap the object if still stale
@@ -283,40 +275,41 @@ namespace VOM
         void replay(void);
 
         /**
-         * A reference counting pointer the interface that this L2 layer
-         * represents. By holding the reference here, we can guarantee that
-         * this object will outlive the interface
-         */
-        const std::shared_ptr<interface> m_itf;
-    
-        /**
-         * A reference counting pointer the Bridge-Domain that this L2
-         * interface is bound to. By holding the reference here, we can
-         * guarantee that this object will outlive the BD.
-         */
-        const std::shared_ptr<bridge_domain> m_bd;
-
-        /**
          * HW configuration for the binding. The bool representing the
          * do/don't bind.
          */
         HW::item<bool> m_binding;
 
         /**
-         * HW configuration for the VTR option
+         * A reference counting pointer the interface that this NAT binding
+         * represents. By holding the reference here, we can guarantee that
+         * this object will outlive the interface
          */
-        HW::item<l2_vtr_op_t> m_vtr_op;
+        const std::shared_ptr<interface> m_itf;
 
         /**
-         * The Dot1q tag for the VTR operation
+         * The direction in which the feature applies
          */
-        uint16_t m_vtr_op_tag;
+        direction_t m_dir;
+
+        /**
+         * The L3 protocol used on the inside
+         */
+        l3_proto_t m_proto;
+
+        /**
+         * The NAT zone the interface is in
+         */
+        zone_t m_zone;
 
         /**
          * A map of all L2 interfaces key against the interface's handle_t
          */
-        static singular_db<const handle_t, l2_binding> m_db;
+        static singular_db<const key_t, nat_binding> m_db;
     };
+
+    std::ostream & operator<<(std::ostream &os,
+                              const nat_binding::key_t &key);
 };
 
 #endif

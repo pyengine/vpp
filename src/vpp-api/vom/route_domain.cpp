@@ -41,6 +41,11 @@ route::table_id_t route_domain::table_id() const
     return (m_table_id);
 }
 
+route_domain::key_t route_domain::key() const
+{
+    return (table_id());
+}
+
 void route_domain::sweep()
 {
     if (m_hw_v4)
@@ -126,6 +131,13 @@ void route_domain::update(const route_domain &desired)
     {
         HW::enqueue(new create_cmd(m_hw_v6, l3_proto_t::IPV6, m_table_id));
     }
+}
+
+std::shared_ptr<route_domain> route_domain::get_default()
+{
+    route_domain rd(route::DEFAULT_TABLE);
+
+    return (find_or_add(rd));
 }
 
 std::shared_ptr<route_domain> route_domain::find_or_add(const route_domain &temp)

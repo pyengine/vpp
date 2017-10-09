@@ -29,11 +29,3 @@ const action_t &action_t::from_int(uint8_t i)
     }
     return action_t::DENY;
 }
-
-const direction_t direction_t::INPUT(0, "input");
-const direction_t direction_t::OUTPUT(0, "output");
-
-direction_t::direction_t(int v, const std::string s):
-    enum_base(v, s)
-{
-}

@@ -175,7 +175,7 @@ void neighbour::event_handler::handle_populate(const client_db::key_t &key)
 
 dependency_t neighbour::event_handler::order() const
 {
-    return (dependency_t::BINDING);
+    return (dependency_t::ENTRY);
 }
 
 void neighbour::event_handler::show(std::ostream &os)

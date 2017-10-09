@@ -193,21 +193,31 @@ route::prefix_t::prefix_t(uint8_t is_ip6,
     m_len(len)
 {
 }
+void VOM::to_bytes(const boost::asio::ip::address_v6 &addr,
+                   uint8_t *array)
+{
+    memcpy(array, addr.to_bytes().data(), 16);
+}
+
+void VOM::to_bytes(const boost::asio::ip::address_v4 &addr,
+                   uint8_t *array)
+{
+    memcpy(array, addr.to_bytes().data(), 4);
+}
 
 void VOM::to_bytes(const boost::asio::ip::address &addr,
                    uint8_t *is_ip6,
                    uint8_t *array)
 {
-    *is_ip6 = addr.is_v6();
     if (addr.is_v6())
     {
         *is_ip6 = 1;
-        memcpy(array, addr.to_v6().to_bytes().data(), 16);
+        to_bytes(addr.to_v6(), array);
     }
     else
     {
         *is_ip6 = 0;
-        memcpy(array, addr.to_v4().to_bytes().data(), 4);
+        to_bytes(addr.to_v4(), array);
     }
 }
 

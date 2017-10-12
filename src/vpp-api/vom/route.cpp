@@ -315,7 +315,7 @@ void ip_route::event_handler::handle_populate(const client_db::key_t &key)
        }
        ip_route ip_r(rd_temp, pfx);
 
-        for (auto i = 0; i < payload.count; i++)
+        for (unsigned int i = 0; i < payload.count; i++)
         {
             vapi_type_fib_path p =  payload.path[i];
             if (p.is_local)
@@ -370,7 +370,7 @@ void ip_route::event_handler::handle_populate(const client_db::key_t &key)
         }
         ip_route ip_r(rd_temp, pfx);
 
-        for (auto i = 0; i < payload.count; i++)
+        for (unsigned int i = 0; i < payload.count; i++)
         {
             vapi_type_fib_path p =  payload.path[i];
             if (p.is_local)

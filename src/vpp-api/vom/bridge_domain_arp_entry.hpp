@@ -152,6 +152,41 @@ namespace VOM
 
     private:
         /**
+         * Class definition for listeners to OM events
+         */
+        class event_handler: public OM::listener, public inspect::command_handler
+        {
+        public:
+            event_handler();
+            virtual ~event_handler() = default;
+
+            /**
+             * Handle a populate event
+             */
+            void handle_populate(const client_db::key_t & key);
+
+            /**
+             * Handle a replay event
+             */
+            void handle_replay();
+
+            /**
+             * Show the object in the Singular DB
+             */
+            void show(std::ostream &os);
+
+            /**
+             * Get the sortable Id of the listener
+             */
+            dependency_t order() const;
+        };
+
+        /**
+         * event_handler to register with OM
+         */
+        static event_handler m_evh;
+
+        /**
          * Commit the acculmulated changes into VPP. i.e. to a 'HW" write.
          */
         void update(const bridge_domain_arp_entry &obj);

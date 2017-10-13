@@ -12,6 +12,8 @@ using namespace VOM;
 
 VOM::singular_db<bridge_domain_arp_entry::key_t, bridge_domain_arp_entry> bridge_domain_arp_entry::m_db;
 
+bridge_domain_arp_entry::event_handler bridge_domain_arp_entry::m_evh;
+
 bridge_domain_arp_entry::bridge_domain_arp_entry(const bridge_domain &bd,
                                                  const mac_address_t &mac,
                                                  const boost::asio::ip::address &ip_addr):
@@ -122,4 +124,29 @@ std::ostream& VOM::operator<<(std::ostream &os,
        << "]";
 
     return (os);
+}
+
+bridge_domain_arp_entry::event_handler::event_handler()
+{
+    OM::register_listener(this);
+    inspect::register_handler({"bd-arp"}, "bridge domain ARP termination entries", this);
+}
+
+void bridge_domain_arp_entry::event_handler::handle_replay()
+{
+    m_db.replay();
+}
+
+void bridge_domain_arp_entry::event_handler::handle_populate(const client_db::key_t &key)
+{
+}
+
+dependency_t bridge_domain_arp_entry::event_handler::order() const
+{
+    return (dependency_t::ENTRY);
+}
+
+void bridge_domain_arp_entry::event_handler::show(std::ostream &os)
+{
+    m_db.dump(os);
 }

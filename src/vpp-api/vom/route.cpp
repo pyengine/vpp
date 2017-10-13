@@ -244,6 +244,7 @@ std::string ip_route::to_string() const
       << m_rd->to_string()
       << ", "
       << m_prefix.to_string()
+      << " [" << m_paths << "]"
       << "]";
 
     return (s.str());

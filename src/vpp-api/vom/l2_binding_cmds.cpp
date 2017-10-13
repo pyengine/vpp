@@ -128,7 +128,8 @@ rc_t l2_binding::set_vtr_op_cmd::issue(connection &con)
     auto &payload = req.get_request().get_payload();
     payload.sw_if_index = m_itf.value();
     payload.vtr_op = m_hw_item.data().value();
-    payload.push_dot1q = m_tag;
+    payload.push_dot1q = 1;
+    payload.tag1 = m_tag;
 
     VAPI_CALL(req.execute());
 

@@ -126,3 +126,15 @@ bool OM::register_listener(OM::listener *listener)
 
     return (true);
 }
+
+
+OM::mark_n_sweep::mark_n_sweep(const client_db::key_t &key):
+    m_key(key)
+{
+    OM::mark(m_key);
+}
+
+OM::mark_n_sweep::~mark_n_sweep()
+{
+    OM::sweep(m_key);
+}

@@ -33,6 +33,11 @@ namespace VOM
              */
             ~action_t() = default;
 
+	    /**
+	     * Permit and Reflexive
+             */
+	    const static action_t PERMITANDREFLEX;
+
             /**
              * Permit Action
              */
@@ -47,6 +52,12 @@ namespace VOM
              * Get the enum type from a VPP integer value
              */
             static const action_t &from_int(uint8_t i);
+
+	    /**
+	     * Get the enum type from a bool value and optional uint8_t value
+	     * which implements the connection tracking ....
+	     */
+	    static const action_t &from_bool(bool b, uint8_t c);
         };
    };
 };

@@ -48,7 +48,7 @@ namespace VOM
             /**
              * The rule container type
              */
-            typedef std::set<RULE> rules_t;
+            typedef std::multiset<RULE> rules_t;
 
             /**
              * Construct a new object matching the desried state

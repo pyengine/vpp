@@ -37,7 +37,7 @@ namespace VOM
                     const action_t &action,
                     const route::prefix_t &src,
                     const route::prefix_t &dst);
-        
+
             /**
              * Copy Constructor
              */
@@ -68,6 +68,50 @@ namespace VOM
              */
             void to_vpp(vapi_type_acl_rule &rule) const;
 
+	    /**
+	     * Set Src Ip Address
+             */
+	    void setSrcIp(route::prefix_t src);
+
+	    /**
+	     * Set Dst Ip Address
+	     */
+	    void setDstIp(route::prefix_t dst);
+
+            /**
+	     * Set proto
+	     */
+	    void setProto(uint8_t proto);
+
+            /**
+             * Set Src port or ICMP Type first
+             */
+            void setSrcFromPort(uint16_t srcport_or_icmptype_first);
+
+            /**
+             * Set Src port or ICMP Type last
+             */
+            void setSrcToPort(uint16_t srcport_or_icmptype_last);
+
+            /**
+             * Set Dst port or ICMP code first
+             */
+            void setDstFromPort(uint16_t dstport_or_icmpcode_first);
+
+            /**
+             * Set Dst port or ICMP code last
+             */
+            void setDstToPort(uint16_t dstport_or_icmpcode_last);
+
+            /**
+             * Set TCP flags mask
+             */
+            void setTCPFlagsMask(uint8_t tcp_flags_mask);
+
+            /**
+             * Set TCP flags value
+             */
+            void setTCPFlagsValue(uint8_t tcp_flags_value);
         private:
             /**
              * Priority. Used to sort the rules in a list in the order
@@ -94,7 +138,7 @@ namespace VOM
              * L4 protocol. IANA number. 1 = ICMP, 58 = ICMPv6, 6 = TCP, 17 = UDP.
              * 0 => ignore L4 and ignore the ports/tcpflags when matching.
              */
-            uint8_t proto;
+            uint8_t m_proto;
 
             /**
              * If the L4 protocol is TCP or UDP, the below
@@ -105,18 +149,18 @@ namespace VOM
              * use first=0,last=65535. For ICMP(v6),
              * use first=0,last=255.
              */
-            uint16_t srcport_or_icmptype_first;
-            uint16_t srcport_or_icmptype_last;
-            uint16_t dstport_or_icmpcode_first;
-            uint16_t dstport_or_icmpcode_last;
+            uint16_t m_srcport_or_icmptype_first;
+            uint16_t m_srcport_or_icmptype_last;
+            uint16_t m_dstport_or_icmpcode_first;
+            uint16_t m_dstport_or_icmpcode_last;
 
             /*
              * for proto = 6, this matches if the
              * TCP flags in the packet, ANDed with tcp_flags_mask,
              * is equal to tcp_flags_value.
              */
-            uint8_t tcp_flags_mask;
-            uint8_t tcp_flags_value;
+            uint8_t m_tcp_flags_mask;
+            uint8_t m_tcp_flags_value;
         };
     };
 };

@@ -168,6 +168,37 @@ ip6_ioam_trace_get_sizeof_handler (u32 * result)
   return 0;
 }
 
+int
+ip6_ioam_incr_trace_get_sizeof_handler (u32 * result)
+{
+  u16 size = 0;
+  u8 trace_data_size = 0;
+  trace_profile *profile = NULL;
+
+  *result = 0;
+
+  profile = trace_profile_find ();
+
+  if (PREDICT_FALSE (!profile))
+    {
+      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_PROFILE_MISS, 1);
+      return (-1);
+    }
+
+  trace_data_size = fetch_trace_data_size (profile->trace_type);
+  if (PREDICT_FALSE (trace_data_size == 0))
+    return VNET_API_ERROR_INVALID_VALUE;
+
+  if (PREDICT_FALSE (profile->num_elts * trace_data_size > 254))
+    return VNET_API_ERROR_INVALID_VALUE;
+
+  size +=
+    sizeof (ioam_incr_trace_option_t);
+  *result = size;
+
+  return 0;
+}
+
 
 
 int
@@ -376,6 +407,15 @@ ip6_hbh_ioam_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
   return (rv);
 }
 
+int
+ip6_hbh_ioam_incr_trace_data_list_handler (vlib_buffer_t * b, ip6_header_t * ip,
+				      ip6_hop_by_hop_option_t * opt)
+{
+  int rv = 0;
+  return (rv);
+}
+
+
 u8 *
 ip6_hbh_ioam_trace_data_list_trace_handler (u8 * s,
 					    ip6_hop_by_hop_option_t * opt)
@@ -387,7 +427,7 @@ ip6_hbh_ioam_trace_data_list_trace_handler (u8 * s,
 
   trace = (ioam_trace_option_t *) opt;
   s =
-    format (s, "  Trace Type 0x%x , %d elts left\n",
+    format (s, "  (Pre-alloc) Trace Type 0x%x , %d elts left\n",
 	    trace->trace_hdr.ioam_trace_type,
 	    trace->trace_hdr.data_list_elts_left);
   trace_data_size_in_words =
@@ -417,7 +457,7 @@ ip6_hbh_ioam_incr_trace_list_trace_handler (u8 * s,
 
   trace = (ioam_incr_trace_option_t *) opt;
   s =
-    format (s, "  Trace Type 0x%x , %d elts left\n",
+    format (s, "  (Incr) Trace Type 0x%x , %d max elts\n",
 	    trace->trace_hdr.ioam_trace_type,
 	    trace->trace_hdr.max_elts);
   trace_data_size_in_words =
@@ -512,7 +552,7 @@ ip6_hop_by_hop_ioam_trace_init (vlib_main_t * vm)
 
   if (ip6_hbh_register_option
       (HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST,
-       NULL,//Not going to populate this option
+       ip6_hbh_ioam_incr_trace_data_list_handler,//Not going to populate this option
        ip6_hbh_ioam_incr_trace_list_trace_handler) < 0)
     return (clib_error_create
 	    ("registration of HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST failed"));
@@ -565,6 +605,10 @@ ip6_trace_profile_setup (void)
 
   hm->options_size[HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST] = trace_size;
 
+  if (ip6_ioam_incr_trace_get_sizeof_handler (&trace_size) < 0)
+    return (-1);
+
+  hm->options_size[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST] = trace_size;
   return (0);
 }
 

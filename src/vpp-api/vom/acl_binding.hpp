@@ -89,6 +89,7 @@ namespace VOM
             {
                 std::ostringstream s;
                 s << "acl-binding:["
+		  << " " << m_direction.to_string()
                   << m_itf->to_string()
                   << " " << m_acl->to_string()
                   << " " << m_binding.to_string()

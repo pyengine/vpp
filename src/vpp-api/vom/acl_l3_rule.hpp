@@ -71,47 +71,47 @@ namespace VOM
 	    /**
 	     * Set Src Ip Address
              */
-	    void setSrcIp(route::prefix_t src);
+	    void set_src_ip(route::prefix_t src);
 
 	    /**
 	     * Set Dst Ip Address
 	     */
-	    void setDstIp(route::prefix_t dst);
+	    void set_dst_ip(route::prefix_t dst);
 
             /**
 	     * Set proto
 	     */
-	    void setProto(uint8_t proto);
+	    void set_proto(uint8_t proto);
 
             /**
              * Set Src port or ICMP Type first
              */
-            void setSrcFromPort(uint16_t srcport_or_icmptype_first);
+            void set_src_from_port(uint16_t srcport_or_icmptype_first);
 
             /**
              * Set Src port or ICMP Type last
              */
-            void setSrcToPort(uint16_t srcport_or_icmptype_last);
+            void set_src_to_port(uint16_t srcport_or_icmptype_last);
 
             /**
              * Set Dst port or ICMP code first
              */
-            void setDstFromPort(uint16_t dstport_or_icmpcode_first);
+            void set_dst_from_port(uint16_t dstport_or_icmpcode_first);
 
             /**
              * Set Dst port or ICMP code last
              */
-            void setDstToPort(uint16_t dstport_or_icmpcode_last);
+            void set_dst_to_port(uint16_t dstport_or_icmpcode_last);
 
             /**
              * Set TCP flags mask
              */
-            void setTCPFlagsMask(uint8_t tcp_flags_mask);
+            void set_tcp_flags_mask(uint8_t tcp_flags_mask);
 
             /**
              * Set TCP flags value
              */
-            void setTCPFlagsValue(uint8_t tcp_flags_value);
+            void set_tcp_flags_value(uint8_t tcp_flags_value);
         private:
             /**
              * Priority. Used to sort the rules in a list in the order

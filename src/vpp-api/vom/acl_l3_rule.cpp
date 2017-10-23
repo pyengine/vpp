@@ -86,47 +86,47 @@ std::string l3_rule::to_string() const
     return (s.str());  
 }
 
-void l3_rule::setSrcIp(route::prefix_t src)
+void l3_rule::set_src_ip(route::prefix_t src)
 {
     m_src = src;
 }
 
-void l3_rule::setDstIp(route::prefix_t dst)
+void l3_rule::set_dst_ip(route::prefix_t dst)
 {
     m_dst = dst;
 }
 
-void l3_rule::setProto(uint8_t proto)
+void l3_rule::set_proto(uint8_t proto)
 {
     m_proto = proto;
 }
 
-void l3_rule::setSrcFromPort(uint16_t srcport_or_icmptype_first)
+void l3_rule::set_src_from_port(uint16_t srcport_or_icmptype_first)
 {
     m_srcport_or_icmptype_first = srcport_or_icmptype_first;
 }
 
-void l3_rule::setSrcToPort(uint16_t srcport_or_icmptype_last)
+void l3_rule::set_src_to_port(uint16_t srcport_or_icmptype_last)
 {
     m_srcport_or_icmptype_last = srcport_or_icmptype_last;
 }
 
-void l3_rule::setDstFromPort(uint16_t dstport_or_icmpcode_first)
+void l3_rule::set_dst_from_port(uint16_t dstport_or_icmpcode_first)
 {
     m_dstport_or_icmpcode_first = dstport_or_icmpcode_first;
 }
 
-void l3_rule::setDstToPort(uint16_t dstport_or_icmpcode_last)
+void l3_rule::set_dst_to_port(uint16_t dstport_or_icmpcode_last)
 {
     m_dstport_or_icmpcode_last = dstport_or_icmpcode_last;
 }
 
-void l3_rule::setTCPFlagsMask(uint8_t tcp_flags_mask)
+void l3_rule::set_tcp_flags_mask(uint8_t tcp_flags_mask)
 {
     m_tcp_flags_mask = tcp_flags_mask;
 }
 
-void l3_rule::setTCPFlagsValue(uint8_t tcp_flags_value)
+void l3_rule::set_tcp_flags_value(uint8_t tcp_flags_value)
 {
     m_tcp_flags_value = tcp_flags_value;
 }

@@ -192,7 +192,8 @@ namespace VOM
         /**
          * A functor class represents our desire to recieve interface events
          */
-        class events_cmd: public cmd, public event_cmd<vapi::Dhcp_compl_event>
+        class events_cmd: public event_cmd<vapi::Control_ping,
+                                           vapi::Dhcp_compl_event>
         {
         public:
             /**
@@ -208,7 +209,8 @@ namespace VOM
             /**
              * Retire the command - unsubscribe
              */
-            void retire();
+            void retire(connection &con);
+
             /**
              * convert to string format for debug purposes
              */

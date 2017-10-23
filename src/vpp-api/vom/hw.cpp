@@ -60,6 +60,18 @@ void HW::cmd_q::enqueue(std::shared_ptr<cmd> c)
     m_queue.push_back(c);
 }
 
+void HW::cmd_q::dequeue(cmd *c)
+{
+    c->retire(m_conn);
+    m_pending.erase(c);
+}
+
+void HW::cmd_q::dequeue(std::shared_ptr<cmd> c)
+{
+    c->retire(m_conn);
+    m_pending.erase(c.get());
+}
+
 void HW::cmd_q::enqueue(std::queue<cmd*> &cmds)
 {
     while (cmds.size())
@@ -205,6 +217,16 @@ void HW::enqueue(cmd *cmd)
 void HW::enqueue(std::shared_ptr<cmd> cmd)
 {
     m_cmdQ->enqueue(cmd);
+}
+
+void HW::dequeue(cmd *cmd)
+{
+    m_cmdQ->dequeue(cmd);
+}
+
+void HW::dequeue(std::shared_ptr<cmd> cmd)
+{
+    m_cmdQ->dequeue(cmd);
 }
 
 void HW::enqueue(std::queue<cmd*> & cmds)

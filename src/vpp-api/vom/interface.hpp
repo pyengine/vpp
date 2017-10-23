@@ -659,10 +659,8 @@ namespace VOM
         /**
          * A command class represents our desire to recieve interface events
          */
-        class events_cmd: public rpc_cmd<HW::item<bool>,
-                                       rc_t,
-                                       vapi::Want_interface_events>,
-                         public event_cmd<vapi::Sw_interface_event>
+        class events_cmd: public event_cmd<vapi::Want_interface_events,
+                                           vapi::Sw_interface_event>
         {
         public:
             /**
@@ -678,7 +676,7 @@ namespace VOM
             /**
              * Retires the command - unsubscribe from the events.
              */
-            void retire();
+            void retire(connection &con);
 
             /**
              * convert to string format for debug purposes
@@ -738,10 +736,8 @@ namespace VOM
         /**
          * A command class represents our desire to receive interface stats
          */
-        class stats_cmd: public rpc_cmd<HW::item<bool>,
-                                       rc_t,
-                                        vapi::Want_per_interface_combined_stats>,
-                         public event_cmd<vapi::Vnet_per_interface_combined_counters>
+        class stats_cmd: public event_cmd<vapi::Want_per_interface_combined_stats,
+                                          vapi::Vnet_per_interface_combined_counters>
         {
         public:
             /**
@@ -757,7 +753,7 @@ namespace VOM
             /**
              * Retires the command - unsubscribe from the stats.
              */
-            void retire();
+            void retire(connection &con);
 
             /**
              * convert to string format for debug purposes

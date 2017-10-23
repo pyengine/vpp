@@ -119,6 +119,13 @@ namespace VOM
             return (VAPI_OK);
         }
 
+        /**
+         * Issue the command to VPP/HW
+         */
+        virtual void retire(connection &con)
+        {
+        }
+
     protected:
         /**
          * A reference to an object's HW::item that the command will update

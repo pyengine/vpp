@@ -51,6 +51,11 @@ namespace VOM
         virtual rc_t issue(connection &con) = 0;
 
         /**
+         * Issue the command to VPP/HW
+         */
+        virtual void retire(connection &con) = 0;
+
+        /**
          * Invoked on a Command when the HW queue is disabled to indicate
          * that the commnad can be considered successful
          */

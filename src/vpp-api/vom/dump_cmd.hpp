@@ -91,7 +91,14 @@ namespace VOM
             m_promise.set_value(rc_t::OK);
 
             return (VAPI_OK);
-       }
+        }
+
+        /**
+         * Issue the command to VPP/HW
+         */
+        virtual void retire(connection &con)
+        {
+        }
 
     protected:
         /**

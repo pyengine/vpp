@@ -120,7 +120,7 @@ std::string dhcp_config::unbind_cmd::to_string() const
 }
 
 dhcp_config::events_cmd::events_cmd(event_listener &el):
-    event_cmd(),
+    event_cmd(el.status()),
     m_listener(el)
 {
 }
@@ -143,7 +143,7 @@ rc_t dhcp_config::events_cmd::issue(connection &con)
     return (rc_t::INPROGRESS);
 }
 
-void dhcp_config::events_cmd::retire()
+void dhcp_config::events_cmd::retire(connection &con)
 {
 }
 

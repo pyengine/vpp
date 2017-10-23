@@ -56,6 +56,17 @@ public:
     }
 };
 
+class MockListener : public interface::event_listener,
+                     public interface::stat_listener
+{
+    void handle_interface_stat(interface::stats_cmd *cmd)
+    {
+    }
+    void handle_interface_event(interface::events_cmd *cmd)
+    {
+    }
+};
+
 class MockCmdQ : public HW::cmd_q
 {
 public:
@@ -74,6 +85,10 @@ public:
     {
         m_act_queue.push_back(f);
     }
+    void enqueue(std::shared_ptr<cmd> f)
+    {
+        m_act_queue.push_back(f.get());
+    }
     void enqueue(std::queue<cmd*> &cmds)
     {
         while (cmds.size())
@@ -81,6 +96,12 @@ public:
             m_act_queue.push_back(cmds.front());
             cmds.pop();
         }
+    }
+    void dequeue(cmd *f)
+    {
+    }
+    void dequeue(std::shared_ptr<cmd> cmd)
+    {
     }
 
     void strict_order(bool on)
@@ -331,6 +352,10 @@ public:
                     else if (typeid(*f_exp) == typeid(nat_binding::unbind_44_input_cmd))
                     {
                         rc = handle_derived<nat_binding::unbind_44_input_cmd>(f_exp, f_act);
+                    }
+                    else if (typeid(*f_exp) == typeid(interface::events_cmd))
+                    {
+                        rc = handle_derived<interface::events_cmd>(f_exp, f_act);
                     }
                     else
                     {
@@ -1397,6 +1422,21 @@ BOOST_AUTO_TEST_CASE(test_nat) {
     ADD_EXPECT(interface::af_packet_delete_cmd(hw_ifh2, itf_out_name));
 
     TRY_CHECK(OM::remove(gs));
+}
+
+BOOST_AUTO_TEST_CASE(test_interface_events) {
+    VppInit vi;
+    MockListener ml;
+
+    HW::item<bool> hw_want(true, rc_t::OK);
+
+    ADD_EXPECT(interface::events_cmd(ml));
+    cmd* itf = new interface::events_cmd(ml);
+
+    HW::enqueue(itf);
+    HW::write();
+
+    HW::dequeue(itf);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

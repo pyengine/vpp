@@ -12,7 +12,7 @@
 #include <queue>
 #include <mutex>
 
-#include "vom/cmd.hpp"
+#include "vom/rpc_cmd.hpp"
 
 #include <vapi/vapi.hpp>
 
@@ -30,14 +30,15 @@ namespace VOM
      * subscription duration the client will be notified as events are recieved.
      * The client can then 'pop' these events from this command object.
      */
-    template <typename MSG>
-    class event_cmd
+    template <typename WANT, typename EVENT>
+    class event_cmd : public rpc_cmd<HW::item<bool>, rc_t, WANT>
     {
     public:
         /**
          * Default constructor
          */
-        event_cmd()
+        event_cmd(HW::item<bool> &b):
+            rpc_cmd<HW::item<bool>, rc_t, WANT>(b)
         {
         }
 
@@ -51,8 +52,8 @@ namespace VOM
         /**
          * Typedef for the event type
          */
-        typedef typename vapi::Event_registration<MSG>::resp_type event_t;
-        typedef typename vapi::Event_registration<MSG> reg_t;
+        typedef typename vapi::Event_registration<EVENT>::resp_type event_t;
+        typedef typename vapi::Event_registration<EVENT> reg_t;
 
         typedef typename vapi::Result_set<typename reg_t::resp_type>::const_iterator const_iterator;
 
@@ -88,7 +89,7 @@ namespace VOM
          * Retire the command. This is only appropriate for Event Commands
          * As they persist until retired.
          */
-        virtual void retire() = 0;
+        virtual void retire(connection &con) = 0;
 
         vapi_error_e operator() (reg_t &dl)
         {
@@ -107,7 +108,7 @@ namespace VOM
         /**
          * The VAPI event registration
          */
-        std::unique_ptr<vapi::Event_registration<MSG>> m_reg;
+        std::unique_ptr<vapi::Event_registration<EVENT>> m_reg;
 
         /**
          * Mutex protection for the events

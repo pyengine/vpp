@@ -39,7 +39,7 @@ $(VOMBIN):
 	@echo " COPYING " $A $B ;               \
 	cp --remove-destination $(A)/vom_test $(B)vom_test ;    \
 	rm -rf $(B).libs/* ;                                            \
-	cp --remove-destination $(A)/.libs/vom_test  $(B).libs/vom_test
+	cp --remove-destination $(A)/vom_test  $(B)/vom_test
 
 clean:
 	rm -rf $(BINDIR)

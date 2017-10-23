@@ -623,7 +623,7 @@ namespace VOM
         };
 
         /**
-         * Forward declaration of the Evnet command
+         * Forward declaration of the Event command
          */
         class events_cmd;
 
@@ -736,7 +736,7 @@ namespace VOM
         };
 
         /**
-         * A command class represents our desire to recieve interface stats
+         * A command class represents our desire to receive interface stats
          */
         class stats_cmd: public rpc_cmd<HW::item<bool>,
                                        rc_t,

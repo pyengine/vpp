@@ -1607,7 +1607,7 @@ static void
 			       ntohl (mp->initial_count),
 			       ntohl (mp->initial_interval),
 			       ntohl (mp->max_interval),
-			       ntohl (mp->min_interval), is_no);
+			       ntohl (mp->min_interval), is_no, NULL);
 
   BAD_SW_IF_INDEX_LABEL;
 

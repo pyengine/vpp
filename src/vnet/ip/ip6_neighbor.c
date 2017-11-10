@@ -120,10 +120,11 @@ typedef struct
   adj_index_t mcast_adj_index;
 
   /* timing information */
-#define DEF_MAX_RADV_INTERVAL 200
+#define DEF_MAX_RADV_INTERVAL 600
 #define DEF_MIN_RADV_INTERVAL .75 * DEF_MAX_RADV_INTERVAL
 #define DEF_CURR_HOP_LIMIT  64
 #define DEF_DEF_RTR_LIFETIME   3 * DEF_MAX_RADV_INTERVAL
+#define DEF_RDNSS_LIFETIME   3 * DEF_MAX_RADV_INTERVAL
 #define MAX_DEF_RTR_LIFETIME   9000
 
 #define MAX_INITIAL_RTR_ADVERT_INTERVAL   16	/* seconds */
@@ -154,6 +155,8 @@ typedef struct
 
   /* Link local address to use (defaults to underlying physical for logical interfaces */
   ip6_address_t link_local_address;
+
+  ip6_address_t rdnss;
 } ip6_radv_t;
 
 typedef struct
@@ -1591,6 +1594,33 @@ icmp6_router_solicitation (vlib_main_t * vm,
 						(icmp6_neighbor_discovery_mtu_option_t));
 			}
 
+		      /* add RDNSS option */
+		      if (!ip6_address_is_unspecified(&radv_info->rdnss))
+			{
+			  icmp6_neighbor_discovery_rdnss_option_t h;
+
+			  h.unused = 0;
+			  h.lifetime = clib_host_to_net_u32(DEF_RDNSS_LIFETIME);
+			  h.header.type = ICMP6_NEIGHBOR_DISCOVERY_OPTION_recursive_dns_server;
+
+
+			  h.header.n_data_u64s = 3; /* Single IPv6 address */
+
+			  payload_length +=
+			    sizeof (icmp6_neighbor_discovery_rdnss_option_t) +
+			    sizeof (ip6_address_t);
+
+			  vlib_buffer_add_data
+			    (vm, vlib_buffer_get_free_list_index
+			     (p0), bi0, (void *) &h,
+			     sizeof (icmp6_neighbor_discovery_rdnss_option_t));
+			  vlib_buffer_add_data
+			    (vm, vlib_buffer_get_free_list_index
+			     (p0), bi0, (void *) &radv_info->rdnss,
+			     sizeof (ip6_address_t));
+
+			}
+
 		      /* add advertised prefix options  */
 		      ip6_radv_prefix_t *pr_info;
 
@@ -2701,7 +2731,8 @@ ip6_neighbor_ra_config (vlib_main_t * vm, u32 sw_if_index,
 			u8 ll_option, u8 send_unicast, u8 cease,
 			u8 use_lifetime, u32 lifetime,
 			u32 initial_count, u32 initial_interval,
-			u32 max_interval, u32 min_interval, u8 is_no)
+			u32 max_interval, u32 min_interval, u8 is_no,
+			ip6_address_t * rdnss)
 {
   ip6_neighbor_main_t *nm = &ip6_neighbor_main;
   int error;
@@ -2793,6 +2824,10 @@ ip6_neighbor_ra_config (vlib_main_t * vm, u32 sw_if_index,
       radv_info->next_multicast_time = vlib_time_now (vm);
       radv_info->last_multicast_time = vlib_time_now (vm);
       radv_info->last_radv_time = 0;
+
+      /* RDNSS. Only support single server */
+      if (rdnss && ip6_address_is_unspecified(&radv_info->rdnss))
+	radv_info->rdnss = *rdnss;
     }
   return (error);
 }
@@ -2954,7 +2989,7 @@ ip6_neighbor_cmd (vlib_main_t * vm, unformat_input_t * main_input,
 
   int add_radv_info = 1;
   __attribute__ ((unused)) ip6_radv_t *radv_info = 0;
-  ip6_address_t ip6_addr;
+  ip6_address_t ip6_addr, rdnss_ip6_addr = { 0 };
   u32 addr_len;
 
 
@@ -3084,6 +3119,16 @@ ip6_neighbor_cmd (vlib_main_t * vm, unformat_input_t * main_input,
 	  cease = 1;
 	  break;
 	}
+      else if (unformat (line_input, "rdnss"))
+	{
+	  if (!unformat (line_input, "%U",
+			 unformat_ip6_address, &rdnss_ip6_addr))
+	    {
+	      error = unformat_parse_error (line_input);
+	      goto done;
+	    }
+	  break;
+	}
       else
 	{
 	  error = unformat_parse_error (line_input);
@@ -3098,7 +3143,8 @@ ip6_neighbor_cmd (vlib_main_t * vm, unformat_input_t * main_input,
 			      suppress_ll_option, send_unicast, cease,
 			      use_lifetime, ra_lifetime,
 			      ra_initial_count, ra_initial_interval,
-			      ra_max_interval, ra_min_interval, is_no);
+			      ra_max_interval, ra_min_interval, is_no,
+			      &rdnss_ip6_addr);
     }
   else
     {
@@ -3322,6 +3368,11 @@ show_ip6_interface_cmd (vlib_main_t * vm,
 			   radv_info->n_solicitations_rcvd);
 	  vlib_cli_output (vm, "\tND router solicitations dropped %d\n",
 			   radv_info->n_solicitations_dropped);
+
+	  if (!ip6_address_is_unspecified(&radv_info->rdnss))
+	    vlib_cli_output (vm, "\tRecursive DNS Server: %U\n", format_ip6_address,
+			     &radv_info->rdnss);
+
 	}
       else
 	{

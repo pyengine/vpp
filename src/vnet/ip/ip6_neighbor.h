@@ -52,7 +52,7 @@ extern int ip6_neighbor_ra_config (vlib_main_t * vm, u32 sw_if_index,
 				   u8 use_lifetime, u32 lifetime,
 				   u32 initial_count, u32 initial_interval,
 				   u32 max_interval, u32 min_interval,
-				   u8 is_no);
+				   u8 is_no, ip6_address_t * rdnss);
 
 extern int ip6_neighbor_ra_prefix (vlib_main_t * vm, u32 sw_if_index,
 				   ip6_address_t * prefix_addr, u8 prefix_len,

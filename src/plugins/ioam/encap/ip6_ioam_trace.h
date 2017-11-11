@@ -26,6 +26,10 @@ typedef CLIB_PACKED(struct {
   ip6_hop_by_hop_option_t hdr;
   ioam_trace_hdr_t trace_hdr;
 }) ioam_trace_option_t;
+typedef CLIB_PACKED(struct {
+  ip6_hop_by_hop_option_t hdr;
+  ioam_trace_hdr_incr_t trace_hdr;
+}) ioam_incr_trace_option_t;
 /* *INDENT-ON* */
 
 always_inline void

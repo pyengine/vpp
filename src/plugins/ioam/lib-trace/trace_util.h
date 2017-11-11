@@ -84,6 +84,15 @@ typedef CLIB_PACKED (struct
 }) ioam_trace_hdr_t;
 /* *INDENT-ON* */
 
+/* *INDENT-OFF* */
+typedef CLIB_PACKED (struct
+{
+  u8 ioam_trace_type;
+  u8 max_elts;
+  u32 elts[0]; /* Variable type. So keep it generic */
+}) ioam_trace_hdr_incr_t;
+/* *INDENT-ON* */
+
 
 
 #define    BIT_TTL_NODEID       (1<<0)

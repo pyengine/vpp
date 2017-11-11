@@ -206,6 +206,37 @@ ip6_hop_by_hop_ioam_trace_rewrite_handler (u8 * rewrite_string,
 
   return 0;
 }
+int
+ip6_hop_by_hop_ioam_incr_trace_rewrite_handler (u8 * rewrite_string,
+					   u8 * rewrite_size)
+{
+  ioam_incr_trace_option_t *trace_option = NULL;
+  trace_profile *profile = NULL;
+  u8 trace_option_elts = 0;
+
+  profile = trace_profile_find ();
+
+  if (PREDICT_FALSE (!profile))
+    {
+      ip6_ioam_trace_stats_increment_counter (IP6_IOAM_TRACE_PROFILE_MISS, 1);
+      return (-1);
+    }
+
+  if (PREDICT_FALSE (!rewrite_string))
+    return -1;
+
+  trace_option_elts = profile->num_elts;
+  trace_option = (ioam_incr_trace_option_t *) rewrite_string;
+  trace_option->hdr.type = HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST |
+    HBH_OPTION_TYPE_DATA_CHANGE_ENROUTE;
+  trace_option->hdr.length = 2 /*ioam_trace_type, max_elts */;
+  trace_option->trace_hdr.ioam_trace_type =
+    profile->trace_type & TRACE_TYPE_MASK;
+  trace_option->trace_hdr.max_elts = trace_option_elts;
+  *rewrite_size =
+    sizeof (ioam_incr_trace_option_t);
+  return 0;
+}
 
 always_inline void
 ip6_hbh_ioam_loopback_handler (vlib_buffer_t * b, ip6_header_t * ip,
@@ -375,6 +406,37 @@ ip6_hbh_ioam_trace_data_list_trace_handler (u8 * s,
   return (s);
 }
 
+u8 *
+ip6_hbh_ioam_incr_trace_list_trace_handler (u8 * s,
+					    ip6_hop_by_hop_option_t * opt)
+{
+  ioam_incr_trace_option_t *trace;
+  u8 trace_data_size_in_words = 0;
+  u32 *elt;
+  int elt_index = 0;
+
+  trace = (ioam_incr_trace_option_t *) opt;
+  s =
+    format (s, "  Trace Type 0x%x , %d elts left\n",
+	    trace->trace_hdr.ioam_trace_type,
+	    trace->trace_hdr.max_elts);
+  trace_data_size_in_words =
+    fetch_trace_data_size (trace->trace_hdr.ioam_trace_type) / 4;
+  elt = &trace->trace_hdr.elts[0];
+  while ((u8 *) elt <
+	 ((u8 *) (&trace->trace_hdr.elts[0]) + trace->hdr.length - 2
+	  /* -2 accounts for ioam_trace_type,elts_left */ ))
+    {
+      s = format (s, "    [%d] %U\n", elt_index,
+		  format_ioam_data_list_element,
+		  elt, &trace->trace_hdr.ioam_trace_type);
+      elt_index++;
+      elt += trace_data_size_in_words;
+    }
+  return (s);
+}
+
+
 
 static clib_error_t *
 ip6_show_ioam_trace_cmd_fn (vlib_main_t * vm,
@@ -447,6 +509,22 @@ ip6_hop_by_hop_ioam_trace_init (vlib_main_t * vm)
       < 0)
     return (clib_error_create
 	    ("registration of HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST for rewrite failed"));
+
+  if (ip6_hbh_register_option
+      (HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST,
+       NULL,//Not going to populate this option
+       ip6_hbh_ioam_incr_trace_list_trace_handler) < 0)
+    return (clib_error_create
+	    ("registration of HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST failed"));
+
+
+  if (ip6_hbh_add_register_option (HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST,
+				   sizeof (ioam_trace_option_t),
+				   ip6_hop_by_hop_ioam_incr_trace_rewrite_handler)
+      < 0)
+    return (clib_error_create
+	    ("registration of HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST for rewrite failed"));
+
 
 
   return (0);

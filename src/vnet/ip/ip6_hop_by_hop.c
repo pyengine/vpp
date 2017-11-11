@@ -846,6 +846,11 @@ ip6_ioam_set_rewrite (u8 ** rwp, int has_trace_option,
     {
       size += hm->options_size[HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST];
     }
+  if (has_trace_option
+      && hm->options_size[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST] != 0)
+    {
+      size += hm->options_size[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST];
+    }
   if (has_pot_option
       && hm->add_options[HBH_OPTION_TYPE_IOAM_PROOF_OF_TRANSIT] != 0)
     {
@@ -867,7 +872,19 @@ ip6_ioam_set_rewrite (u8 ** rwp, int has_trace_option,
   /* Length of header in 8 octet units, not incl first 8 octets */
   hbh->length = (rnd_size >> 3) - 1;
   current = (u8 *) (hbh + 1);
-
+  if (has_trace_option
+      && hm->add_options[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST] != 0)
+    {
+      if (0 != (hm->options_size[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST]))
+	{
+	  trace_data_size =
+	    &hm->options_size[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST];
+	  if (0 ==
+	      hm->add_options[HBH_OPTION_TYPE_IOAM_INCR_TRACE_LIST] (current,
+								     trace_data_size))
+	    current += *trace_data_size;
+	}
+    }
   if (has_trace_option
       && hm->add_options[HBH_OPTION_TYPE_IOAM_TRACE_DATA_LIST] != 0)
     {

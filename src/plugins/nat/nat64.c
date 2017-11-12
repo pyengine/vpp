@@ -798,8 +798,7 @@ nat64_compose_ip6 (ip6_address_t * ip6, ip4_address_t * ip4, u32 fib_index)
 
   if (prefix)
     {
-      memset (ip6, 0, 16);
-      memcpy (ip6, &p->prefix, p->plen);
+      memcpy (ip6, &p->prefix, 16);
       switch (p->plen)
 	{
 	case 32:

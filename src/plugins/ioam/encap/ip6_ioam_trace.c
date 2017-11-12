@@ -464,7 +464,8 @@ ip6_hbh_ioam_incr_trace_list_trace_handler (u8 * s,
     fetch_trace_data_size (trace->trace_hdr.ioam_trace_type) / 4;
   elt = &trace->trace_hdr.elts[0];
   while ((u8 *) elt <
-	 ((u8 *) (&trace->trace_hdr.elts[0]) + trace->hdr.length - 2
+	 ((u8 *) (&trace->trace_hdr.elts[0]) +
+	  (trace->trace_hdr.max_elts * trace_data_size_in_words)
 	  /* -2 accounts for ioam_trace_type,elts_left */ ))
     {
       s = format (s, "    [%d] %U\n", elt_index,
